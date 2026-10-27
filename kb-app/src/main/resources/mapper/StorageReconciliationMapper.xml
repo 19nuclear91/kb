@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.zhishiku.kb.app.storage.mapper.StorageReconciliationMapper">
+
+    <!-- 存活引用：文档未被软删除即可下载、预览与引用，与其状态、空间归档和版本无关。 -->
+    <select id="listLiveObjectKeys" resultType="string">
+        SELECT DISTINCT v.object_key
+        FROM kb_document_version v
+        JOIN kb_document d ON d.id = v.doc_id
+        WHERE d.status &lt;&gt; 'deleted'
+        AND v.object_key IN
+        <foreach item="objectKey" collection="objectKeys" open="(" separator="," close=")">#{objectKey}</foreach>
+    </select>
+
+    <select id="hasLiveReference" resultType="boolean">
+        SELECT EXISTS (
+        SELECT 1
+        FROM kb_document_version v
+        JOIN kb_document d ON d.id = v.doc_id
+        WHERE d.status &lt;&gt; 'deleted'
+        LIMIT 1
+        )
+    </select>
+
+    <select id="sampleLiveObjectKeys" resultType="string">
+        SELECT v.object_key
+        FROM kb_document_version v
+        JOIN kb_document d ON d.id = v.doc_id
+        WHERE d.status &lt;&gt; 'deleted'
+        ORDER BY v.id DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

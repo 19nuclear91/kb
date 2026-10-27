@@ -1,0 +1,109 @@
+server:
+  port: 8082
+
+spring:
+  profiles:
+    default: prod
+  application:
+    name: kb-ai
+
+  data:
+    redis:
+      host: ${KB_REDIS_HOST:}
+      port: ${KB_REDIS_PORT:6379}
+      database: ${KB_REDIS_DATABASE:1}
+      password: ${KB_REDIS_PASSWORD:}
+      timeout: ${KB_REDIS_TIMEOUT:2s}
+
+  # 本服务无数据源，无需排除任何数据库自动配置——
+  # 因为 pom 里根本没有 jdbc / postgresql 依赖（那是刻意的，见 kb-ai/pom.xml）。
+
+  codec:
+    # SSE 帧很小，但召回响应体可能较大（含文档正文），给出明确上限
+    max-in-memory-size: 4MB
+
+kb:
+  conversation:
+    enabled: ${KB_CONVERSATION_ENABLED:false}
+    secret: ${KB_CONVERSATION_SECRET:}
+  ai:
+    # 语料的唯一来源。指向 kb-app，而非直连数据库。
+    app-base-url: ${KB_APP_BASE_URL:}
+    retrieve-top-k: 8
+    max-question-chars: ${KB_AI_MAX_QUESTION_CHARS:8000}
+    max-context-chars: ${KB_AI_MAX_CONTEXT_CHARS:24000}
+    requests-per-minute: ${KB_AI_REQUESTS_PER_MINUTE:60}
+    max-concurrent: ${KB_AI_MAX_CONCURRENT:8}
+    token-budget-per-minute: ${KB_AI_TOKEN_BUDGET_PER_MINUTE:120000}
+    max-tokens-per-request: ${KB_AI_MAX_TOKENS_PER_REQUEST:12000}
+    quota-key-prefix: ${KB_AI_QUOTA_KEY_PREFIX:kb:ai:quota}
+    audit-key: ${KB_AI_AUDIT_KEY:kb:ai:audit}
+    audit-max-events: ${KB_AI_AUDIT_MAX_EVENTS:100000}
+    audit-in-memory-enabled: ${KB_AI_AUDIT_IN_MEMORY_ENABLED:false}
+    quota-lease-seconds: ${KB_AI_QUOTA_LEASE_SECONDS:120}
+    quota-renewal-interval-ms: ${KB_AI_QUOTA_RENEWAL_INTERVAL_MS:30000}
+    redis-retry-attempts: ${KB_AI_REDIS_RETRY_ATTEMPTS:3}
+    redis-retry-backoff-ms: ${KB_AI_REDIS_RETRY_BACKOFF_MS:100}
+    audit-deduplication-seconds: ${KB_AI_AUDIT_DEDUPLICATION_SECONDS:86400}
+    # 心跳间隔。必须小于链路上最短的空闲超时——
+    # 网关、Nginx、企业出口代理里取最小值，再留一半余量。
+    keep-alive-ms: 15000
+    upstream-timeout: 60
+
+sa-token:
+  token-name: satoken
+  timeout: ${KB_SA_TOKEN_TIMEOUT:2592000}
+  active-timeout: ${KB_SA_TOKEN_ACTIVE_TIMEOUT:-1}
+  is-concurrent: true
+  is-share: true
+  token-style: uuid
+  is-log: ${KB_SA_TOKEN_LOG:false}
+
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+
+logging:
+  level:
+    com.zhishiku.kb: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+# ============================================================
+# P0 验证方法（必须实测，光看配置不算）：
+#
+# 1) 直连本服务，确认流式输出逐字到达：
+#      curl -N -X POST "http://localhost:8082/api/ai/chat" \
+#        -H "satoken: $TOKEN" -H "Content-Type: application/json" \
+#        -d '{"question":"测试"}'
+#    应看到 event:citation 若干条，随后 event:delta 一个字一个字出现，
+#    最后 event:done。若所有内容同时出现，是本服务或 curl 缓冲的问题。
+#
+# 2) 经网关再测一次，两者首字节延迟应接近：
+#      curl -N -X POST "http://localhost:8080/api/ai/chat" \
+#        -H "satoken: $TOKEN" -H "Content-Type: application/json" \
+#        -d '{"question":"测试"}'
+#    若直连正常、经网关变成一次性返回，问题在网关侧
+#    （见 kb-gateway/application.yml 里列的三个缓冲来源）。
+#
+# 3) 权限透传验证 —— 这条最重要，换用户应看到不同的引用集合：
+#      先分别调用 kb-app 的 /api/auth/dev-login 获取各用户的 token，
+#      再使用 -H "satoken: <token>" 请求。不要再使用可伪造的 X-Dev-User-Id。
+#    若三者返回相同引用，说明身份没透传成功，
+#    或 kb-app 那边退化成了未过滤查询——属于严重越权，必须立即排查。
+#
+#    注意 dave 返回"未找到相关内容"与真的没有匹配内容在对外表现上一致，
+#    这是刻意的（防止靠提问探测文档是否存在），
+#    区分二者请看 kb-app 的日志与 db/verify_permission.sql。
+#
+# kb-ai 不绑定具体 Chat SDK：部署方注入 ChatModelClient Bean 后即可替换占位应答。
+# kb-app 已提供查询 embedding、RRF、rerank 和 top-k；本服务只负责授权召回与编排。
+# 已包含：按部门的 Redis 请求配额、token 预算、可续期并发租约和幂等审计摘要；
+# 释放/续期/审计写入具备有界重试，Redis 不可用时请求拒绝或进入错误收尾。
+# 尚未包含：答案缓存（缓存必须按权限范围隔离 key）。
+# ============================================================

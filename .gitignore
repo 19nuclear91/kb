@@ -1,0 +1,42 @@
+# ---- Java / Maven ----
+target/
+*.class
+*.log
+hs_err_pid*
+replay_pid*
+
+# ---- 前端 (kb-web 另有同名规则) ----
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.vite/
+npm-debug.log*
+
+# ---- 本地环境与凭据：只提交 .env.example ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+
+# ---- IDE 与本机工具状态 ----
+.idea/
+*.iml
+.vscode/
+.claude/settings.local.json
+
+# ---- Python (生成架构图.py) ----
+# 脚本同时输出 jpg 与预览图；版本库只保留 README 引用的 架构图-v3.png
+架构图-v3.jpg
+架构图-v3-预览.png
+__pycache__/
+*.pyc
+.venv/
+
+# ---- 操作系统 ----
+.DS_Store
+Thumbs.db
+desktop.ini

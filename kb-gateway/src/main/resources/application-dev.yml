@@ -1,0 +1,27 @@
+spring:
+  data:
+    redis:
+      host: ${KB_REDIS_HOST:localhost}
+  cloud:
+    gateway:
+      routes:
+        - id: kb-app
+          uri: ${KB_APP_BASE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/search/**,/api/documents/**,/api/files/**,/api/auth/**,/api/admin/**,/api/reviews/**,/api/notifications/**
+          metadata:
+            response-timeout: 10000
+            connect-timeout: 2000
+        - id: kb-ai-stream
+          uri: ${KB_AI_BASE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/ai/**
+          filters:
+            - AddResponseHeader=X-Accel-Buffering, no
+          metadata:
+            response-timeout: -1
+            connect-timeout: 2000
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns: "http://localhost:*"

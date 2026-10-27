@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.conversation.mapper.ConversationMapper">
+    <resultMap id="ConversationRow" type="com.zhishiku.kb.app.conversation.model.ConversationRow">
+        <result property="id" column="id"/>
+        <result property="ownerUserId" column="owner_user_id"/>
+        <result property="title" column="title"/>
+        <result property="createRequestId" column="create_request_id"/>
+        <result property="creationDigest" column="creation_digest"/>
+        <result property="lastTurnSeq" column="last_turn_seq"/>
+        <result property="activeTurnId" column="active_turn_id"
+                typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+        <result property="executionEpoch" column="execution_epoch"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="deletedAt" column="deleted_at"/>
+    </resultMap>
+    <resultMap id="TurnRow" type="com.zhishiku.kb.app.conversation.model.TurnRow">
+        <result property="id" column="id" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+        <result property="conversationId" column="conversation_id"/>
+        <result property="turnSeq" column="turn_seq"/>
+        <result property="requestId" column="request_id"/>
+        <result property="bindingDigest" column="binding_digest"/>
+        <result property="question" column="question"/>
+        <result property="assistantText" column="assistant_text"/>
+        <result property="status" column="status"/>
+        <result property="answerKind" column="answer_kind"/>
+        <result property="sourceSealed" column="source_sealed"/>
+        <result property="expectedSourceCount" column="expected_source_count"/>
+        <result property="sourceDigest" column="source_digest"/>
+        <result property="sealDigest" column="seal_digest"/>
+        <result property="lastBatchSeq" column="last_batch_seq"/>
+        <result property="savedCodepoints" column="saved_codepoints"/>
+        <result property="ticketHash" column="ticket_hash"/>
+        <result property="executionTicketDigest" column="execution_ticket_digest"/>
+        <result property="executionEpoch" column="execution_epoch"/>
+        <result property="leaseUntil" column="lease_until"/>
+        <result property="modelDispatchIntent" column="model_dispatch_intent"/>
+        <result property="usageStatus" column="usage_status"/>
+        <result property="promptTokens" column="prompt_tokens"/>
+        <result property="completionTokens" column="completion_tokens"/>
+        <result property="scrubbed" column="scrubbed"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="finishedAt" column="finished_at"/>
+    </resultMap>
+    <resultMap id="SourceRow" type="com.zhishiku.kb.app.conversation.model.SourceRow">
+        <result property="turnId" column="turn_id" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+        <result property="documentId" column="document_id"/>
+        <result property="versionId" column="version_id"/>
+    </resultMap>
+    <resultMap id="CitationRow" type="com.zhishiku.kb.app.conversation.model.CitationRow">
+        <result property="turnId" column="turn_id" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+        <result property="ordinal" column="ordinal"/>
+        <result property="documentId" column="document_id"/>
+        <result property="versionId" column="version_id"/>
+        <result property="chunkId" column="chunk_id"/>
+        <result property="title" column="title"/>
+        <result property="versionNo" column="version_no"/>
+        <result property="pageNo" column="page_no"/>
+        <result property="headingPath" column="heading_path"/>
+        <result property="structureType" column="structure_type"/>
+        <result property="sourceLocator" column="source_locator"/>
+        <result property="sourceLineStart" column="source_line_start"/>
+        <result property="sourceLineEnd" column="source_line_end"/>
+        <result property="sourceCharStart" column="source_char_start"/>
+        <result property="sourceCharEnd" column="source_char_end"/>
+        <result property="contextTruncated" column="context_truncated"/>
+    </resultMap>
+    <resultMap id="BatchRow" type="com.zhishiku.kb.app.conversation.model.BatchRow">
+        <result property="turnId" column="turn_id" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+        <result property="batchSeq" column="batch_seq"/>
+        <result property="digest" column="digest"/>
+        <result property="codepoints" column="codepoints"/>
+    </resultMap>
+    <resultMap id="SettlementRow" type="com.zhishiku.kb.app.conversation.model.SettlementRow">
+        <result property="turnId" column="turn_id" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+        <result property="userId" column="user_id"/>
+        <result property="departmentId" column="department_id"/>
+        <result property="leaseId" column="lease_id" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+        <result property="eventId" column="event_id" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+        <result property="reservedTokens" column="reserved_tokens"/>
+        <result property="usageStatus" column="usage_status"/>
+        <result property="promptTokens" column="prompt_tokens"/>
+        <result property="completionTokens" column="completion_tokens"/>
+        <result property="chargedTokens" column="charged_tokens"/>
+        <result property="generationStatus" column="generation_status"/>
+        <result property="intentDigest" column="intent_digest"/>
+        <result property="state" column="state"/>
+        <result property="attempts" column="attempts"/>
+        <result property="claimedUntil" column="claimed_until"/>
+        <result property="nextAttemptAt" column="next_attempt_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="finalizedAt" column="finalized_at"/>
+        <result property="settledAt" column="settled_at"/>
+    </resultMap>
+    <select id="find" resultMap="ConversationRow">SELECT * FROM kb_conversation WHERE id = #{id}</select>
+    <select id="lock" resultMap="ConversationRow">SELECT * FROM kb_conversation WHERE id = #{id} FOR UPDATE</select>
+    <select id="findCreation" resultMap="ConversationRow">SELECT * FROM kb_conversation WHERE owner_user_id = #{owner}
+        AND create_request_id = #{request}
+    </select>
+    <select id="list" resultMap="ConversationRow">SELECT * FROM kb_conversation WHERE owner_user_id = #{owner} AND
+        deleted_at IS NULL
+        <if test="before != null">AND (created_at, id) &lt; (#{before}, #{beforeId})</if>
+        ORDER BY created_at DESC, id DESC LIMIT #{limit}
+    </select>
+    <select id="turn" resultMap="TurnRow">SELECT * FROM kb_conversation_turn WHERE id = #{id}</select>
+    <select id="lockTurn" resultMap="TurnRow">SELECT * FROM kb_conversation_turn WHERE id = #{id} FOR UPDATE</select>
+    <select id="request" resultMap="TurnRow">SELECT * FROM kb_conversation_turn WHERE conversation_id = #{conversation}
+        AND request_id = #{request}
+    </select>
+    <select id="turns" resultMap="TurnRow">SELECT * FROM kb_conversation_turn WHERE conversation_id = #{conversation}
+        AND turn_seq &gt; #{after} ORDER BY turn_seq LIMIT #{limit}
+    </select>
+    <select id="history" resultMap="TurnRow">SELECT * FROM kb_conversation_turn WHERE conversation_id = #{conversation}
+        AND status = 'COMPLETED' ORDER BY turn_seq DESC LIMIT #{limit}
+    </select>
+    <select id="sources" resultMap="SourceRow">SELECT * FROM kb_conversation_source WHERE turn_id = #{turn} ORDER BY
+        document_id, version_id
+    </select>
+    <select id="citations" resultMap="CitationRow">SELECT * FROM kb_conversation_citation WHERE turn_id = #{turn} ORDER
+        BY ordinal
+    </select>
+    <select id="batch" resultMap="BatchRow">SELECT * FROM kb_conversation_batch WHERE turn_id = #{turn} AND batch_seq =
+        #{sequence}
+    </select>
+    <select id="settlement" resultMap="SettlementRow">SELECT * FROM kb_conversation_settlement WHERE turn_id = #{turn}
+    </select>
+    <select id="expired" resultType="long">SELECT DISTINCT conversation_id FROM kb_conversation_turn WHERE status =
+        'RUNNING' AND lease_until &lt;= #{now} LIMIT #{limit}
+    </select>
+    <select id="claimSettlements" resultMap="SettlementRow" affectData="true" flushCache="true">
+        WITH picked AS (SELECT turn_id FROM kb_conversation_settlement WHERE state = 'PENDING'
+        AND next_attempt_at &lt;= #{now} AND (claimed_until IS NULL OR claimed_until &lt;= #{now})
+        ORDER BY next_attempt_at LIMIT #{limit} FOR UPDATE SKIP LOCKED)
+        UPDATE kb_conversation_settlement s SET claimed_until = #{until}, attempts = s.attempts + 1
+        FROM picked p WHERE s.turn_id = p.turn_id RETURNING s.*
+    </select>
+    <insert id="insertConversation" useGeneratedKeys="true" keyProperty="id">INSERT INTO kb_conversation (owner_user_id,
+        title, create_request_id, creation_digest, last_turn_seq, active_turn_id, execution_epoch, created_at,
+        updated_at, deleted_at)
+        VALUES (#{ownerUserId}, #{title}, #{createRequestId}, #{creationDigest}, #{lastTurnSeq}, #{activeTurnId},
+        #{executionEpoch}, #{createdAt}, #{updatedAt}, #{deletedAt}) ON CONFLICT (owner_user_id, create_request_id) DO
+        NOTHING
+    </insert>
+    <update id="updateConversation">UPDATE kb_conversation SET owner_user_id = #{ownerUserId}, title = #{title},
+        create_request_id = #{createRequestId}, creation_digest = #{creationDigest}, last_turn_seq = #{lastTurnSeq},
+        active_turn_id = #{activeTurnId}, execution_epoch = #{executionEpoch}, created_at = #{createdAt}, updated_at =
+        #{updatedAt}, deleted_at = #{deletedAt}
+        WHERE id = #{id}
+    </update>
+    <insert id="insertTurn">INSERT INTO kb_conversation_turn (id, conversation_id, turn_seq, request_id, binding_digest,
+        question, assistant_text, status, answer_kind, source_sealed, expected_source_count, source_digest, seal_digest,
+        last_batch_seq, saved_codepoints, ticket_hash, execution_ticket_digest, execution_epoch, lease_until,
+        model_dispatch_intent, usage_status, prompt_tokens, completion_tokens, scrubbed, created_at, updated_at,
+        finished_at)
+        VALUES (#{id}, #{conversationId}, #{turnSeq}, #{requestId}, #{bindingDigest}, #{question}, #{assistantText},
+        #{status}, #{answerKind}, #{sourceSealed}, #{expectedSourceCount}, #{sourceDigest}, #{sealDigest},
+        #{lastBatchSeq}, #{savedCodepoints}, #{ticketHash}, #{executionTicketDigest}, #{executionEpoch}, #{leaseUntil},
+        #{modelDispatchIntent}, #{usageStatus}, #{promptTokens}, #{completionTokens}, #{scrubbed}, #{createdAt},
+        #{updatedAt}, #{finishedAt})
+    </insert>
+    <update id="updateTurn">UPDATE kb_conversation_turn SET conversation_id = #{conversationId}, turn_seq = #{turnSeq},
+        request_id = #{requestId}, binding_digest = #{bindingDigest}, question = #{question}, assistant_text =
+        #{assistantText}, status = #{status}, answer_kind = #{answerKind}, source_sealed = #{sourceSealed},
+        expected_source_count = #{expectedSourceCount}, source_digest = #{sourceDigest}, seal_digest = #{sealDigest},
+        last_batch_seq = #{lastBatchSeq}, saved_codepoints = #{savedCodepoints}, ticket_hash = #{ticketHash},
+        execution_ticket_digest = #{executionTicketDigest}, execution_epoch = #{executionEpoch}, lease_until =
+        #{leaseUntil}, model_dispatch_intent = #{modelDispatchIntent}, usage_status = #{usageStatus}, prompt_tokens =
+        #{promptTokens}, completion_tokens = #{completionTokens}, scrubbed = #{scrubbed}, created_at = #{createdAt},
+        updated_at = #{updatedAt}, finished_at = #{finishedAt}
+        WHERE id = #{id} AND status = 'RUNNING'
+    </update>
+    <insert id="insertSource">INSERT INTO kb_conversation_source (turn_id, document_id, version_id)
+        VALUES (#{turnId}, #{documentId}, #{versionId})
+    </insert>
+    <insert id="insertCitation">INSERT INTO kb_conversation_citation (turn_id, ordinal, document_id, version_id,
+        chunk_id, title, version_no, page_no, heading_path, structure_type, source_locator, source_line_start,
+        source_line_end, source_char_start, source_char_end, context_truncated)
+        VALUES (#{turnId}, #{ordinal}, #{documentId}, #{versionId}, #{chunkId}, #{title}, #{versionNo}, #{pageNo},
+        #{headingPath}, #{structureType}, #{sourceLocator}, #{sourceLineStart}, #{sourceLineEnd}, #{sourceCharStart},
+        #{sourceCharEnd}, #{contextTruncated})
+    </insert>
+    <insert id="insertBatch">INSERT INTO kb_conversation_batch (turn_id, batch_seq, digest, codepoints)
+        VALUES (#{turnId}, #{batchSeq}, #{digest}, #{codepoints})
+    </insert>
+    <insert id="insertSettlement">INSERT INTO kb_conversation_settlement (turn_id, user_id, department_id, lease_id,
+        event_id, reserved_tokens, usage_status, prompt_tokens, completion_tokens, charged_tokens, generation_status,
+        intent_digest, state, attempts, claimed_until, next_attempt_at, created_at, finalized_at, settled_at)
+        VALUES (#{turnId}, #{userId}, #{departmentId}, #{leaseId}, #{eventId}, #{reservedTokens}, #{usageStatus},
+        #{promptTokens}, #{completionTokens}, #{chargedTokens}, #{generationStatus}, #{intentDigest}, #{state},
+        #{attempts}, #{claimedUntil}, #{nextAttemptAt}, #{createdAt}, #{finalizedAt}, #{settledAt})
+    </insert>
+    <update id="updateSettlement">UPDATE kb_conversation_settlement SET user_id = #{userId}, department_id =
+        #{departmentId}, lease_id = #{leaseId}, event_id = #{eventId}, reserved_tokens = #{reservedTokens}, usage_status
+        = #{usageStatus}, prompt_tokens = #{promptTokens}, completion_tokens = #{completionTokens}, charged_tokens =
+        #{chargedTokens}, generation_status = #{generationStatus}, intent_digest = #{intentDigest}, state = #{state},
+        attempts = #{attempts}, claimed_until = #{claimedUntil}, next_attempt_at = #{nextAttemptAt}, created_at =
+        #{createdAt}, finalized_at = #{finalizedAt}, settled_at = #{settledAt}
+        WHERE turn_id = #{turnId} AND state NOT IN ('SETTLED','REVIEW')
+    </update>
+    <delete id="clearCitations">DELETE FROM kb_conversation_citation WHERE turn_id IN (SELECT id FROM
+        kb_conversation_turn WHERE conversation_id = #{conversation})
+    </delete>
+    <delete id="clearSources">DELETE FROM kb_conversation_source WHERE turn_id IN (SELECT id FROM kb_conversation_turn
+        WHERE conversation_id = #{conversation})
+    </delete>
+    <update id="scrubTurns">UPDATE kb_conversation_turn SET question = NULL, assistant_text = NULL,
+        saved_codepoints = 0, scrubbed = true WHERE conversation_id = #{conversation}
+    </update>
+    <update id="deliveryResult">
+        UPDATE kb_conversation_settlement SET state = #{state}, next_attempt_at = #{next},
+        settled_at = #{settled}, claimed_until = NULL
+        WHERE turn_id = #{turn} AND state = 'PENDING' AND attempts = #{attempt}
+        AND claimed_until IS NOT DISTINCT FROM #{claim}
+    </update>
+    <update id="ackSettlement">
+        UPDATE kb_conversation_settlement SET state = 'SETTLED', settled_at = #{now}, claimed_until = NULL
+        WHERE turn_id = #{turn} AND intent_digest = #{digest} AND state = 'PENDING'
+    </update>
+</mapper>
+

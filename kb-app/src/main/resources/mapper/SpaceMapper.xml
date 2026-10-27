@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.zhishiku.kb.app.space.mapper.SpaceMapper">
+
+    <!--
+      空集合必须落成 FALSE，绝不能省略条件。
+      这里的两个资格分别来自 view 与 manage 两次 resolve：manage 不蕴含 view，
+      所以必须用两个独立集合判定，不能用其中一个推断另一个。
+    -->
+    <sql id="viewablePredicate">
+        <choose>
+            <when test="globalManager">TRUE</when>
+            <when test="viewSpaceIds != null and viewSpaceIds.size() > 0">
+                s.id IN
+                <foreach item="space" collection="viewSpaceIds" open="(" separator="," close=")">#{space}</foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="manageablePredicate">
+        <choose>
+            <when test="globalManager">TRUE</when>
+            <when test="manageSpaceIds != null and manageSpaceIds.size() > 0">
+                s.id IN
+                <foreach item="space" collection="manageSpaceIds" open="(" separator="," close=")">#{space}</foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+    </sql>
+
+    <!--
+      可见 = 有 view 或有 manage。已归档空间已被 PermissionMapper 从读权限位的
+      结果中剔除，因此它们只会通过 manage 分支出现，呈现为
+      viewable=false / manageable=true，正是"退出读取但仍可管理"。
+    -->
+    <sql id="qualifiedPredicate">
+        (
+        <include refid="viewablePredicate"/>
+        OR<include refid="manageablePredicate"/>)
+    </sql>
+
+    <select id="listVisible" resultType="com.zhishiku.kb.app.space.model.SpaceRecord">
+        SELECT s.id,
+        s.code,
+        s.name,
+        s.description,
+        s.archived,
+        s.version,
+        CASE WHEN
+        <include refid="viewablePredicate"/>
+        THEN TRUE ELSE FALSE END AS viewable,
+        CASE WHEN
+        <include refid="manageablePredicate"/>
+        THEN TRUE ELSE FALSE END AS manageable
+        FROM kb_space s
+        WHERE
+        <include refid="qualifiedPredicate"/>
+        ORDER BY s.archived, s.name, s.id
+    </select>
+
+    <select id="findById" resultType="com.zhishiku.kb.app.space.model.SpaceRecord">
+        SELECT s.id,
+        s.code,
+        s.name,
+        s.description,
+        s.archived,
+        s.version,
+        CASE WHEN
+        <include refid="viewablePredicate"/>
+        THEN TRUE ELSE FALSE END AS viewable,
+        CASE WHEN
+        <include refid="manageablePredicate"/>
+        THEN TRUE ELSE FALSE END AS manageable
+        FROM kb_space s
+        WHERE s.id = #{spaceId}
+        AND
+        <include refid="qualifiedPredicate"/>
+    </select>
+
+    <update id="updateMetadata">
+        UPDATE kb_space
+        SET name = #{name},
+        description = #{description},
+        updated_at = now(),
+        version = version + 1
+        WHERE id = #{spaceId} AND version = #{version}
+    </update>
+
+    <delete id="revokeAcl">
+        DELETE FROM kb_space_acl
+        WHERE space_id = #{spaceId}
+        AND principal_type = #{principalType}
+        AND principal_id = #{principalId}
+        AND permission = #{permission}
+    </delete>
+
+    <select id="listAcl" resultType="com.zhishiku.kb.app.space.model.SpaceAclRecord">
+        SELECT a.id,
+        a.space_id,
+        a.principal_type,
+        a.principal_id,
+        a.permission,
+        a.principal_key,
+        CASE a.principal_type
+        WHEN 1 THEN (SELECT u.display_name FROM sys_user u WHERE u.id = a.principal_id)
+        WHEN 2 THEN (SELECT r.name FROM sys_role r WHERE r.id = a.principal_id)
+        WHEN 3 THEN (SELECT d.name FROM sys_dept d WHERE d.id = a.principal_id)
+        END AS principal_name
+        FROM kb_space_acl a
+        WHERE a.space_id = #{spaceId}
+        ORDER BY a.principal_type, a.principal_id, a.permission
+    </select>
+
+    <!--
+      把授权主体展开成有效用户 ID。部门按物化路径向下生效（子树全部命中），
+      角色取其全部成员。这与 PermissionMapper.findDeptChainIds 的方向相反：
+      那里是"我的祖先"，这里是"我的后代"。
+    -->
+    <select id="expandPrincipalUsers" resultType="long">
+        SELECT DISTINCT u.id
+        FROM sys_user u
+        LEFT JOIN sys_dept d ON d.id = u.dept_id
+        WHERE u.enabled = true
+        AND EXISTS (
+        SELECT 1
+        FROM kb_space_acl a
+        WHERE a.space_id = #{spaceId}
+        AND a.principal_key IN
+        <foreach item="k" collection="principalKeys" open="(" separator="," close=")">#{k}</foreach>
+        AND (
+        (a.principal_type = 1 AND a.principal_id = u.id)
+        OR (a.principal_type = 2 AND EXISTS (
+        SELECT 1 FROM sys_user_role ur
+        WHERE ur.user_id = u.id AND ur.role_id = a.principal_id))
+        OR (a.principal_type = 3 AND d.path LIKE '%/' || a.principal_id || '/%')
+        )
+        )
+    </select>
+
+    <select id="userIdsForPrincipal" resultType="long">
+        <choose>
+            <when test="principalType == 1">
+                SELECT u.id FROM sys_user u WHERE u.id = #{principalId} AND u.enabled = true
+            </when>
+            <when test="principalType == 2">
+                SELECT u.id FROM sys_user u
+                JOIN sys_user_role ur ON ur.user_id = u.id
+                WHERE ur.role_id = #{principalId} AND u.enabled = true
+            </when>
+            <otherwise>
+                SELECT u.id FROM sys_user u
+                JOIN sys_dept d ON d.id = u.dept_id
+                WHERE u.enabled = true
+                AND d.path LIKE (SELECT path FROM sys_dept WHERE id = #{principalId}) || '%'
+            </otherwise>
+        </choose>
+    </select>
+
+</mapper>

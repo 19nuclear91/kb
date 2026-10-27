@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.zhishiku</groupId>
+        <artifactId>kb-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>kb-common</artifactId>
+    <name>公共模块</name>
+    <description>统一响应、异常处理、共享模型（含权限主体原语）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-annotations-jakarta</artifactId>
+        </dependency>
+
+        <!-- 测试作用域不进入部署单元，不违反上面的“无 Spring 运行时依赖”约束。 -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!--
+      ============================================================
+      本模块保持无 Spring 运行时依赖：只放纯 JDK 类型、Lombok 编译期注解
+      和 API 文档注解。
+
+      原先这里声明了 spring-boot-starter-web，是个实际造成故障的错误：
+      kb-ai 依赖 kb-common，于是 Tomcat 被传递进 kb-ai 的类路径，
+      Spring Boot 检测到 servlet 栈存在就把 kb-ai 判定为 SERVLET 应用，
+      启动日志里赫然是 "Starting Servlet engine: Apache Tomcat"——
+      kb-ai 选 WebFlux 的全部理由（长连接不占容器线程）就这么被悄悄抵消了。
+      接口表面上还能用，所以这种问题不跑起来看日志是发现不了的。
+
+      公共模块被所有部署单元依赖，它引入的任何东西都会渗进每个单元。
+      API 注解是例外：统一响应模型被所有 HTTP 服务共享，保留注解依赖
+      可以让各服务生成一致的 OpenAPI schema，但不引入 Spring MVC/WebFlux。
+      ============================================================
+    -->
+</project>

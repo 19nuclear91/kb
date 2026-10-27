@@ -1,0 +1,105 @@
+server:
+  port: 8080
+
+spring:
+  profiles:
+    default: prod
+  application:
+    name: kb-gateway
+
+  data:
+    redis:
+      host: ${KB_REDIS_HOST:}
+      port: ${KB_REDIS_PORT:6379}
+      database: ${KB_REDIS_DATABASE:1}
+      password: ${KB_REDIS_PASSWORD:}
+      timeout: ${KB_REDIS_TIMEOUT:2s}
+
+  cloud:
+    gateway:
+      # ============================================================
+      # 业务接口与 AI 流式接口分开路由。
+      #
+      # 这不是洁癖，是《架构决策记录.md》第 8 章标记的已知坑位。
+      # 需要说清楚的是：Spring Cloud Gateway 基于 WebFlux，
+      # 本身是逐块转发、默认不聚合响应体，所以"网关天生会攒包"这个说法
+      # 并不准确。真正会把 SSE 攒成一坨的是下面三件事：
+      #
+      #   1) response-timeout —— 全局响应超时会在流还没结束时直接掐断长连接，
+      #      表现常被误判为"没有流式输出"。故 AI 路由单独设为 -1。
+      #   2) 任何会聚合响应体的过滤器（ModifyResponseBody 一类）—— AI 路由上禁止挂。
+      #   3) 网关前面的 Nginx / 云厂商 LB —— 默认 proxy_buffering on 会真的缓冲。
+      #      下面用 X-Accel-Buffering: no 告诉 Nginx 别缓冲；换其他 LB 需另找对应开关。
+      #
+      # 【P0 必须实测】curl -N 观察首字节延迟，确认不是等整段生成完才吐出来。
+      # 直连 kb-ai 与经过网关各测一次，两者首字节延迟应接近。
+      # 光看配置不算验证——这条链路上每一跳都有独立的缓冲开关。
+      # ============================================================
+      routes:
+        - id: kb-app
+          uri: ${KB_APP_BASE_URL:}
+          predicates:
+            # /api/admin/** 覆盖身份、部门、空间、embedding 与授权管理接口。
+            # 网关只做转发，鉴权仍在 kb-app：这些接口逐一校验全局管理员
+            # 或目标空间的 manage 资格，把规则复制到网关会变成两份真相。
+            - Path=/api/search/**,/api/documents/**,/api/files/**,/api/auth/**,/api/admin/**,/api/conversations/**,/api/reviews/**,/api/notifications/**
+          metadata:
+            response-timeout: 10000
+            connect-timeout: 2000
+
+        - id: kb-ai-stream
+          uri: ${KB_AI_BASE_URL:}
+          predicates:
+            - Path=/api/ai/**
+          filters:
+            # 告诉上游 Nginx 不要缓冲此响应。网关自己不需要这个头，
+            # 但生产环境网关前面通常还有一层，这个头是给那一层看的。
+            - AddResponseHeader=X-Accel-Buffering, no
+          metadata:
+            # 流式接口不能套用业务接口的短超时。
+            # -1 表示不限制响应超时，改由 AI 服务自身的超时与心跳控制生命周期。
+            response-timeout: -1
+            connect-timeout: 2000
+
+      httpclient:
+        # 全局默认超时。上面各路由的 metadata 会覆盖它。
+        connect-timeout: 2000
+        response-timeout: 10s
+
+      # 全局 CORS。生产必须收紧 allowedOriginPatterns，不要留通配。
+      globalcors:
+        add-to-simple-url-handler-mapping: true
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: ${KB_CORS_ALLOWED_ORIGINS:}
+            allowedMethods: [ GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS ]
+            allowedHeaders: "*"
+            exposedHeaders: [ X-Conversation-Id, X-Turn-Id ]
+            allowCredentials: true
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    # 客户端自带身份头会在此打 WARN，生产环境应接入告警
+    com.zhishiku.kb.gateway.filter: INFO
+
+sa-token:
+  token-name: satoken
+  timeout: ${KB_SA_TOKEN_TIMEOUT:2592000}
+  active-timeout: ${KB_SA_TOKEN_ACTIVE_TIMEOUT:-1}
+  is-concurrent: true
+  is-share: true
+  token-style: uuid
+  is-log: ${KB_SA_TOKEN_LOG:false}
+
+# ============================================================
+# 尚未接入的部分，不要误以为已完成：
+#
+# - Nacos 配置中心与注册中心：v1 架构图里有，本骨架用固定 uri 直连，
+#   待确认公司是否已有 Nacos / Consul / K8s Service 再决定。
+#   接入后 uri 改为 lb://kb-app 形式。
+# - 认证鉴权：已接入 Sa-Token，会话通过 Redis 与 kb-app、kb-ai 共享。
+#   生产接入 SSO/OIDC 后，由认证回调在 kb-app 建立 Sa-Token 会话，
+#   并把 kb-app 的 kb.dev-auth.enabled 置为 false。
+# - 部门 token 配额与超预算拒绝由 kb-ai 实现，网关不重复维护账本。
+# ============================================================

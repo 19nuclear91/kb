@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  评论正文、单层结构与幂等墓碑。授权不在本文件判定：调用方先经 document 模块取得当前版本资格，
+  再按完整 documentId/versionId 读取。不投影文档标题、文件名或存储键，作者标签另行批量解析。
+-->
+<mapper namespace="com.zhishiku.kb.app.comment.mapper.DocumentCommentMapper">
+    <resultMap id="commentRow" type="com.zhishiku.kb.app.comment.model.CommentRow">
+        <constructor>
+            <idArg column="id" javaType="_long"/>
+            <arg column="comment_id" javaType="java.util.UUID"/>
+            <arg column="doc_id" javaType="_long"/>
+            <arg column="version_id" javaType="_long"/>
+            <arg column="root_id" javaType="java.lang.Long"/>
+            <arg column="root_comment_id" javaType="java.util.UUID"/>
+            <arg column="author_user_id" javaType="_long"/>
+            <arg column="body" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="deleted_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="row">
+        SELECT c.id, c.comment_id, c.doc_id, c.version_id, c.root_id, r.comment_id AS root_comment_id,
+            c.author_user_id, c.body, c.created_at, c.deleted_at
+        FROM kb_document_comment c
+        LEFT JOIN kb_document_comment r ON r.id = c.root_id AND r.doc_id = c.doc_id AND r.version_id = c.version_id
+        WHERE c.doc_id = #{documentId} AND c.version_id = #{versionId}
+    </sql>
+
+    <!--
+      回复通知的“回复仍可读”条件：事件评论是同一固定版本中未删除的回复。根评论删除不影响已存在回复。
+      别名：e 协作事件（doc_id、version_id、comment_id）。通知模块以 include 引用，不调用本模块 Java。
+    -->
+    <sql id="liveReply">
+        EXISTS (SELECT 1 FROM kb_document_comment reply WHERE reply.comment_id = e.comment_id
+            AND reply.doc_id = e.doc_id AND reply.version_id = e.version_id
+            AND reply.root_id IS NOT NULL AND reply.deleted_at IS NULL)
+    </sql>
+
+    <select id="find" resultMap="commentRow" useCache="false" timeout="5">
+        <include refid="row"/> AND c.comment_id = #{commentId}
+    </select>
+
+    <select id="lockRoot" resultMap="commentRow" useCache="false" timeout="5">
+        <include refid="row"/> AND c.comment_id = #{commentId} FOR SHARE OF c
+    </select>
+
+    <select id="roots" resultMap="commentRow" useCache="false" timeout="5">
+        <include refid="row"/> AND c.root_id IS NULL
+        <if test="beforeId != null">AND c.id &lt; #{beforeId}</if>
+        ORDER BY c.id DESC LIMIT #{limit}
+    </select>
+
+    <select id="replies" resultMap="commentRow" useCache="false" timeout="5">
+        <include refid="row"/> AND c.root_id = #{rootId}
+        <if test="afterId != null">AND c.id &gt; #{afterId}</if>
+        ORDER BY c.id ASC LIMIT #{limit}
+    </select>
+
+    <select id="insert" resultType="long" affectData="true" flushCache="true" useCache="false" timeout="5">
+        INSERT INTO kb_document_comment (comment_id, doc_id, version_id, root_id, author_user_id, body, created_at)
+        VALUES (#{commentId}, #{documentId}, #{versionId}, #{rootId}, #{authorUserId}, #{body}, #{createdAt})
+        RETURNING id
+    </select>
+
+    <resultMap id="ownRow" type="com.zhishiku.kb.app.comment.model.OwnComment">
+        <constructor>
+            <idArg column="id" javaType="_long"/>
+            <arg column="comment_id" javaType="java.util.UUID"/>
+            <arg column="doc_id" javaType="_long"/>
+            <arg column="version_id" javaType="_long"/>
+            <arg column="root_comment_id" javaType="java.util.UUID"/>
+            <arg column="deleted" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 不读取正文；作者条件写在查询中，使非本人与不存在目标无法区分。 -->
+    <select id="lockOwn" resultMap="ownRow" useCache="false" timeout="5">
+        SELECT c.id, c.comment_id, c.doc_id, c.version_id, r.comment_id AS root_comment_id,
+            (c.deleted_at IS NOT NULL) AS deleted
+        FROM kb_document_comment c
+        LEFT JOIN kb_document_comment r ON r.id = c.root_id AND r.doc_id = c.doc_id AND r.version_id = c.version_id
+        WHERE c.doc_id = #{documentId} AND c.version_id = #{versionId} AND c.comment_id = #{commentId}
+            AND c.author_user_id = #{authorUserId}
+        FOR UPDATE OF c
+    </select>
+
+    <!-- 只清除一次；删除时间不早于创建时间，避免多实例时钟偏差触发约束。 -->
+    <update id="erase" timeout="5">
+        UPDATE kb_document_comment SET body = NULL,
+            deleted_at = GREATEST(CAST(#{deletedAt} AS timestamptz), created_at)
+        WHERE id = #{id} AND deleted_at IS NULL
+    </update>
+
+    <insert id="claim" timeout="5">
+        INSERT INTO kb_comment_command (operation_domain, request_id, actor_user_id, doc_id, version_id,
+            parent_comment_id, body_digest)
+        VALUES ('COMMENT_CREATE', #{requestId}, #{actorUserId}, #{documentId}, #{versionId}, #{parentId}, #{bodyDigest})
+        ON CONFLICT (operation_domain, request_id) DO NOTHING
+    </insert>
+
+    <resultMap id="commandRow" type="com.zhishiku.kb.app.comment.model.CommentCommandRow">
+        <constructor>
+            <arg column="operation_domain" javaType="java.lang.String"/>
+            <arg column="request_id" javaType="java.lang.String"/>
+            <arg column="actor_user_id" javaType="_long"/>
+            <arg column="doc_id" javaType="_long"/>
+            <arg column="version_id" javaType="_long"/>
+            <arg column="parent_comment_id" javaType="java.util.UUID"/>
+            <arg column="body_digest" javaType="java.lang.String"/>
+            <arg column="comment_id" javaType="java.util.UUID"/>
+        </constructor>
+    </resultMap>
+
+    <select id="command" resultMap="commandRow" useCache="false" timeout="5">
+        SELECT operation_domain, request_id, actor_user_id, doc_id, version_id, parent_comment_id, body_digest, comment_id
+        FROM kb_comment_command WHERE operation_domain = 'COMMENT_CREATE' AND request_id = #{requestId}
+    </select>
+
+    <update id="complete" timeout="5">
+        UPDATE kb_comment_command SET comment_id = #{commentId}
+        WHERE operation_domain = 'COMMENT_CREATE' AND request_id = #{command.requestId}
+            AND actor_user_id = #{command.actorUserId} AND body_digest = #{command.bodyDigest} AND comment_id IS NULL
+    </update>
+</mapper>

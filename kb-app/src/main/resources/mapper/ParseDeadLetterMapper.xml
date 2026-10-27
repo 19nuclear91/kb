@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.parse.mapper.ParseDeadLetterMapper">
+
+    <sql id="filters">
+        <if test="status != null and status != ''">AND dl.status = #{status}</if>
+        <if test="failureClass != null and failureClass != ''">AND dl.failure_class = #{failureClass}</if>
+        <if test="from != null">AND dl.entered_at &gt;= #{from}</if>
+        <if test="to != null">AND dl.entered_at &lt; #{to}</if>
+    </sql>
+
+    <select id="list" resultType="com.zhishiku.kb.app.parse.model.ParseDeadLetterView">
+        SELECT dl.id,
+        dl.task_id,
+        dl.version_id,
+        dl.execution_generation,
+        dl.attempts,
+        dl.failure_class,
+        dl.failure_code,
+        dl.error_summary,
+        dl.status,
+        dl.entered_at,
+        dl.resolved_at
+        FROM kb_parse_task_dead_letter dl
+        WHERE 1 = 1
+        <include refid="filters"/>
+        ORDER BY dl.entered_at DESC, dl.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT count(*)
+        FROM kb_parse_task_dead_letter dl
+        WHERE 1 = 1
+        <include refid="filters"/>
+    </select>
+
+    <select id="findByReplayRequest" resultType="com.zhishiku.kb.app.parse.model.ParseDeadLetterView">
+        SELECT dl.id, dl.task_id, dl.version_id, dl.execution_generation, dl.attempts,
+        dl.failure_class, dl.failure_code, dl.error_summary, dl.status,
+        dl.entered_at, dl.resolved_at
+        FROM kb_parse_task_dead_letter dl
+        WHERE dl.replay_request_id = #{requestId}
+    </select>
+
+    <select id="findReplayBinding" resultType="com.zhishiku.kb.app.parse.model.ParseReplayBinding"
+            useCache="false" flushCache="true">
+        SELECT id AS dead_letter_id, resolved_by AS actor_user_id, resolution_reason AS reason
+        FROM kb_parse_task_dead_letter
+        WHERE replay_request_id = #{requestId}
+    </select>
+
+    <select id="replay" resultType="int" affectData="true" useCache="false" flushCache="true">
+        WITH locked_task AS MATERIALIZED (
+        SELECT t.id, t.version_id, t.execution_generation
+        FROM kb_parse_task t
+        JOIN kb_parse_task_dead_letter dl ON dl.task_id = t.id
+        WHERE dl.id = #{deadLetterId} AND dl.status = 'OPEN'
+        AND t.status = 'failed' AND t.execution_generation = dl.execution_generation
+        AND EXISTS (SELECT 1 FROM kb_document_version v JOIN kb_document d ON d.id = v.doc_id
+            WHERE v.id = t.version_id AND v.index_status &lt;&gt; 'indexed' AND v.publication_evidence = 'NONE'
+                AND d.status NOT IN ('deleted', 'archived'))
+        FOR UPDATE OF t
+        ), target AS (
+        SELECT dl.id, dl.task_id, dl.version_id
+        FROM kb_parse_task_dead_letter dl
+        JOIN locked_task t ON t.id = dl.task_id AND t.execution_generation = dl.execution_generation
+        WHERE dl.id = #{deadLetterId} AND dl.status = 'OPEN'
+        FOR UPDATE OF dl
+        ), closed AS (
+        UPDATE kb_parse_task_dead_letter dl
+        SET status = 'REPLAYED',
+        resolved_at = now(),
+        resolved_by = #{actorUserId},
+        replay_request_id = #{requestId},
+        resolution_reason = #{reason}
+        FROM target t
+        WHERE dl.id = t.id
+        RETURNING dl.task_id, dl.version_id
+        ), next_cycle AS (
+        UPDATE kb_parse_task t
+        SET status = 'pending',
+        attempts = 0,
+        next_attempt_at = now(),
+        lease_until = NULL,
+        lease_owner = NULL,
+        failure_class = NULL,
+        failure_code = NULL,
+        failure_summary = NULL,
+        last_failure_at = NULL,
+        last_error = NULL,
+        execution_generation = t.execution_generation + 1,
+        claim_token = t.claim_token + 1,
+        embedding_profile_id = NULL,
+        embedding_epoch = NULL,
+        updated_at = now()
+        FROM closed c
+        WHERE t.id = c.task_id
+        RETURNING t.id, t.version_id, t.execution_generation, t.attempts
+        ), versions AS (
+        UPDATE kb_document_version SET index_status = 'pending', index_error = NULL
+        WHERE id IN (SELECT version_id FROM next_cycle) AND index_status &lt;&gt; 'indexed'
+        ), event AS (
+        INSERT INTO kb_parse_task_event
+        (task_id, version_id, execution_generation, attempt_no, event_type,
+        actor_user_id, error_summary, request_id, dedupe_key)
+        SELECT id, version_id, execution_generation, attempts, 'REPLAYED',
+        #{actorUserId}, #{reason}, #{requestId},
+        'admin-replay:' || #{requestId}
+        FROM next_cycle
+        ON CONFLICT (dedupe_key) DO NOTHING
+        )
+        SELECT count(*) FROM next_cycle
+    </select>
+</mapper>

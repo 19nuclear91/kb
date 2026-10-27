@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.zhishiku.kb.app.search.mapper.SearchMapper">
+
+    <!--
+      ================= 权限谓词 =================
+      整个系统最关键的一段 SQL。被注入到每一路召回中，不允许任何一路遗漏。
+
+      语义（对应《架构决策记录.md》4.3）：
+        可见 = 空间继承（粗粒度主路径） OR 文档级例外（扩权）
+
+      注意两个安全细节：
+        1. spaceIds 为空时走 FALSE 分支，而不是省略条件。
+           省略条件会让 IN () 语法报错，或更糟——被改写成"不过滤"。
+        2. principalKeys 为空时整个 EXISTS 子句不出现，
+           此时谓词退化为 (FALSE)，即什么都看不到。这是正确的默认。
+
+      这里刻意用 EXISTS 而不是 JOIN kb_document_acl：
+      一篇文档可能有多条 ACL 命中（既授权给用户又授权给其部门），
+      JOIN 会产生重复候选行，污染 RRF 的名次计算。
+    -->
+    <sql id="aclPredicate">
+        EXISTS (SELECT 1 FROM kb_space s WHERE s.id = d.space_id AND s.archived = false)
+        AND
+        (
+        <choose>
+            <when test="spaceIds != null and spaceIds.size() > 0">
+                c.space_id IN
+                <foreach item="s" collection="spaceIds" open="(" separator="," close=")">#{s}</foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+        <if test="principalKeys != null and principalKeys.size() > 0">
+            OR EXISTS (
+            SELECT 1
+            FROM kb_document_acl a
+            WHERE a.doc_id = c.doc_id
+            AND a.permission = 'view'
+            AND a.principal_key IN
+            <foreach item="k" collection="principalKeys" open="(" separator="," close=")">#{k}</foreach>
+            )
+        </if>
+        )
+    </sql>
+
+    <resultMap id="chunkHitMap" type="com.zhishiku.kb.app.search.model.ChunkHit">
+        <constructor>
+            <idArg column="chunk_id" javaType="java.lang.Long"/>
+            <arg column="doc_id" javaType="java.lang.Long"/>
+            <arg column="version_id" javaType="java.lang.Long"/>
+            <arg column="version_no" javaType="java.lang.Integer"/>
+            <arg column="doc_title" javaType="java.lang.String"/>
+            <arg column="space_id" javaType="java.lang.Long"/>
+            <arg column="security_level" javaType="java.lang.Short"/>
+            <arg column="chunk_idx" javaType="java.lang.Integer"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="page_no" javaType="java.lang.Integer"/>
+            <arg column="heading_path" javaType="java.lang.String"/>
+            <arg column="structure_type" javaType="java.lang.String"/>
+            <arg column="source_line_start" javaType="java.lang.Integer"/>
+            <arg column="source_line_end" javaType="java.lang.Integer"/>
+            <arg column="source_char_start" javaType="java.lang.Integer"/>
+            <arg column="source_char_end" javaType="java.lang.Integer"/>
+            <arg column="source_locator" javaType="java.lang.String"/>
+            <arg column="score" javaType="java.lang.Double"/>
+        </constructor>
+    </resultMap>
+
+    <!--
+      ================= 混合检索 =================
+      RRF（Reciprocal Rank Fusion）只用名次、不用原始分值：
+      BM25 分值与向量距离量纲不同，不能直接相加。公式 1/(k + rank)，k=60 为通用经验值。
+
+      ParadeDB 语法已核实（0.25.0+）：
+        · pdb.score(<key_field>) 取 BM25 分（不是 paradedb.score）
+        · ||| 为"任一词命中"的匹配算子
+        · 索引访问方法 USING paradedb，bm25 为兼容别名
+      部署前用 db/verify_paradedb.sql 对实际安装版本复验。
+    -->
+    <select id="hybridSearch" resultMap="chunkHitMap">
+        WITH bm25 AS (
+        SELECT c.id,
+        ROW_NUMBER() OVER (ORDER BY pdb.score(c.id) DESC) AS rk
+        FROM kb_doc_chunk c
+        JOIN kb_document d ON d.id = c.doc_id
+        WHERE c.content ||| #{queryText}
+        AND d.status = 'published'
+        AND d.current_version_id = c.version_id
+        <![CDATA[ AND c.security_level <= #{clearance} ]]>
+        AND
+        <include refid="aclPredicate"/>
+        ORDER BY pdb.score(c.id) DESC
+        LIMIT #{candidates}
+        )
+        <if test="queryVector != null and profileId != null">
+            , vec AS (
+            SELECT c.id,
+            <![CDATA[ ROW_NUMBER() OVER (ORDER BY c.embedding <=> #{queryVector}::vector) AS rk ]]>
+            FROM kb_doc_chunk c
+            JOIN kb_document d ON d.id = c.doc_id
+            WHERE c.embedding IS NOT NULL
+            AND c.embedding_profile_id = #{profileId}
+            AND d.status = 'published'
+            AND d.current_version_id = c.version_id
+            <![CDATA[ AND c.security_level <= #{clearance} ]]>
+            AND
+            <include refid="aclPredicate"/>
+            <![CDATA[ ORDER BY c.embedding <=> #{queryVector}::vector ]]>
+            LIMIT #{candidates}
+            )
+        </if>
+        , fused AS (
+        SELECT id, SUM(1.0 / (60 + rk)) AS rrf
+        FROM (
+        SELECT id, rk FROM bm25
+        <if test="queryVector != null and profileId != null">
+            UNION ALL
+            SELECT id, rk FROM vec
+        </if>
+        ) u
+        GROUP BY id
+        )
+        SELECT c.id AS chunk_id,
+        c.doc_id AS doc_id,
+        c.version_id AS version_id,
+        v.version_no AS version_no,
+        d.title AS doc_title,
+        c.space_id AS space_id,
+        c.security_level AS security_level,
+        c.chunk_idx AS chunk_idx,
+        c.content AS content,
+        c.page_no AS page_no,
+        c.heading_path AS heading_path,
+        c.structure_type AS structure_type,
+        c.source_line_start AS source_line_start,
+        c.source_line_end AS source_line_end,
+        c.source_char_start AS source_char_start,
+        c.source_char_end AS source_char_end,
+        c.source_locator AS source_locator,
+        f.rrf AS score
+        FROM fused f
+        JOIN kb_doc_chunk c ON c.id = f.id
+        JOIN kb_document d ON d.id = c.doc_id
+        JOIN kb_document_version v ON v.id = c.version_id AND v.doc_id = c.doc_id
+        ORDER BY f.rrf DESC
+        LIMIT #{candidates}
+    </select>
+
+</mapper>

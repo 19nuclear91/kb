@@ -1,0 +1,42 @@
+import { useState, type ReactNode } from 'react';
+import { Alert, Button } from 'antd';
+import { positiveId } from '../api';
+import { useSession } from '../SessionProvider';
+import type { WriteIntent } from './api';
+import { useAdminWrite } from './hooks';
+import { AdminModal, WriteNotice, settle } from './ui';
+
+export function validTarget(value: string): boolean { try { positiveId(value); return true; } catch { return false; } }
+const receipts = new WeakMap<object, { epoch: number; values: Map<string, string> }>();
+/** 成功回执在同一身份下的资格重核期间保留，身份切换立即清空。 */
+export function useResourceReceipt(target: string): [string, (text: string) => void] {
+  const { session, state } = useSession();
+  let record = receipts.get(session);
+  if (!record || record.epoch !== state.epoch) { record = { epoch: state.epoch, values: new Map() }; receipts.set(session, record); }
+  const store = record.values, key = `${state.epoch}:${target}`;
+  const [view, setView] = useState({ key, text: store.get(target) ?? '' });
+  return [view.key === key ? view.text : store.get(target) ?? '', text => { store.set(target, text); setView({ key, text }); }];
+}
+/** 弹窗只保存本次意图；发送、重试及身份隔离复用已有写入状态。 */
+export function ResourceWriteDialog<T>({ title, scope, children, build, onDone, onRefresh, onClose, disabled = false }: {
+  title: string; scope: string; children: ReactNode; build: (data: FormData) => WriteIntent;
+  onDone: (result: T) => void; onRefresh: () => void; onClose: () => void; disabled?: boolean;
+}) {
+  const write = useAdminWrite(scope);
+  const receive = (outcome: Awaited<ReturnType<typeof write.submit<T>>>) => settle(outcome, onDone, onRefresh);
+  return <AdminModal title={title} write={write} onClose={onClose}>
+    <WriteNotice write={write} onRetry={() => { if (!disabled) void write.retry<T>().then(receive); }} onVerify={onRefresh} />
+    <form onSubmit={event => { event.preventDefault(); if (!disabled) { const data = new FormData(event.currentTarget); void write.submit<T>(() => build(data)).then(receive); } }}>
+      <fieldset disabled={write.busy}>{children}<div style={{ marginTop: 16 }}><Button type="primary" htmlType="submit" disabled={disabled || write.pending}>确认提交</Button></div></fieldset>
+    </form>
+  </AdminModal>;
+}
+export const fieldValue = (data: FormData, name: string) => String(data.get(name) ?? '');
+export function ResourceStatus({ loading, error, retry }: { loading: boolean; error?: string; retry: () => void }) {
+  return error ? <Alert type="warning" title={error} action={<Button onClick={retry}>重新读取</Button>} /> : loading ? <p role="status">正在读取…</p> : null;
+}
+export function TextField({ name, label, value = '', max, required = true, multiline = false }: { name: string; label: string; value?: string; max: number; required?: boolean; multiline?: boolean }) {
+  return <label style={{ display: 'block', marginBottom: 12 }}>{label}{multiline
+    ? <textarea className="ant-input" name={name} defaultValue={value} maxLength={max} required={required} />
+    : <input className="ant-input" name={name} defaultValue={value} maxLength={max} required={required} />}</label>;
+}

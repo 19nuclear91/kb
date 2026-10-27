@@ -1,0 +1,7 @@
+spring:
+  data:
+    redis:
+      host: ${KB_REDIS_HOST:localhost}
+kb:
+  ai:
+    app-base-url: ${KB_APP_BASE_URL:http://localhost:8081}

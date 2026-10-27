@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 只读协作事实表；写入仅限通知 projection 与本人通知，单批短事务，不调用 HTTP。 -->
+<mapper namespace="com.zhishiku.kb.app.notification.mapper.NotificationDerivationMapper">
+    <!-- 反连接发现：较小时间或 ID 晚提交的事件仍满足 NOT EXISTS，可在后续轮次被发现。 -->
+    <insert id="discover" timeout="10">
+        INSERT INTO kb_notification_projection (event_id)
+        SELECT e.event_id FROM kb_collaboration_event e
+        WHERE NOT EXISTS (SELECT 1 FROM kb_notification_projection p WHERE p.event_id = e.event_id)
+        ORDER BY e.occurred_at, e.event_id
+        LIMIT #{limit}
+        ON CONFLICT (event_id) DO NOTHING
+    </insert>
+
+    <resultMap id="claimed" type="com.zhishiku.kb.app.notification.model.ClaimedEvent">
+        <constructor>
+            <idArg column="event_id" javaType="java.util.UUID"/>
+            <arg column="kind" javaType="java.lang.String"/>
+            <arg column="claim_token" javaType="_long"/>
+            <arg column="recipient_cursor" javaType="_long"/>
+            <arg column="attempts" javaType="_int"/>
+            <arg column="takeover" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 租约判定使用数据库时钟；SKIP LOCKED 避免多实例重复持有同一工作。 -->
+    <select id="claim" resultMap="claimed" affectData="true" flushCache="true" useCache="false" timeout="10">
+        UPDATE kb_notification_projection p
+        SET lease_owner = #{owner}, lease_until = now() + make_interval(secs => #{leaseSeconds}),
+            claim_token = p.claim_token + 1, status = 'PENDING', updated_at = now()
+        FROM (SELECT c.event_id, (c.lease_owner IS NOT NULL) AS takeover
+              FROM kb_notification_projection c
+              WHERE c.status &lt;&gt; 'DONE' AND c.next_attempt_at &lt;= now()
+                AND (c.lease_until IS NULL OR c.lease_until &lt; now())
+              ORDER BY c.next_attempt_at, c.event_id
+              LIMIT #{limit}
+              FOR UPDATE OF c SKIP LOCKED) candidate,
+             kb_collaboration_event e
+        WHERE p.event_id = candidate.event_id AND e.event_id = p.event_id
+        RETURNING p.event_id, e.kind, p.claim_token, p.recipient_cursor, p.attempts, candidate.takeover
+    </select>
+
+    <select id="recipients" resultType="long" useCache="false" timeout="10">
+        SELECT r.user_id FROM kb_collaboration_event_recipient r
+        JOIN kb_collaboration_event e ON e.event_id = r.event_id
+        WHERE r.event_id = #{eventId} AND r.user_id &gt; #{afterUserId}
+            AND (e.actor_user_id IS NULL OR r.user_id &lt;&gt; e.actor_user_id)
+        ORDER BY r.user_id
+        LIMIT #{limit}
+    </select>
+
+    <update id="advance" timeout="10">
+        UPDATE kb_notification_projection
+        SET recipient_cursor = #{cursor}, lease_until = now() + make_interval(secs => #{leaseSeconds}), updated_at = now()
+        WHERE event_id = #{eventId} AND lease_owner = #{owner} AND claim_token = #{token}
+            AND status = 'PENDING' AND recipient_cursor &lt; #{cursor}
+    </update>
+
+    <!-- 类型取自源事件 kind，并由表约束拒绝不产生提醒的种类；冲突不刷新 created_at/read_at。 -->
+    <insert id="deliver" timeout="10">
+        INSERT INTO kb_user_notification (notification_id, event_id, recipient_user_id, type)
+        SELECT gen_random_uuid(), r.event_id, r.user_id, e.kind
+        FROM kb_collaboration_event_recipient r JOIN kb_collaboration_event e ON e.event_id = r.event_id
+        WHERE r.event_id = #{eventId} AND e.kind = #{type} AND
+        <choose>
+            <when test="recipients != null and recipients.size() > 0">
+                r.user_id IN <foreach collection="recipients" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+        ORDER BY r.user_id
+        ON CONFLICT (event_id, recipient_user_id) DO NOTHING
+    </insert>
+
+    <update id="complete" timeout="10">
+        UPDATE kb_notification_projection
+        SET status = 'DONE', lease_owner = NULL, lease_until = NULL, error_class = NULL,
+            completed_at = now(), updated_at = now()
+        WHERE event_id = #{eventId} AND lease_owner = #{owner} AND claim_token = #{token} AND status = 'PENDING'
+    </update>
+
+    <update id="release" timeout="10">
+        UPDATE kb_notification_projection
+        SET lease_owner = NULL, lease_until = NULL, next_attempt_at = now(), updated_at = now()
+        WHERE event_id = #{eventId} AND lease_owner = #{owner} AND claim_token = #{token} AND status = 'PENDING'
+    </update>
+
+    <update id="postpone" timeout="10">
+        UPDATE kb_notification_projection
+        SET status = #{status}, error_class = #{errorClass}, attempts = attempts + 1,
+            lease_owner = NULL, lease_until = NULL,
+            next_attempt_at = now() + make_interval(secs => #{delaySeconds}), updated_at = now()
+        WHERE event_id = #{eventId} AND lease_owner = #{owner} AND claim_token = #{token} AND status = 'PENDING'
+    </update>
+
+    <resultMap id="backlog" type="com.zhishiku.kb.app.notification.model.NotificationBacklog">
+        <constructor>
+            <arg column="pending" javaType="_long"/>
+            <arg column="waiting_source" javaType="_long"/>
+            <arg column="oldest_age_seconds" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <select id="backlog" resultMap="backlog" useCache="false" timeout="10">
+        SELECT count(*) FILTER (WHERE p.status = 'PENDING') AS pending,
+               count(*) FILTER (WHERE p.status = 'WAITING_SOURCE') AS waiting_source,
+               COALESCE(floor(extract(epoch FROM now() - min(e.occurred_at)))::bigint, 0) AS oldest_age_seconds
+        FROM kb_notification_projection p JOIN kb_collaboration_event e ON e.event_id = p.event_id
+        WHERE p.status &lt;&gt; 'DONE'
+    </select>
+</mapper>

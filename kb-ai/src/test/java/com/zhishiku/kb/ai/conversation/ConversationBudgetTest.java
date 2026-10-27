@@ -1,0 +1,114 @@
+package com.zhishiku.kb.ai.conversation;
+
+import com.zhishiku.kb.ai.chat.RetrievalClient;
+import com.zhishiku.kb.ai.conversation.config.ConversationProperties;
+import com.zhishiku.kb.common.conversation.SourceKey;
+import org.junit.jupiter.api.Test;
+import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Flux;
+
+import java.util.List;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class ConversationBudgetTest {
+    final ConversationProperties properties = new ConversationProperties();
+    final ConversationBudget budget = new ConversationBudget(properties);
+
+    MultiTurnModel model(long window) {
+        return new MultiTurnModel() {
+            public boolean supportsTokenUpperBound() {
+                return true;
+            }
+
+            public long contextWindowTokens() {
+                return window;
+            }
+
+            public long inputTokenUpperBound(Input input) {
+                // 仅确定性离线适配器；生产估算由模型供应商契约负责。
+                return input.messages().stream().mapToLong(m -> m.text().codePointCount(0, m.text().length())).sum()
+                        + input.materials().stream().mapToLong(c -> c.content().codePointCount(0,
+                        c.content().length())).sum() + 100;
+            }
+
+            public Flux<Event> generate(Input input) {
+                return Flux.empty();
+            }
+        };
+    }
+
+    HistoryTurn history(long seq, String q, String answer, SourceKey key) {
+        return new HistoryTurn(UUID.randomUUID(), seq, q, answer, List.of(key));
+    }
+
+    RetrievalClient.Citation citation(String text) {
+        return new RetrievalClient.Citation(10, "title", 1, 12, text, 11L, 1, 0, null, null, null, null, null, null,
+                null, false);
+    }
+
+    @Test
+    void preservesRolesOriginalQuestionAndTransitiveSourcesAndEvictsWholePairs() {
+        var old = history(1, "older", "a".repeat(10000), new SourceKey(1, 2));
+        var recent = history(2, "任务租约", "有效答案", new SourceKey(3, 4));
+        String question = "它过期后怎么办😀";
+        var plan = budget.select(model(12000), question, List.of(recent, old), List.of(citation("材料")));
+        assertThat(plan.history()).containsExactly(recent);
+        assertThat(plan.input().messages()).containsExactly(new MultiTurnModel.Message("user", "任务租约"),
+                new MultiTurnModel.Message("assistant", "有效答案"), new MultiTurnModel.Message("user", question));
+        assertThat(plan.input().maxOutputTokens()).isEqualTo(2048);
+        assertThat(budget.query(List.of(recent), question)).isEqualTo("任务租约\\n" + question);
+    }
+
+    @Test
+    void sourceLimitRemovesHistoryRatherThanDependenciesAndExcludesUnversioned() {
+        properties.setMaxSources(1);
+        var old = history(1, "q", "answer", new SourceKey(1, 2));
+        var unknown = new RetrievalClient.Citation(1, "t", null, 2, "legacy");
+        var plan = budget.select(model(12000), "q", List.of(old), List.of(citation("材料"), unknown));
+        assertThat(plan.history()).isEmpty();
+        assertThat(plan.input().materials()).hasSize(1);
+        assertThat(plan.input().materials().getFirst().versionId()).isEqualTo(11);
+    }
+
+    @Test
+    void truncatesUnicodeMaterialsButRejectsEssentialQuestionWithoutTruncation() {
+        var plan = budget.select(model(2200), "原问题", List.of(), List.of(citation("😀".repeat(1000))));
+        var material = plan.input().materials().getFirst();
+        assertThat(material.contextTruncated()).isTrue();
+        assertThat(material.content()).doesNotEndWith("\\uD83D");
+        assertThat(plan.input().messages().getLast().text()).isEqualTo("原问题");
+        assertThatThrownBy(() -> budget.select(model(2100), "问".repeat(8000), List.of(), List.of()))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode().value()).isEqualTo(400));
+        assertThat(budget.query(List.of(), "当前")).isEqualTo("当前");
+        assertThat(budget.query(List.of(history(1, "q".repeat(8000), "a", new SourceKey(1, 2))), "当前")).isEqualTo("当前");
+    }
+
+    @Test
+    void absentOrUnsupportedEstimatorRejectsInsteadOfGeneratingPlaceholder() {
+        assertThatThrownBy(() -> budget.ready(null)).isInstanceOfSatisfying(ResponseStatusException.class,
+                e -> assertThat(e.getStatusCode().value()).isEqualTo(503));
+        var unsupported = new MultiTurnModel() {
+            public boolean supportsTokenUpperBound() {
+                return false;
+            }
+
+            public long contextWindowTokens() {
+                return 12000;
+            }
+
+            public long inputTokenUpperBound(Input input) {
+                throw new AssertionError();
+            }
+
+            public Flux<Event> generate(Input input) {
+                throw new AssertionError();
+            }
+        };
+        assertThatThrownBy(() -> budget.ready(unsupported)).isInstanceOf(ResponseStatusException.class);
+    }
+}
+

@@ -1,0 +1,61 @@
+# ParadeDB + Redis + MinIO 本地开发编排
+#
+# 注意：当前这台机器上没有安装 Docker（已确认），此文件供部署环境使用。
+# 启动： docker compose up -d
+#
+# ParadeDB 镜像自带 pg_search 与 pgvector；
+# V1 迁移里的 CREATE EXTENSION pg_search CASCADE 会一并创建 pgvector。
+
+services:
+  postgres:
+    image: paradedb/paradedb:latest
+    container_name: kb-postgres
+    environment:
+      POSTGRES_USER: kb
+      POSTGRES_PASSWORD: kb_dev_pwd
+      POSTGRES_DB: kb
+      # 中文排序与比较规则
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U kb -d kb" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: kb-redis
+    command: [ "redis-server", "--appendonly", "yes" ]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+  # S3 兼容对象存储。代码只使用标准 S3 API，
+  # 因此换成 OSS / 其他兼容服务只需改配置（见决策记录第 5 章）。
+  minio:
+    image: minio/minio:latest
+    container_name: kb-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: kbminio
+      MINIO_ROOT_PASSWORD: kbminio_dev_pwd
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # 控制台
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

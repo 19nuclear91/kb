@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.aiusage.mapper.AiUsageMapper">
+    <resultMap id="Call" type="com.zhishiku.kb.app.aiusage.model.AiCallRow" autoMapping="true">
+        <id property="id" column="id"/>
+    </resultMap>
+    <resultMap id="Event" type="com.zhishiku.kb.app.aiusage.model.AiEventRow" autoMapping="true">
+        <id property="id" column="id"/>
+    </resultMap>
+    <select id="call" resultMap="Call">SELECT * FROM kb_ai_call WHERE call_id = CAST(#{id} AS uuid)</select>
+    <select id="lockCall" resultMap="Call">SELECT * FROM kb_ai_call WHERE call_id = CAST(#{id} AS uuid) FOR UPDATE</select>
+    <insert id="insertCall">
+        INSERT INTO kb_ai_call (call_id, registration_digest, mode, turn_id, user_id, department_id,
+            protocol_version, started_at, initiated_at, epoch, generation_status, settlement_policy,
+            settlement_status, lease_until, quota_intended)
+        VALUES (CAST(#{callId} AS uuid), #{registrationDigest}, #{mode}, CAST(#{turnId} AS uuid), #{userId},
+            #{departmentId}, #{protocolVersion}, #{startedAt}, #{initiatedAt}, #{epoch}, #{generationStatus},
+            #{settlementPolicy}, #{settlementStatus}, #{leaseUntil}, #{quotaIntended})
+    </insert>
+    <update id="updateCall">
+        UPDATE kb_ai_call SET epoch = #{epoch}, version = version + 1, generation_status = #{generationStatus},
+            result_code = #{resultCode}, usage_status = #{usageStatus}, prompt_tokens = #{promptTokens},
+            completion_tokens = #{completionTokens}, quota_intended = #{quotaIntended},
+            model_dispatch_intent = #{modelDispatchIntent}, lease_id = CAST(#{leaseId} AS uuid),
+            reserved_tokens = #{reservedTokens}, planned_charged_tokens = #{plannedChargedTokens},
+            settlement_status = #{settlementStatus}, finalized_at = #{finalizedAt}, settled_at = #{settledAt},
+            retention_anchor_at = #{retentionAnchorAt}, lease_until = #{leaseUntil}
+        WHERE call_id = CAST(#{callId} AS uuid) AND version = #{version}
+    </update>
+    <select id="event" resultMap="Event">SELECT *, payload::text AS payload FROM kb_ai_call_event WHERE event_id = CAST(#{id} AS uuid)</select>
+    <select id="phase" resultMap="Event">SELECT *, payload::text AS payload FROM kb_ai_call_event WHERE call_id = CAST(#{call} AS uuid) AND kind = #{kind}</select>
+    <insert id="insertEvent">
+        INSERT INTO kb_ai_call_event (event_id, call_id, kind, payload_digest, occurred_at, payload)
+        VALUES (CAST(#{eventId} AS uuid), CAST(#{callId} AS uuid), #{kind}, #{payloadDigest}, #{occurredAt}, CAST(#{payload} AS jsonb))
+    </insert>
+    <select id="expired" resultMap="Call">
+        SELECT * FROM kb_ai_call WHERE mode = 'SINGLE' AND generation_status = 'RUNNING'
+            AND lease_until &lt;= #{now} ORDER BY lease_until, id LIMIT #{limit}
+    </select>
+    <select id="cleanupCandidates" resultMap="Call">
+        SELECT * FROM kb_ai_call WHERE retention_anchor_at &lt;= #{cutoff}
+            AND generation_status &lt;&gt; 'RUNNING' AND settlement_status IN ('SETTLED','NOT_REQUIRED')
+        ORDER BY retention_anchor_at, id LIMIT #{limit} FOR UPDATE SKIP LOCKED
+    </select>
+    <select id="unconfirmed" resultMap="Call">
+        SELECT * FROM kb_ai_call WHERE mode = 'SINGLE' AND generation_status &lt;&gt; 'RUNNING'
+            AND settlement_status = 'PENDING' AND finalized_at &lt;= #{cutoff}
+        ORDER BY finalized_at, id LIMIT #{limit}
+    </select>
+    <delete id="deleteEvents">DELETE FROM kb_ai_call_event WHERE call_id = CAST(#{id} AS uuid)</delete>
+    <delete id="deleteCall">DELETE FROM kb_ai_call WHERE call_id = CAST(#{id} AS uuid)</delete>
+    <select id="deletionBoundary" resultType="java.time.Instant">
+        SELECT GREATEST(c.started_at, (SELECT MAX(e.occurred_at) FROM kb_ai_call_event e WHERE e.call_id = c.call_id))
+        FROM kb_ai_call c WHERE c.call_id = CAST(#{id} AS uuid)
+    </select>
+    <update id="advanceCoverage">
+        UPDATE kb_ai_observation_coverage
+        SET history_cleared_through = GREATEST(history_cleared_through, #{through}) WHERE singleton_id = 1
+    </update>
+    <select id="clearedThrough" resultType="java.time.Instant">
+        SELECT history_cleared_through FROM kb_ai_observation_coverage WHERE singleton_id = 1
+    </select>
+    <select id="upperEventId" resultType="long">SELECT COALESCE(MAX(id), 0) FROM kb_ai_call_event</select>
+
+    <sql id="CallFilters">
+        started_at &gt;= #{from} AND started_at &lt; #{to}
+        <if test="userId != null">AND user_id = #{userId}</if>
+        <if test="departmentId != null">AND department_id = #{departmentId}</if>
+        <if test="mode != null">AND mode = #{mode}</if>
+        <if test="generationStatus != null">AND generation_status = #{generationStatus}</if>
+        <if test="usageStatus != null">AND usage_status = #{usageStatus}</if>
+        <if test="settlementStatus != null">AND settlement_status = #{settlementStatus}</if>
+    </sql>
+    <sql id="Metrics">
+        COUNT(*) AS "callCount",
+        COUNT(*) FILTER (WHERE model_dispatch_intent) AS "modelDispatchCount",
+        COUNT(*) FILTER (WHERE usage_status = 'KNOWN') AS "knownCount",
+        COUNT(*) FILTER (WHERE usage_status = 'UNKNOWN') AS "unknownCount",
+        COUNT(*) FILTER (WHERE usage_status = 'NOT_INVOKED') AS "notInvokedCount",
+        SUM(prompt_tokens::numeric) FILTER (WHERE usage_status = 'KNOWN') AS "promptTokens",
+        SUM(completion_tokens::numeric) FILTER (WHERE usage_status = 'KNOWN') AS "completionTokens",
+        COALESCE(SUM(planned_charged_tokens::numeric), 0) AS "plannedChargedTokens",
+        COALESCE(SUM(planned_charged_tokens::numeric) FILTER (WHERE settlement_status = 'SETTLED'), 0) AS "settledChargedTokens",
+        COUNT(*) FILTER (WHERE generation_status = 'RUNNING') AS "runningCount",
+        COUNT(*) FILTER (WHERE generation_status = 'COMPLETED') AS "completedCount",
+        COUNT(*) FILTER (WHERE generation_status = 'FAILED') AS "failedCount",
+        COUNT(*) FILTER (WHERE generation_status = 'CANCELLED') AS "cancelledCount",
+        COUNT(*) FILTER (WHERE generation_status = 'INTERRUPTED') AS "interruptedCount",
+        COUNT(*) FILTER (WHERE generation_status = 'REJECTED') AS "rejectedCount",
+        COUNT(*) FILTER (WHERE settlement_status = 'RESERVED') AS "reservedCount",
+        COUNT(*) FILTER (WHERE settlement_status = 'NOT_REQUIRED') AS "notRequiredCount",
+        COUNT(*) FILTER (WHERE settlement_status = 'SETTLED') AS "settledCount",
+        COUNT(*) FILTER (WHERE settlement_status = 'PENDING') AS "pendingCount",
+        COUNT(*) FILTER (WHERE settlement_status = 'REVIEW') AS "reviewCount"
+    </sql>
+    <select id="aggregate" resultType="map" timeout="5">
+        SELECT <include refid="Metrics"/> FROM kb_ai_call WHERE <include refid="CallFilters"/>
+    </select>
+    <sql id="GroupKey">
+        <choose>
+            <when test="groupBy == 'day'">to_char(started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')</when>
+            <when test="groupBy == 'department'">lpad(department_id::text, 19, '0')</when>
+            <otherwise>lpad(user_id::text, 19, '0')</otherwise>
+        </choose>
+    </sql>
+    <select id="groups" resultType="map" timeout="5">
+        SELECT <include refid="GroupKey"/> AS "key", <include refid="Metrics"/>
+        FROM kb_ai_call WHERE <include refid="CallFilters"/>
+        <if test="afterGroup != null">AND <include refid="GroupKey"/> &gt; #{afterGroup}</if>
+        GROUP BY <include refid="GroupKey"/> ORDER BY "key" LIMIT #{fetch}
+    </select>
+    <select id="events" resultMap="Event" timeout="5">
+        SELECT *, payload::text AS payload FROM kb_ai_call_event
+        WHERE occurred_at &gt;= #{from} AND occurred_at &lt; #{to} AND id &lt;= #{upper}
+        <if test="lastTime != null">AND (occurred_at, id) &lt; (#{lastTime}, #{lastId})</if>
+        <if test="callId != null">AND call_id = CAST(#{callId} AS uuid)</if>
+        <if test="eventType != null">AND kind = #{eventType}</if>
+        <if test="userId != null">AND payload-&gt;&gt;'userId' = CAST(#{userId} AS text)</if>
+        <if test="departmentId != null">AND payload-&gt;&gt;'departmentId' = CAST(#{departmentId} AS text)</if>
+        <if test="mode != null">AND payload-&gt;&gt;'mode' = #{mode}</if>
+        <if test="generationStatus != null">AND payload-&gt;&gt;'generationStatus' = #{generationStatus}</if>
+        <if test="usageStatus != null">AND payload-&gt;&gt;'usageStatus' = #{usageStatus}</if>
+        <if test="settlementStatus != null">AND payload-&gt;&gt;'settlementStatus' = #{settlementStatus}</if>
+        ORDER BY occurred_at DESC, id DESC LIMIT #{fetch}
+    </select>
+    <select id="firstCoverage" resultType="java.time.Instant">SELECT MIN(opened_at) FROM kb_ai_collection_period</select>
+    <select id="periods" resultType="map">
+        SELECT opened_at AS "openedAt", closed_at AS "closedAt", retention_days AS "retentionDays"
+        FROM kb_ai_collection_period WHERE opened_at &lt; #{to} AND (closed_at IS NULL OR closed_at &gt; #{from})
+        ORDER BY opened_at LIMIT #{limit}
+    </select>
+    <insert id="openPeriod">
+        INSERT INTO kb_ai_collection_period (opened_at, retention_days) VALUES (#{now}, #{days})
+        ON CONFLICT DO NOTHING
+    </insert>
+    <update id="closePeriod">UPDATE kb_ai_collection_period SET closed_at = GREATEST(opened_at, #{now}) WHERE closed_at IS NULL</update>
+    <update id="closeChangedPolicy">UPDATE kb_ai_collection_period SET closed_at = GREATEST(opened_at, #{now}) WHERE closed_at IS NULL AND retention_days &lt;&gt; #{days}</update>
+    <delete id="pruneInstances">
+        DELETE FROM kb_ai_observation_instance WHERE instance_id IN
+            (SELECT instance_id FROM kb_ai_observation_instance WHERE lease_until &lt;= #{now} ORDER BY lease_until LIMIT 500)
+    </delete>
+    <insert id="heartbeat">
+        INSERT INTO kb_ai_observation_instance VALUES (CAST(#{id} AS uuid), #{enabled}, #{days}, #{until})
+        ON CONFLICT (instance_id) DO UPDATE SET enabled = EXCLUDED.enabled,
+            retention_days = EXCLUDED.retention_days, lease_until = EXCLUDED.lease_until
+    </insert>
+    <select id="inconsistentInstances" resultType="int">
+        SELECT COUNT(*) FROM kb_ai_observation_instance WHERE lease_until &gt; #{now}
+            AND (enabled &lt;&gt; #{enabled} OR retention_days &lt;&gt; #{days})
+    </select>
+    <select id="operationalMetrics" resultType="map">
+        SELECT COUNT(*) AS "unresolved", COALESCE(EXTRACT(EPOCH FROM clock_timestamp() - MIN(started_at)),0) AS "oldestAge"
+        FROM kb_ai_call WHERE generation_status = 'RUNNING' OR settlement_status IN ('RESERVED','PENDING','REVIEW')
+    </select>
+</mapper>

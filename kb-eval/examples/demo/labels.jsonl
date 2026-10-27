@@ -1,0 +1,44 @@
+{
+  "caseId": "q001",
+  "tags": [
+    "term"
+  ],
+  "expectedEmpty": false,
+  "relevance": [
+    {
+      "docId": 101,
+      "versionId": 201,
+      "grade": 3
+    },
+    {
+      "docId": 102,
+      "versionId": 202,
+      "grade": 1
+    },
+    {
+      "docId": 103,
+      "versionId": 203,
+      "grade": 2
+    }
+  ]
+}
+{
+  "caseId": "q002",
+  "tags": [
+    "synonym"
+  ],
+  "expectedEmpty": false,
+  "relevance": [
+    {
+      "docId": 104,
+      "versionId": 204,
+      "grade": 3
+    }
+  ]
+}
+{
+  "caseId": "q003",
+  "tags": [],
+  "expectedEmpty": true,
+  "relevance": []
+}

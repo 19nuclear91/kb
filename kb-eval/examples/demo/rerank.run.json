@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "runId": "rerank",
+  "datasetId": "demo",
+  "datasetVersion": "v1",
+  "corpusSnapshotId": "synthetic-v1",
+  "configurationId": "rerank-demo-v1",
+  "sourceType": "SYNTHETIC",
+  "labelsSha256": "61169b002ee479903117cc2ca9ea4da4f3459e7751902408e3e8a396a7ea9e9d",
+  "resultsFile": "rerank.jsonl"
+}

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.zhishiku.kb.app.space.mapper.DocumentAclMapper">
+
+    <!--
+      部门按物化路径向下生效（子树全部命中），角色取全部启用成员。
+      与空间 ACL 的展开口径保持一致，否则同一主体在两条路径上会算出不同的回执。
+    -->
+    <select id="listAclUserIds" resultType="long">
+        <choose>
+            <when test="principalType == 2">
+                SELECT u.id FROM sys_user u
+                JOIN sys_user_role ur ON ur.user_id = u.id
+                WHERE ur.role_id = #{principalId} AND u.enabled = true
+            </when>
+            <otherwise>
+                SELECT u.id FROM sys_user u
+                JOIN sys_dept d ON d.id = u.dept_id
+                WHERE u.enabled = true
+                AND d.path LIKE (SELECT path FROM sys_dept WHERE id = #{principalId}) || '%'
+            </otherwise>
+        </choose>
+    </select>
+
+</mapper>

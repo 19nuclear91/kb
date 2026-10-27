@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>企业智能知识库系统架构图 v3.1</title>
+    <style>
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            background: #f3f4f6;
+            color: #203044;
+            font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+            line-height: 1.6
+        }
+
+        main {
+            max-width: 1440px;
+            margin: auto;
+            padding: 34px 26px
+        }
+
+        h1 {
+            font-size: 29px;
+            margin: 0 0 8px
+        }
+
+        h2 {
+            font-size: 18px;
+            margin: 0
+        }
+
+        h3 {
+            font-size: 15px;
+            margin: 0 0 6px
+        }
+
+        p {
+            margin: 5px 0
+        }
+
+        .meta {
+            color: #526071;
+            font-size: 14px
+        }
+
+        .legend {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 14px
+        }
+
+        .tag {
+            display: inline-block;
+            border: 1px solid #9aa6b2;
+            padding: 2px 10px;
+            font-size: 12px;
+            border-radius: 999px
+        }
+
+        .tag.ok {
+            border-color: #1baf7a;
+            color: #127a55;
+            background: #eefaf5
+        }
+
+        .tag.wait {
+            border-style: dashed
+        }
+
+        .layer {
+            display: grid;
+            grid-template-columns:150px 1fr;
+            gap: 14px;
+            margin: 12px 0
+        }
+
+        .badge {
+            border-radius: 14px;
+            padding: 16px 12px;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            text-align: center
+        }
+
+        .badge .no {
+            font-size: 24px;
+            font-weight: 700
+        }
+
+        .badge .nm {
+            font-size: 15px;
+            margin-top: 6px
+        }
+
+        .b1 {
+            background: #2f7ad1
+        }
+
+        .b2 {
+            background: #e2703a
+        }
+
+        .b3 {
+            background: #1aa876
+        }
+
+        .b4 {
+            background: #d99a1e
+        }
+
+        .b5 {
+            background: #c96aa0
+        }
+
+        .body {
+            background: #fff;
+            border: 1px solid #e3e8ee;
+            border-radius: 14px;
+            padding: 18px
+        }
+
+        .grid {
+            display: grid;
+            gap: 12px
+        }
+
+        .c2 {
+            grid-template-columns:repeat(2, 1fr)
+        }
+
+        .c3 {
+            grid-template-columns:repeat(3, 1fr)
+        }
+
+        .c5 {
+            grid-template-columns:repeat(5, 1fr)
+        }
+
+        .card {
+            border: 1px solid;
+            border-radius: 9px;
+            padding: 12px 13px
+        }
+
+        .k0 {
+            background: #f1f6fd;
+            border-color: #cfe0f6
+        }
+
+        .k1 {
+            background: #fdf3ee;
+            border-color: #f7ddcb
+        }
+
+        .k2 {
+            background: #edf9f4;
+            border-color: #c9ebdd
+        }
+
+        .k3 {
+            background: #fef8ea;
+            border-color: #f5e6bd
+        }
+
+        .k4 {
+            background: #fbf1f6;
+            border-color: #f2d5e6
+        }
+
+        .card .d {
+            font-size: 13px;
+            color: #526071
+        }
+
+        .dash {
+            border-style: dashed
+        }
+
+        .arrow {
+            text-align: center;
+            color: #526071;
+            font-size: 13px;
+            margin: 4px 0
+        }
+
+        .note {
+            background: #f5f7fa;
+            border-left: 3px solid #9aa6b2;
+            padding: 9px 13px;
+            border-radius: 0 7px 7px 0;
+            font-size: 13.5px;
+            margin-top: 12px
+        }
+
+        .sub {
+            text-align: center;
+            color: #526071;
+            font-size: 13px;
+            margin: 2px 0 12px
+        }
+
+        h2.center {
+            text-align: center
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13.5px;
+            margin-top: 6px
+        }
+
+        th, td {
+            border: 1px solid #d7dde4;
+            padding: 9px;
+            text-align: left;
+            vertical-align: top
+        }
+
+        th {
+            background: #eef1f5
+        }
+
+        a {
+            color: #203044
+        }
+
+        button {
+            background: #203044;
+            color: #fff;
+            border: 0;
+            border-radius: 6px;
+            padding: 9px 16px;
+            cursor: pointer;
+            margin-top: 12px
+        }
+
+        footer {
+            color: #526071;
+            font-size: 13px;
+            margin: 22px 0
+        }
+
+        @media (max-width: 820px) {
+            .grid, .c2, .c3, .c5 {
+                grid-template-columns:1fr
+            }
+
+            .layer {
+                grid-template-columns:1fr
+            }
+        }
+
+        @media print {
+            body {
+                background: #fff
+            }
+
+            .body, .card {
+                break-inside: avoid
+            }
+
+            button {
+                display: none
+            }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <p class="meta">架构决策稿 · v3.1 · 更新 2026-09-30 · 尚未实现及压测</p>
+        <h1>企业智能知识库系统架构图</h1>
+        <p>从零建设 · 公司内部生产系统 · 合规已通过可调公有云 API · ParadeDB(BM25)+ pgvector 统一检索 · S3
+            兼容对象存储</p>
+        <div class="legend"><span class="tag ok">✓ 合规通过：embedding / chat / rerank</span><span class="tag ok">✓ ParadeDB 真 BM25</span><span
+                class="tag ok">✓ 权限模型定型</span><span class="tag wait">虚线：可选 / 待定</span></div>
+        <button onclick="window.print()">打印 / 保存为 PDF</button> &nbsp;<a href="架构图-v3.png">查看分层图片版</a>
+        &nbsp;<a href="架构决策记录.md">阅读完整决策记录</a>
+    </header>
+    <section class="layer">
+        <div class="badge b1"><span class="no">01</span><span class="nm">接入与交互层</span></div>
+        <div class="body">
+            <div class="grid c3">
+                <div class="card k0"><h3>浏览器访问端</h3>
+                    <p class="d">企业员工、审核人、系统管理员</p></div>
+                <div class="card k2"><h3>业务入口场景</h3>
+                    <p class="d">文档中心、搜索、AI 助手、管理后台</p></div>
+                <div class="card k1"><h3>扩展业务入口</h3>
+                    <p class="d">审核、统计、通知按需排期</p></div>
+            </div>
+        </div>
+    </section>
+    <div class="arrow">↓ HTTPS 请求　/　↑ 检索结果、授权文件与 SSE 回答</div>
+    <section class="layer">
+        <div class="badge b2"><span class="no">02</span><span class="nm">前端应用层</span></div>
+        <div class="body"><h2 class="center">前端单页应用</h2>
+            <p class="sub">React + TypeScript + Vite + Ant Design · 具体版本待定</p>
+            <div class="grid c5">
+                <div class="card k0"><h3>入口与路由</h3>
+                    <p class="d">登录、懒加载、权限守卫</p></div>
+                <div class="card k2"><h3>布局与页面</h3>
+                    <p class="d">文档、搜索、对话、管理</p></div>
+                <div class="card k1"><h3>状态与服务</h3>
+                    <p class="d">状态管理、请求封装</p></div>
+                <div class="card k3"><h3>文档预览</h3>
+                    <p class="d">Markdown、PDF、Office¹</p></div>
+                <div class="card k4"><h3>请求治理</h3>
+                    <p class="d">认证、异常处理、SSE</p></div>
+            </div>
+        </div>
+    </section>
+    <div class="arrow">↓ 可信身份上下文与业务请求</div>
+    <section class="layer">
+        <div class="badge b3"><span class="no">03</span><span class="nm">网关治理层</span></div>
+        <div class="body">
+            <div class="grid c2">
+                <div class="card k1 dash"><h3>API 网关与统一治理　[候选]</h3>
+                    <p class="d">Spring Cloud Gateway / 企业现有入口 · 认证、路由、CORS、限流、SSE 透传</p></div>
+                <div class="card k0 dash"><h3>配置与注册发现　[候选]</h3>
+                    <p class="d">Nacos / 企业现有配置平台</p></div>
+            </div>
+            <p class="note">业务接口与 AI 流式接口分开路由；SSE
+                的代理缓冲、响应包装与超时需联调验证。文档级授权不只在网关执行。</p></div>
+    </section>
+    <div class="arrow">↓ 同步调用（业务 / 授权检索）</div>
+    <section class="layer">
+        <div class="badge b4"><span class="no">04</span><span class="nm">应用服务层</span></div>
+        <div class="body"><h2 class="center">三个应用角色（建议部署方案）</h2>
+            <p class="sub">Maven 多模块 + Spring Boot + MyBatis 系列 · 不含网关、中间件及可选解析服务</p>
+            <div class="grid c3">
+                <div class="card k2"><h3>A · 业务主应用（模块化单体）</h3>
+                    <p class="d">用户 / 部门树 / 角色 / 空间与文档 ACL / 密级 · 文档、版本、审核 · 文件与授权预览 · <b>权限约束的统一检索</b>
+                        · 审计、通知、统计</p></div>
+                <div class="card k0"><h3>B · 解析索引 Worker</h3>
+                    <p class="d">领取持久任务 → 解析 / 清洗 / 分块 → 调嵌入 API → 写 BM25 与向量双索引 → 按版本发布 ·
+                        幂等、重试、过期回收</p></div>
+                <div class="card k4"><h3>C · AI 服务</h3>
+                    <p class="d">对话编排与 RAG · 调 A 的授权检索 · rerank 与引用溯源 · SSE 输出 · 摘要 / 扩写 / 优化按需
+                        · 配额、脱敏，不绕过 ACL</p></div>
+            </div>
+            <p class="note"><b>异步链路：</b>A 写文档版本与任务 → B 领取 → 读 S3 原件 → 解析 / 嵌入 → 写 PG
+                双索引并原子发布检索版本。模型调用在短事务之外，失败可重试。</p></div>
+    </section>
+    <div class="arrow">↓ 数据、检索、任务与模型依赖</div>
+    <section class="layer">
+        <div class="badge b5"><span class="no">05</span><span class="nm">底座能力层</span></div>
+        <div class="body">
+            <div class="grid c3">
+                <div class="card k0"><h3>PostgreSQL + ParadeDB + pgvector</h3>
+                    <p class="d">元数据、ACL、密级、版本、分块、向量与 BM25 索引 · 自部署 · pg_search 提供真 BM25 ·
+                        中文分词质量待验证</p></div>
+                <div class="card k2"><h3>S3 兼容对象存储</h3>
+                    <p class="d">MinIO / 其他兼容服务 · 原件与预览产物 · AWS SDK v2 抽象 · 私有桶与短期签名</p></div>
+                <div class="card k4"><h3>模型能力（公有云 API）</h3>
+                    <p class="d">✓ 合规通过 · 嵌入 / 对话 / rerank · 通义千问 / DeepSeek 等候选²</p></div>
+                <div class="card k1 dash"><h3>异步任务机制　[待定]</h3>
+                    <p class="d">PG 持久任务队列 / RabbitMQ 二选一，不同时引入</p></div>
+                <div class="card k0 dash"><h3>Redis　[按需]</h3>
+                    <p class="d">缓存、会话辅助与限流 · 缓存按权限隔离</p></div>
+                <div class="card k3"><h3>检索链路</h3>
+                    <p class="d">BM25 + 向量两路召回 → RRF 融合 → rerank 重排 → top-k → LLM</p></div>
+            </div>
+            <p class="note"><b>一致性与召回边界：</b>PG 减少跨库索引同步，但仍需异步状态、版本发布、重试与 S3
+                孤儿对象清理。授权以空间为主（粗粒度），可见集不稀疏，缓解 HNSW 加严过滤掉召回；首期不默认将授权检索转异步副本，以免复制延迟暴露旧
+                ACL。</p></div>
+    </section>
+    <section class="body" style="margin-top:12px"><h2 class="center">权限模型（已定型）</h2>
+        <p class="sub">知识空间为主 + 文档例外 · 部门层级树 + 角色 · 含文档密级 · 首期不做外链 / 显式拒绝</p>
+        <div class="grid c3">
+            <div class="card k2"><h3>主体</h3>
+                <p class="d">有效主体 = 用户 ∪ 角色 ∪ 所在部门及全部祖先部门；授权某部门则其子树用户命中</p></div>
+            <div class="card k0"><h3>客体</h3>
+                <p class="d">空间级 ACL 为主，文档默认继承；少数文档设例外（EXISTS 防重复行）</p></div>
+            <div class="card k3"><h3>密级</h3>
+                <p class="d">可见 = 通过 ACL 且 文档密级 ≤ 用户可见密级；例外首期只扩权、不收紧</p></div>
+        </div>
+    </section>
+    <section class="body" style="margin-top:12px"><h2>决策速查 / 文本替代视图</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>状态</th>
+                <th>内容</th>
+                <th>后续边界</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td>✓ 本轮落定</td>
+                <td>合规通过（可调公有云 embedding/chat/rerank）</td>
+                <td>仍需日志脱敏、配额、缓存隔离</td>
+            </tr>
+            <tr>
+                <td>✓ 本轮落定</td>
+                <td>检索引擎 ParadeDB（pg_search 真 BM25）+ pgvector</td>
+                <td>中文分词与生产成熟度待实测</td>
+            </tr>
+            <tr>
+                <td>✓ 本轮落定</td>
+                <td>权限模型：空间为主 + 文档例外 + 部门树 + 密级</td>
+                <td>外链、显式拒绝列入二期</td>
+            </tr>
+            <tr>
+                <td>已确认移除</td>
+                <td>MongoDB、Neo4j / 知识图谱、音视频 / HLS</td>
+                <td>不纳入本期</td>
+            </tr>
+            <tr>
+                <td>待定</td>
+                <td>异步队列、模型型号、现有基础设施、文档样本</td>
+                <td>不以此图当作选型验收</td>
+            </tr>
+            </tbody>
+        </table>
+    </section>
+    <footer>配套：<a href="架构决策记录.md">架构决策记录.md</a> · 图片版：<a href="架构图-v3.png">架构图-v3.png</a> · 原图：<a
+            href="jiagou.jpg">jiagou.jpg</a><br>¹ 复杂解析 / OCR / Office 预览需样本验证，可能增加部署单元。　²
+        首期文档例外只扩权不收紧。<br>本页无外部字体、脚本或 CDN 依赖，可离线浏览与打印。
+    </footer>
+</main>
+</body>
+</html>

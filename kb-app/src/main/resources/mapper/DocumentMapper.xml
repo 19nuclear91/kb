@@ -1,0 +1,482 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.zhishiku.kb.app.document.mapper.DocumentMapper">
+    <select id="visibleVersions" resultType="com.zhishiku.kb.common.conversation.SourceKey">
+        <bind name="aclPermission" value="'view'"/>
+        SELECT d.id AS document_id, v.id AS version_id FROM kb_document_version v
+        JOIN kb_document d ON d.id = v.doc_id
+        WHERE d.status &lt;&gt; 'deleted' AND d.security_level &lt;= #{clearance}
+        AND
+        <include refid="documentAccessPredicate"/>
+        AND
+        <choose>
+            <when test="purpose != null and purpose.name() == 'INTERACTIVE'"><include refid="versionInteractivePredicate"/></when>
+            <when test="purpose != null and purpose.name() == 'MODEL_SOURCE'">
+                (v.publication_protocol = 'LEGACY_COMPAT' OR v.publication_evidence IN ('PUBLISHED', 'OBSERVED_CURRENT'))
+            </when>
+            <when test="purpose != null and purpose.name() == 'COMMENT_TARGET'">
+                d.status &lt;&gt; 'archived' AND <include refid="commentTargetEvidence"/>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+        AND
+        <choose>
+            <when test="sources != null and sources.size() > 0">
+                <foreach collection="sources" item="s" open="(" separator=" OR " close=")">
+                    (d.id = #{s.documentId} AND v.id = #{s.versionId})
+                </foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+    </select>
+
+    <!-- 空权限范围必须变成 FALSE，绝不能省略过滤条件。 -->
+    <sql id="currentViewGrant">
+        <choose>
+            <when test="principalKeys != null and principalKeys.size() > 0">
+                (EXISTS (SELECT 1 FROM kb_space_acl va WHERE va.space_id = d.space_id AND va.permission = 'view'
+                    AND va.principal_key IN <foreach collection="principalKeys" item="k" open="(" separator="," close=")">#{k}</foreach>)
+                OR EXISTS (SELECT 1 FROM kb_document_acl va WHERE va.doc_id = d.id AND va.permission = 'view'
+                    AND va.principal_key IN <foreach collection="principalKeys" item="k" open="(" separator="," close=")">#{k}</foreach>))
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="versionInteractivePredicate">
+        <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.currentViewGrant"/>
+        AND (v.publication_evidence IN ('PUBLISHED', 'OBSERVED_CURRENT') OR v.publication_protocol = 'LEGACY_COMPAT'
+        <if test="principalKeys != null and principalKeys.size() > 0">
+            OR ('1:' || v.uploader_user_id) IN
+                <foreach collection="principalKeys" item="k" open="(" separator="," close=")">#{k}</foreach>
+            OR EXISTS (SELECT 1 FROM kb_document_review participant WHERE participant.version_id = v.id
+                AND ('1:' || participant.submitted_by) IN
+                <foreach collection="principalKeys" item="k" open="(" separator="," close=")">#{k}</foreach>)
+            OR EXISTS (SELECT 1 FROM kb_space_acl reviewer WHERE reviewer.space_id = d.space_id AND reviewer.permission = 'review'
+                AND reviewer.principal_key IN
+                <foreach collection="principalKeys" item="k" open="(" separator="," close=")">#{k}</foreach>)
+        </if>)
+    </sql>
+
+    <!--
+      评论目标只接受实际发布或升级观察的当前发布证据；LEGACY_COMPAT、indexed 与审核参与身份都不足。
+      与 Java 的 VersionAccessRules(COMMENT_TARGET) 同义，通知回复提醒以 include 引用本片段。别名：v 版本。
+    -->
+    <sql id="commentTargetEvidence">
+        v.publication_evidence IN ('PUBLISHED', 'OBSERVED_CURRENT')
+    </sql>
+
+    <sql id="parentVersionVisibility">
+        EXISTS (SELECT 1 FROM kb_document_version v WHERE v.doc_id = d.id
+            AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.versionInteractivePredicate"/>)
+    </sql>
+
+    <sql id="documentAccessPredicate">
+        EXISTS (SELECT 1 FROM kb_space s WHERE s.id = d.space_id AND s.archived = false)
+        AND
+        (
+        <choose>
+            <when test="spaceIds != null and spaceIds.size() > 0">
+                d.space_id IN
+                <foreach item="space" collection="spaceIds" open="(" separator="," close=")">#{space}</foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+        <if test="principalKeys != null and principalKeys.size() > 0">
+            OR EXISTS (
+            SELECT 1
+            FROM kb_document_acl da
+            WHERE da.doc_id = d.id
+            AND da.permission = #{aclPermission}
+            AND da.principal_key IN
+            <foreach item="principal" collection="principalKeys" open="(" separator="," close=")">#{principal}</foreach>
+            )
+        </if>
+        )
+    </sql>
+
+    <sql id="summaryColumns">
+        d.id,
+        d.space_id,
+        d.title,
+        d.security_level,
+        d.status,
+        d.owner_id,
+        d.current_version_id,
+        v.version_no AS current_version_no,
+        v.file_name AS current_file_name,
+        v.file_size AS current_file_size,
+        v.mime_type AS current_mime_type,
+        v.index_status AS current_index_status,
+        v.index_error AS current_index_error,
+        d.created_at,
+        d.updated_at
+    </sql>
+
+    <select id="list" resultType="com.zhishiku.kb.app.document.model.DocumentSummary">
+        SELECT
+        <include refid="summaryColumns"/>
+        FROM kb_document d
+        LEFT JOIN kb_document_version v ON v.id = d.current_version_id
+        WHERE d.status &lt;&gt; 'deleted'
+        AND d.security_level &lt;= #{clearance}
+        AND
+        <include refid="documentAccessPredicate"/>
+        <if test="aclPermission != 'edit'">
+            AND <include refid="parentVersionVisibility"/>
+        </if>
+        <if test="spaceId != null">AND d.space_id = #{spaceId}</if>
+        ORDER BY d.updated_at DESC, d.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT count(*)
+        FROM kb_document d
+        WHERE d.status &lt;&gt; 'deleted'
+        AND d.security_level &lt;= #{clearance}
+        AND
+        <include refid="documentAccessPredicate"/>
+        <if test="aclPermission != 'edit'">
+            AND <include refid="parentVersionVisibility"/>
+        </if>
+        <if test="spaceId != null">AND d.space_id = #{spaceId}</if>
+    </select>
+
+    <select id="findSummary" resultType="com.zhishiku.kb.app.document.model.DocumentSummary">
+        SELECT
+        <include refid="summaryColumns"/>
+        FROM kb_document d
+        LEFT JOIN kb_document_version v ON v.id = d.current_version_id
+        WHERE d.id = #{documentId}
+        AND d.status &lt;&gt; 'deleted'
+        AND d.security_level &lt;= #{clearance}
+        AND
+        <include refid="documentAccessPredicate"/>
+        <if test="aclPermission != 'edit'">
+            AND <include refid="parentVersionVisibility"/>
+        </if>
+    </select>
+
+    <select id="listVersions" resultType="com.zhishiku.kb.app.document.model.DocumentVersionView">
+        SELECT v.id,
+        v.doc_id,
+        v.version_no,
+        (d.current_version_id = v.id) AS current,
+        v.file_name,
+        v.file_size,
+        v.content_hash,
+        v.mime_type,
+        v.index_status,
+        v.index_error,
+        v.parser_name,
+        v.parser_version,
+        v.parse_truncated,
+         v.parse_issue_count,
+         v.publication_policy,
+         v.publication_evidence,
+         v.state_version,
+         rv.state AS review_state,
+        (SELECT string_agg(left(i.code || ': ' || i.message, 256), '; ' ORDER BY i.id)
+        FROM kb_parse_issue i
+        WHERE i.version_id = v.id) AS parse_issue_summary,
+        t.id AS task_id,
+        t.status AS task_status,
+        t.attempts,
+        t.max_attempts,
+        t.last_error,
+        v.created_at,
+        v.updated_at,
+        t.next_attempt_at,
+        t.failure_class,
+        t.failure_code,
+        t.failure_summary,
+        t.last_failure_at,
+        t.execution_generation,
+        dl.status AS dead_letter_status
+        FROM kb_document_version v
+        JOIN kb_document d ON d.id = v.doc_id
+         LEFT JOIN kb_parse_task t ON t.version_id = v.id
+         LEFT JOIN LATERAL (SELECT state FROM kb_document_review WHERE version_id = v.id ORDER BY round_no DESC LIMIT 1) rv ON TRUE
+        LEFT JOIN LATERAL (
+        SELECT status
+        FROM kb_parse_task_dead_letter
+        WHERE task_id = t.id
+        ORDER BY entered_at DESC, id DESC
+        LIMIT 1
+        ) dl ON TRUE
+        WHERE d.id = #{documentId}
+        AND d.status &lt;&gt; 'deleted'
+        AND d.security_level &lt;= #{clearance}
+        AND
+        <include refid="documentAccessPredicate"/>
+        AND
+        <include refid="versionInteractivePredicate"/>
+        ORDER BY v.version_no DESC
+    </select>
+
+    <select id="findProgress" resultType="com.zhishiku.kb.app.document.model.DocumentProgress">
+        SELECT v.doc_id,
+        v.id AS version_id,
+        v.version_no,
+        v.index_status,
+        v.index_error,
+        v.parser_name,
+        v.parser_version,
+        v.parse_truncated,
+         v.parse_issue_count,
+         v.publication_policy,
+         v.publication_evidence,
+         v.state_version,
+         rv.state AS review_state,
+        (SELECT string_agg(left(i.code || ': ' || i.message, 256), '; ' ORDER BY i.id)
+        FROM kb_parse_issue i
+        WHERE i.version_id = v.id) AS parse_issue_summary,
+        t.id AS task_id,
+        t.status AS task_status,
+        t.attempts,
+        t.max_attempts,
+        t.last_error,
+        t.next_attempt_at,
+        t.failure_class,
+        t.failure_code,
+        t.failure_summary,
+        t.last_failure_at,
+        t.execution_generation,
+        dl.status AS dead_letter_status
+        FROM kb_document_version v
+        JOIN kb_document d ON d.id = v.doc_id
+         LEFT JOIN kb_parse_task t ON t.version_id = v.id
+         LEFT JOIN LATERAL (SELECT state FROM kb_document_review WHERE version_id = v.id ORDER BY round_no DESC LIMIT 1) rv ON TRUE
+        LEFT JOIN LATERAL (
+        SELECT status
+        FROM kb_parse_task_dead_letter
+        WHERE task_id = t.id
+        ORDER BY entered_at DESC, id DESC
+        LIMIT 1
+        ) dl ON TRUE
+        WHERE d.id = #{documentId}
+        AND v.id =
+        <choose>
+            <when test="versionId != null">#{versionId}</when>
+            <otherwise>d.current_version_id</otherwise>
+        </choose>
+        AND d.status &lt;&gt; 'deleted'
+        AND d.security_level &lt;= #{clearance}
+        AND
+        <include refid="documentAccessPredicate"/>
+        AND
+        <include refid="versionInteractivePredicate"/>
+    </select>
+
+    <select id="findFile" resultType="com.zhishiku.kb.app.document.model.DocumentFile">
+        SELECT d.id AS document_id,
+        v.id AS version_id,
+        v.version_no,
+        v.object_key,
+        v.file_name,
+        v.file_size,
+        v.mime_type
+        FROM kb_document_version v
+        JOIN kb_document d ON d.id = v.doc_id
+        WHERE d.id = #{documentId}
+        AND v.id =
+        <choose>
+            <when test="versionId != null">#{versionId}</when>
+            <otherwise>d.current_version_id</otherwise>
+        </choose>
+        AND d.status &lt;&gt; 'deleted'
+        AND d.security_level &lt;= #{clearance}
+         AND
+         <include refid="documentAccessPredicate"/>
+         AND
+         <include refid="versionInteractivePredicate"/>
+    </select>
+
+    <resultMap id="citationRowMap" type="com.zhishiku.kb.app.document.model.DocumentCitationRow">
+        <constructor>
+            <idArg column="doc_id" javaType="java.lang.Long"/>
+            <arg column="doc_title" javaType="java.lang.String"/>
+            <arg column="version_id" javaType="java.lang.Long"/>
+            <arg column="version_no" javaType="java.lang.Integer"/>
+            <arg column="matched_chunk_id" javaType="java.lang.Long"/>
+            <arg column="chunk_idx" javaType="java.lang.Integer"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="page_no" javaType="java.lang.Integer"/>
+            <arg column="heading_path" javaType="java.lang.String"/>
+            <arg column="structure_type" javaType="java.lang.String"/>
+            <arg column="source_line_start" javaType="java.lang.Integer"/>
+            <arg column="source_line_end" javaType="java.lang.Integer"/>
+            <arg column="source_char_start" javaType="java.lang.Integer"/>
+            <arg column="source_char_end" javaType="java.lang.Integer"/>
+            <arg column="source_locator" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findCitation" resultMap="citationRowMap">
+        <bind name="aclPermission" value="'view'"/>
+        SELECT d.id AS doc_id,
+        d.title AS doc_title,
+        v.id AS version_id,
+        v.version_no,
+        c.id AS matched_chunk_id,
+        c.chunk_idx,
+        c.content,
+        c.page_no,
+        c.heading_path,
+        c.structure_type,
+        c.source_line_start,
+        c.source_line_end,
+        c.source_char_start,
+        c.source_char_end,
+        c.source_locator
+        FROM kb_document_version v
+        JOIN kb_document d ON d.id = v.doc_id
+        LEFT JOIN kb_doc_chunk c ON c.id = #{chunkId}
+        AND c.doc_id = d.id
+        AND c.version_id = v.id
+        WHERE d.id = #{documentId}
+        AND v.id = #{versionId}
+        AND d.status &lt;&gt; 'deleted'
+        AND d.security_level &lt;= #{clearance}
+         AND
+         <include refid="documentAccessPredicate"/>
+         AND
+         <include refid="versionInteractivePredicate"/>
+    </select>
+
+    <select id="findObjectKeys" resultType="string">
+        SELECT object_key
+        FROM kb_document_version
+        WHERE doc_id = #{documentId}
+    </select>
+
+    <update id="softDelete">
+        UPDATE kb_document
+        SET status = 'deleted', updated_at = now()
+        WHERE id = #{documentId} AND status &lt;&gt; 'deleted'
+    </update>
+
+    <update id="cancelTasks">
+        UPDATE kb_parse_task t
+        SET status = 'failed',
+        lease_until = NULL,
+        lease_owner = NULL,
+        last_error = '文档已删除',
+        updated_at = now()
+        WHERE t.version_id IN (SELECT id FROM kb_document_version WHERE doc_id = #{documentId})
+        AND t.status IN ('pending', 'running')
+    </update>
+
+    <select id="findVersionForEdit" resultType="com.zhishiku.kb.app.document.model.DocumentVersionView">
+        SELECT v.id,
+        v.doc_id,
+        v.version_no,
+        (d.current_version_id = v.id) AS current,
+        v.file_name,
+        v.file_size,
+        v.content_hash,
+        v.mime_type,
+        v.index_status,
+        v.index_error,
+        v.parser_name,
+        v.parser_version,
+        v.parse_truncated,
+        v.parse_issue_count,
+        (SELECT string_agg(left(i.code || ': ' || i.message, 256), '; ' ORDER BY i.id)
+        FROM kb_parse_issue i
+        WHERE i.version_id = v.id) AS parse_issue_summary,
+        t.id AS task_id,
+        t.status AS task_status,
+        t.attempts,
+        t.max_attempts,
+        t.last_error,
+        v.created_at,
+        v.updated_at,
+        t.next_attempt_at,
+        t.failure_class,
+        t.failure_code,
+        t.failure_summary,
+        t.last_failure_at,
+        t.execution_generation,
+        dl.status AS dead_letter_status
+        FROM kb_document_version v
+        JOIN kb_document d ON d.id = v.doc_id
+        LEFT JOIN kb_parse_task t ON t.version_id = v.id
+        LEFT JOIN LATERAL (
+        SELECT status
+        FROM kb_parse_task_dead_letter
+        WHERE task_id = t.id
+        ORDER BY entered_at DESC, id DESC
+        LIMIT 1
+        ) dl ON TRUE
+        WHERE d.id = #{documentId}
+        AND v.id =
+        <choose>
+            <when test="versionId != null">#{versionId}</when>
+            <otherwise>d.current_version_id</otherwise>
+        </choose>
+        AND d.status &lt;&gt; 'deleted'
+        AND d.security_level &lt;= #{clearance}
+        AND
+        <include refid="documentAccessPredicate"/>
+    </select>
+
+    <update id="resetTaskForRetry">
+        WITH current_task AS (
+        SELECT id, execution_generation
+        FROM kb_parse_task
+        WHERE version_id = #{versionId}
+        AND status &lt;&gt; 'running'
+        AND (status = 'failed' OR attempts &gt;= max_attempts
+        OR EXISTS (SELECT 1 FROM kb_parse_task_dead_letter dl
+        WHERE dl.task_id = kb_parse_task.id AND dl.status = 'OPEN'))
+        FOR UPDATE
+        ), closed_dead_letters AS (
+        UPDATE kb_parse_task_dead_letter dl
+        SET status = 'REPLAYED', resolved_at = now(),
+        resolution_reason = '用户请求重新解析'
+        FROM current_task c
+        WHERE dl.task_id = c.id AND dl.status = 'OPEN'
+        )
+        UPDATE kb_parse_task t
+        SET status = 'pending',
+        attempts = 0,
+        next_attempt_at = now(),
+        lease_until = NULL,
+        lease_owner = NULL,
+        failure_class = NULL,
+        failure_code = NULL,
+        failure_summary = NULL,
+        last_failure_at = NULL,
+        last_error = NULL,
+        execution_generation = t.execution_generation + 1,
+        claim_token = t.claim_token + 1,
+        embedding_profile_id = NULL,
+        embedding_epoch = NULL,
+        updated_at = now()
+        FROM current_task c
+        WHERE t.id = c.id
+    </update>
+
+    <update id="resetVersionForRetry">
+        UPDATE kb_document_version
+        SET index_status = 'pending', index_error = NULL
+        WHERE id = #{versionId} AND index_status &lt;&gt; 'indexed'
+    </update>
+
+    <insert id="insertReplayEvent">
+        INSERT INTO kb_parse_task_event
+        (task_id, version_id, execution_generation, attempt_no, event_type,
+        actor_user_id, error_summary, dedupe_key)
+        SELECT id, version_id, execution_generation, attempts, 'REPLAYED',
+        #{actorUserId}, left(#{reason}, 2000),
+        'user-retry:' || id || ':' || execution_generation
+        FROM kb_parse_task
+        WHERE version_id = #{versionId}
+        ON CONFLICT (dedupe_key) DO NOTHING
+    </insert>
+
+</mapper>

@@ -1,0 +1,94 @@
+server:
+  port: 8083
+
+spring:
+  profiles:
+    default: prod
+  application:
+    name: kb-worker
+
+  datasource:
+    url: ${KB_DB_URL:}
+    username: ${KB_DB_USERNAME:}
+    password: ${KB_DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      # Worker 单线程处理，连接池不需要大。给 5 是为了心跳、巡检、
+      # 业务写入能并行拿到连接，而不是为了并发处理任务。
+      maximum-pool-size: 5
+
+  # ！！Flyway 在 Worker 中必须保持关闭 ！！
+  # 库表迁移由 kb-app 单点负责。多个部署单元同时迁移会互相抢 Flyway 锁，
+  # 且"谁该推进到哪个版本"会变成没人说得清的问题。
+  flyway:
+    enabled: false
+
+  task:
+    scheduling:
+      # 必须 >= 2：轮询与心跳跑在同一个调度线程池里。
+      # 若只有 1 个线程，心跳会排在长任务后面永远得不到执行，
+      # 续租机制形同虚设，长文档解析必然因租约超时被重复领取。
+      pool:
+        size: 3
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+kb:
+  worker:
+    # 租约时长。必须大于最慢文档的解析耗时。
+    # 300 秒是个未经实测的初值——等文档格式分布摸清后按 P99 解析耗时重新定。
+    lease-seconds: 300
+    # P0 单线程顺序处理，领多了只会让后面的任务干等着消耗租约
+    batch-size: 1
+    poll-interval-ms: 2000
+    # 租约的 1/5，允许连续丢几次心跳仍不失守（约束见 ParseProperties 的构造校验）
+    heartbeat-ms: 60000
+    # 单任务硬超时。超时会取消流水线并进入失败重试路径。
+    task-timeout-seconds: ${KB_TASK_TIMEOUT_SECONDS:900}
+    # 原件内容抽取仅通过第三方 DocumentParser 适配器完成。
+    # 未提供适配器时暂停领取解析任务；不配置本地解析引擎。
+    # 可重试失败的指数退避：30s、60s、120s...，最多 15 分钟，抖动 20%。
+    retry-base-delay-ms: ${KB_RETRY_BASE_DELAY_MS:30000}
+    retry-max-delay-ms: ${KB_RETRY_MAX_DELAY_MS:900000}
+    retry-jitter-ratio: ${KB_RETRY_JITTER_RATIO:0.20}
+    # 队列/死信 gauge 的数据库采样周期。
+    metrics-gauge-interval-ms: ${KB_METRICS_GAUGE_INTERVAL_MS:30000}
+    alert-dispatch-interval-ms: ${KB_ALERT_DISPATCH_INTERVAL_MS:5000}
+    ingestion:
+      max-file-bytes: ${KB_MAX_FILE_BYTES:52428800}
+      max-extracted-chars: ${KB_MAX_EXTRACTED_CHARS:5000000}
+      chunk-size: ${KB_CHUNK_SIZE:1200}
+      chunk-overlap: ${KB_CHUNK_OVERLAP:200}
+  storage:
+    endpoint: ${KB_S3_ENDPOINT:}
+    region: ${KB_S3_REGION:us-east-1}
+    access-key: ${KB_S3_ACCESS_KEY:}
+    secret-key: ${KB_S3_SECRET_KEY:}
+    bucket: ${KB_S3_BUCKET:}
+    path-style-access: ${KB_S3_PATH_STYLE:true}
+
+logging:
+  level:
+    com.zhishiku.kb: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# ============================================================
+# 本模块当前状态：
+#
+# 已实现：任务领取（SKIP LOCKED）、租约续期、失败重试、超限巡检，
+#         S3 原件下载、第三方解析接口 → 统一中间模型、结构化分块、embedding 和事务性幂等发布。
+# 第三方解析适配器尚未提供，缺省不领取解析任务，健康检查显示解析不可用。
+#
+# embedding 必须提供显式 kb.embedding.profiles 清单；dev 配置仅用于开发。
+# 生产部署配置见 docs/embedding-rebuild-operations.md，不支持跨维度切换。
+# ============================================================

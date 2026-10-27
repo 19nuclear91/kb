@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  本人通知读取。列表与未读计数共用 facts + visible 两个片段，可见性在 SQL 中先过滤再 LIMIT/count。
+  授权片段通过 XML include 引用源模块的同源规则：结果提醒用版本 INTERACTIVE，
+  待审提醒用审核工作台待办同一个 pendingReviewer 片段，回复提醒用评论目标发布证据与评论模块的 liveReply 片段。
+  Java 层不依赖对方 Mapper；列表读取时各解析器按投影事实独立复核，与本文件不一致时返回 503 并计数；
+  countUnread 不经该复核。
+-->
+<mapper namespace="com.zhishiku.kb.app.notification.mapper.UserNotificationMapper">
+    <!-- 每条本人通知的最小事实：只投影固定状态和授权判定，不读标题、文件名、意见或原因。 -->
+    <sql id="facts">
+        <bind name="aclPermission" value="'view'"/>
+        SELECT n.id, n.notification_id, n.recipient_user_id, n.type, n.created_at, n.read_at,
+            e.doc_id AS document_id, e.version_id, e.review_id, e.round_no,
+            (d.status NOT IN ('deleted', 'archived') AND s.archived = FALSE) AS live,
+            (d.security_level &lt;= #{clearance}) AS cleared,
+            (<include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+                AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.versionInteractivePredicate"/>) AS viewable,
+            COALESCE(<include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.pendingReviewer"/>,
+                FALSE) AS actionable,
+            r.state AS round_state, r.submitted_by AS round_submitted_by,
+            COALESCE(r.submitted_space_id = d.space_id, FALSE) AS round_in_space,
+            v.uploader_user_id, v.publication_policy, v.publication_evidence,
+            e.comment_id,
+            (<include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+                AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.currentViewGrant"/>
+                AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.commentTargetEvidence"/>) AS discussable,
+            <include refid="com.zhishiku.kb.app.comment.mapper.DocumentCommentMapper.liveReply"/> AS reply_readable
+        FROM kb_user_notification n
+        JOIN kb_collaboration_event e ON e.event_id = n.event_id
+        JOIN kb_document d ON d.id = e.doc_id
+        JOIN kb_space s ON s.id = d.space_id
+        JOIN kb_document_version v ON v.id = e.version_id AND v.doc_id = e.doc_id
+        LEFT JOIN kb_document_review r ON r.id = e.review_id AND r.version_id = e.version_id
+        JOIN sys_user u ON u.id = n.recipient_user_id
+        JOIN sys_dept dept ON dept.id = u.dept_id
+        WHERE n.recipient_user_id = #{userId} AND
+        <choose>
+            <when test="types != null and types.size() > 0">
+                n.type IN <foreach collection="types" item="t" open="(" separator="," close=")">#{t}</foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+    </sql>
+
+    <!--
+      REVIEW_SUBMITTED：收件人当前可处理该轮次，条件与审核工作台待办相同（pendingReviewer）。
+      REVIEW_APPROVED/REJECTED：本人为本轮送审者、轮次结果未变，且当前可交互读取该固定版本。
+      COMMENT_REPLIED：固定版本仍有发布证据且当前可 view，回复本身未删除；根评论删除不隐藏已存在回复。
+      未注册解析器的类型不在 types 中，不可见。
+    -->
+    <sql id="visible">
+        f.live AND f.cleared AND (
+            (f.type = 'REVIEW_SUBMITTED' AND f.actionable)
+            OR (f.type IN ('REVIEW_APPROVED', 'REVIEW_REJECTED') AND f.viewable
+                AND f.round_submitted_by = f.recipient_user_id
+                AND ('REVIEW_' || f.round_state) = f.type)
+            OR (f.type = 'COMMENT_REPLIED' AND f.discussable AND f.reply_readable))
+    </sql>
+
+    <resultMap id="row" type="com.zhishiku.kb.app.notification.model.NotificationRow">
+        <constructor>
+            <idArg column="id" javaType="_long"/>
+            <arg column="notification_id" javaType="java.util.UUID"/>
+            <arg column="recipient_user_id" javaType="_long"/>
+            <arg column="type" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="read_at" javaType="java.time.Instant"/>
+            <arg column="document_id" javaType="_long"/>
+            <arg column="version_id" javaType="_long"/>
+            <arg column="review_id" javaType="java.util.UUID"/>
+            <arg column="round_no" javaType="java.lang.Integer"/>
+            <arg column="live" javaType="_boolean"/>
+            <arg column="cleared" javaType="_boolean"/>
+            <arg column="viewable" javaType="_boolean"/>
+            <arg column="actionable" javaType="_boolean"/>
+            <arg column="round_state" javaType="java.lang.String"/>
+            <arg column="round_submitted_by" javaType="java.lang.Long"/>
+            <arg column="round_in_space" javaType="_boolean"/>
+            <arg column="uploader_user_id" javaType="java.lang.Long"/>
+            <arg column="publication_policy" javaType="java.lang.String"/>
+            <arg column="publication_evidence" javaType="java.lang.String"/>
+            <arg column="comment_id" javaType="java.util.UUID"/>
+            <arg column="discussable" javaType="_boolean"/>
+            <arg column="reply_readable" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+
+    <select id="list" resultMap="row" useCache="false" timeout="10">
+        SELECT f.* FROM (<include refid="facts"/>
+            <if test="beforeId != null">AND n.id &lt; #{beforeId}</if>) f
+        WHERE <include refid="visible"/>
+        ORDER BY f.id DESC LIMIT #{limit}
+    </select>
+
+    <select id="countUnread" resultType="long" useCache="false" timeout="10">
+        SELECT count(*) FROM (<include refid="facts"/> AND n.read_at IS NULL) f
+        WHERE <include refid="visible"/>
+    </select>
+
+    <resultMap id="receipt" type="com.zhishiku.kb.app.notification.model.NotificationViews$ReadReceipt">
+        <constructor>
+            <idArg column="notification_id" javaType="java.util.UUID"/>
+            <arg column="read_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 首次已读时间不变；只核对本人归属，不读取或返回目标，不触发审核或重发。 -->
+    <select id="markRead" resultMap="receipt" affectData="true" flushCache="true" useCache="false" timeout="5">
+        UPDATE kb_user_notification SET read_at = COALESCE(read_at, now())
+        WHERE notification_id = #{notificationId} AND recipient_user_id = #{userId}
+        RETURNING notification_id, read_at
+    </select>
+</mapper>

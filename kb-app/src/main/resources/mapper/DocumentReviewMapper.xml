@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.document.mapper.DocumentReviewMapper">
+    <sql id="versionState">
+        SELECT d.id AS document_id, v.id AS version_id, d.space_id, d.status AS document_status,
+            s.archived AS space_archived, v.version_no, cv.version_no AS current_version_no, d.current_version_id,
+            v.uploader_user_id, v.publication_policy, v.publication_protocol, v.publication_evidence,
+            v.state_version, v.index_status, v.indexed_profile_id, v.indexed_fingerprint,
+            v.indexed_epoch, v.indexed_chunk_count, v.published_at
+        FROM kb_document_version v JOIN kb_document d ON d.id = v.doc_id
+        JOIN kb_space s ON s.id = d.space_id
+        LEFT JOIN kb_document_version cv ON cv.id = d.current_version_id AND cv.doc_id = d.id
+        WHERE d.id = #{documentId} AND v.id = #{versionId}
+    </sql>
+    <select id="version" resultType="com.zhishiku.kb.app.document.model.ReviewVersionState">
+        <include refid="versionState"/>
+    </select>
+    <select id="lockVersionRow" resultType="com.zhishiku.kb.app.document.model.ReviewVersionState">
+        <include refid="versionState"/> FOR UPDATE OF v
+    </select>
+    <select id="lockVersionsForDocument" resultType="com.zhishiku.kb.app.document.model.ReviewVersionState">
+        SELECT d.id AS document_id, v.id AS version_id, d.space_id, d.status AS document_status,
+            s.archived AS space_archived, v.state_version, v.publication_policy, v.publication_protocol,
+            v.publication_evidence, v.uploader_user_id, v.version_no, v.index_status
+        FROM kb_document_version v JOIN kb_document d ON d.id = v.doc_id JOIN kb_space s ON s.id = d.space_id
+        WHERE d.id = #{documentId} ORDER BY v.id FOR UPDATE OF d, v
+    </select>
+    <select id="hasPermission" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM kb_document d JOIN kb_space s ON s.id = d.space_id
+        WHERE d.id = #{documentId} AND d.status NOT IN ('deleted', 'archived') AND s.archived = FALSE
+            AND d.security_level &lt;= #{clearance} AND (
+            <choose>
+                <when test="spaceIds != null and spaceIds.size() > 0">
+                    d.space_id IN <foreach collection="spaceIds" item="s" open="(" separator="," close=")">#{s}</foreach>
+                </when>
+                <otherwise>FALSE</otherwise>
+            </choose>
+            <if test="principalKeys != null and principalKeys.size() > 0">
+                OR EXISTS (SELECT 1 FROM kb_document_acl a WHERE a.doc_id = d.id AND a.permission = #{permission}
+                    AND #{permission} IN ('view', 'download', 'edit') AND a.principal_key IN
+                    <foreach collection="principalKeys" item="k" open="(" separator="," close=")">#{k}</foreach>)
+            </if>))
+    </select>
+</mapper>

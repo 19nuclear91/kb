@@ -1,0 +1,1 @@
+org.springframework.boot.env.EnvironmentPostProcessor=com.zhishiku.kb.gateway.config.ProductionEnvironmentCheck

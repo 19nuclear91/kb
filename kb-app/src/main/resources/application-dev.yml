@@ -1,0 +1,36 @@
+spring:
+  datasource:
+    url: ${KB_DB_URL:jdbc:postgresql://localhost:5432/kb}
+    username: ${KB_DB_USERNAME:kb}
+    password: ${KB_DB_PASSWORD:kb_dev_pwd}
+  data:
+    redis:
+      host: ${KB_REDIS_HOST:localhost}
+  flyway:
+    locations: classpath:db/migration,classpath:db/dev
+kb:
+  embedding:
+    profiles:
+      - profile:
+          profile-id: dev-local-v1
+          provider: local
+          model-source: kb/local-hash
+          model: local-hash-v1
+          model-revision: "1"
+          dimension: 1024
+          distance: cosine
+          query-transform-version: identity-v1
+          document-transform-version: identity-v1
+          query-task-type: query
+          document-task-type: document
+          adapter-version: local-hash-v1
+        connection:
+          timeout-seconds: 30
+          batch-size: 16
+  dev-auth:
+    enabled: true
+  storage:
+    endpoint: ${KB_S3_ENDPOINT:http://localhost:9000}
+    access-key: ${KB_S3_ACCESS_KEY:kbminio}
+    secret-key: ${KB_S3_SECRET_KEY:kbminio_dev_pwd}
+    bucket: ${KB_S3_BUCKET:kb-documents}

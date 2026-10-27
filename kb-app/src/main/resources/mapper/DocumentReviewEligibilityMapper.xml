@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper">
+    <sql id="userKeys">
+        SELECT '1:' || u.id
+        UNION ALL SELECT '2:' || ur.role_id FROM sys_user_role ur WHERE ur.user_id = u.id
+        UNION ALL SELECT '3:' || ancestor FROM unnest(string_to_array(trim(both '/' from dept.path), '/')) ancestor
+        WHERE ancestor &lt;&gt; ''
+    </sql>
+    <sql id="viewGrant">
+        (EXISTS (SELECT 1 FROM kb_space_acl a WHERE a.space_id = d.space_id AND a.permission = 'view'
+            AND a.principal_key IN (<include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.userKeys"/>))
+        OR EXISTS (SELECT 1 FROM kb_document_acl a WHERE a.doc_id = d.id AND a.permission = 'view'
+            AND a.principal_key IN (<include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.userKeys"/>)))
+    </sql>
+    <sql id="reviewGrant">
+        EXISTS (SELECT 1 FROM kb_space_acl a WHERE a.space_id = d.space_id AND a.permission = 'review'
+            AND a.principal_key IN (<include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.userKeys"/>))
+    </sql>
+    <!--
+      u 当前可处理轮次 r：审核工作台待办与站内待审提醒共用这一条件。
+      别名：r 审核轮次、v 版本、d 文档、s 空间、u 用户、dept 主部门。
+      修改时须同步 notification 模块 ReviewNotificationTargets 的 Java 复核，否则通知列表会返回 503，而未读数仍按本片段计数。
+    -->
+    <sql id="pendingReviewer">
+        r.state = 'IN_REVIEW' AND v.publication_evidence = 'NONE' AND r.submitted_space_id = d.space_id
+            AND v.publication_policy = 'REVIEW_REQUIRED' AND s.archived = FALSE AND d.status NOT IN ('deleted', 'archived')
+            AND u.enabled = TRUE AND dept.enabled = TRUE AND u.clearance_level &gt;= d.security_level
+            AND u.id &lt;&gt; v.uploader_user_id AND u.id &lt;&gt; r.submitted_by
+            AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.viewGrant"/>
+            AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.reviewGrant"/>
+    </sql>
+    <resultMap id="qualification" type="com.zhishiku.kb.app.document.model.ReviewerQualification">
+        <constructor>
+            <idArg column="user_id" javaType="_long"/>
+            <arg column="enabled" javaType="_boolean"/>
+            <arg column="department_enabled" javaType="_boolean"/>
+            <arg column="clearance" javaType="_short"/>
+            <arg column="security_level" javaType="_short"/>
+            <arg column="can_view" javaType="_boolean"/>
+            <arg column="can_review" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <select id="candidates" resultMap="qualification" timeout="10">
+        SELECT DISTINCT u.id AS user_id, u.enabled, dept.enabled AS department_enabled,
+            u.clearance_level AS clearance, d.security_level,
+            TRUE AS can_view, TRUE AS can_review
+        FROM kb_document d JOIN kb_space s ON s.id = d.space_id
+        CROSS JOIN sys_user u JOIN sys_dept dept ON dept.id = u.dept_id
+        WHERE d.id = #{documentId} AND d.status NOT IN ('deleted', 'archived') AND s.archived = FALSE
+            AND u.enabled = TRUE AND dept.enabled = TRUE AND u.clearance_level &gt;= d.security_level
+            AND <include refid="viewGrant"/> AND <include refid="reviewGrant"/>
+            <if test="uploaderId != null">AND u.id &lt;&gt; #{uploaderId}</if>
+            <if test="submittedBy != null">AND u.id &lt;&gt; #{submittedBy}</if>
+            <if test="userId != null">AND u.id = #{userId}</if>
+        ORDER BY u.id
+    </select>
+</mapper>

@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.zhishiku</groupId>
+        <artifactId>kb-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>kb-ai</artifactId>
+    <name>AI 服务</name>
+    <description>RAG 编排、对话、SSE 流式输出。调用公有云 embedding / chat / rerank</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.zhishiku</groupId>
+            <artifactId>kb-common</artifactId>
+        </dependency>
+        <!--
+          用 WebFlux 而非 Web MVC：本服务的工作形态是"等上游 LLM 慢慢吐字，
+          同时把字转发给前端"，全程是 IO 等待。用 MVC 的话每个进行中的对话
+          会占住一个容器线程，几百个并发对话就把线程池吃光了。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-webflux-jakarta-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-reactor-spring-boot3-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-redis-jackson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!--
+      ============================================================
+      这里没有 postgresql / spring-boot-starter-jdbc / mybatis，是刻意的。
+
+      《架构决策记录.md》2.4 与 4.5 的约束：AI 服务不得自行绕过授权读取全库。
+      把"不给它数据库连接"做成依赖层面的事实，比写在文档里靠人记住更可靠——
+      没有驱动，就算有人一时糊涂想直接查 kb_doc_chunk 也写不出来。
+
+      AI 服务获取语料的唯一途径是调用 kb-app 的授权检索接口，
+      带上调用者的可信身份，走和前台搜索完全相同的那条权限下推 SQL。
+
+      往这个 pom 里加数据库依赖前，请先确认你没有在拆掉一道安全边界。
+      ============================================================
+    -->
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

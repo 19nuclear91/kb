@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.document.mapper.DocumentFavoriteMapper">
+    <sql id="visibleDocument">
+        <bind name="aclPermission" value="'view'"/>
+        d.status &lt;&gt; 'deleted' AND d.security_level &lt;= #{clearance}
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.parentVersionVisibility"/>
+    </sql>
+
+    <!-- 冲突时保持原创建位置；授权源行不存在时不产生任何返回行。 -->
+    <select id="put" resultType="java.lang.Long" affectData="true" flushCache="true" useCache="false">
+        INSERT INTO kb_document_favorite (user_id, document_id)
+        SELECT #{userId}, d.id FROM kb_document d
+        WHERE d.id = #{documentId} AND <include refid="visibleDocument"/>
+        ON CONFLICT (user_id, document_id)
+        DO UPDATE SET document_id = EXCLUDED.document_id
+        RETURNING id
+    </select>
+
+    <delete id="delete">
+        DELETE FROM kb_document_favorite WHERE user_id = #{userId} AND document_id = #{documentId}
+    </delete>
+
+    <resultMap id="favoriteRow" type="com.zhishiku.kb.app.document.model.DocumentFavoriteRow">
+        <constructor>
+            <idArg column="favorite_id" javaType="_long"/>
+            <arg column="document_id" javaType="_long"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="space_id" javaType="_long"/>
+            <arg column="security_level" javaType="_short"/>
+            <arg column="current_version_id" javaType="java.lang.Long"/>
+            <arg column="current_version_no" javaType="java.lang.Integer"/>
+            <arg column="favorited_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <select id="list" resultMap="favoriteRow" useCache="false">
+        SELECT f.id AS favorite_id, d.id AS document_id, d.title, d.space_id, d.security_level,
+               d.current_version_id, v.version_no AS current_version_no, f.created_at AS favorited_at
+        FROM kb_document_favorite f
+        JOIN kb_document d ON d.id = f.document_id
+        LEFT JOIN kb_document_version v ON v.id = d.current_version_id AND v.doc_id = d.id
+        WHERE f.user_id = #{userId} AND <include refid="visibleDocument"/>
+        <if test="beforeId != null">AND f.id &lt; #{beforeId}</if>
+        ORDER BY f.id DESC LIMIT #{limit}
+    </select>
+
+    <resultMap id="favoriteState" type="com.zhishiku.kb.app.document.model.DocumentFavoriteViews$State">
+        <constructor>
+            <idArg column="document_id" javaType="_long"/>
+            <arg column="favorited" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+
+    <select id="states" resultMap="favoriteState" useCache="false">
+        SELECT d.id AS document_id, (f.id IS NOT NULL) AS favorited
+        FROM kb_document d
+        LEFT JOIN kb_document_favorite f ON f.document_id = d.id AND f.user_id = #{userId}
+        WHERE <include refid="visibleDocument"/> AND
+        <choose>
+            <when test="documentIds != null and documentIds.size() > 0">
+                d.id IN <foreach collection="documentIds" item="id" open="(" close=")" separator=",">#{id}</foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+    </select>
+</mapper>

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  评论目标资格事实。view 与 comment 是两次独立解析的范围，各自取“空间授予 ∪ 文档例外”，例外只扩权；
+  不投影标题、文件名或存储键。是否可读／可发表由 Java 的 VersionAccessRules(COMMENT_TARGET) 判定。
+-->
+<mapper namespace="com.zhishiku.kb.app.document.mapper.DocumentCommentTargetMapper">
+    <resultMap id="target" type="com.zhishiku.kb.app.document.model.DocumentCommentTarget">
+        <constructor>
+            <idArg column="document_id" javaType="_long"/>
+            <arg column="version_id" javaType="_long"/>
+            <arg column="live" javaType="_boolean"/>
+            <arg column="cleared" javaType="_boolean"/>
+            <arg column="view_granted" javaType="_boolean"/>
+            <arg column="comment_granted" javaType="_boolean"/>
+            <arg column="publication_policy" javaType="com.zhishiku.kb.common.review.PublicationPolicy"/>
+            <arg column="publication_protocol" javaType="com.zhishiku.kb.common.review.PublicationProtocol"/>
+            <arg column="uploader_user_id" javaType="java.lang.Long"/>
+            <arg column="publication_evidence" javaType="com.zhishiku.kb.common.review.PublicationEvidence"/>
+            <arg column="published_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="facts">
+        SELECT d.id AS document_id, v.id AS version_id,
+            (d.status NOT IN ('deleted', 'archived') AND s.archived = FALSE) AS live,
+            (d.security_level &lt;= #{clearance}) AS cleared,
+            (<choose>
+                <when test="viewSpaceIds != null and viewSpaceIds.size() > 0">
+                    d.space_id IN <foreach collection="viewSpaceIds" item="viewSpace" open="(" separator="," close=")">#{viewSpace}</foreach>
+                </when>
+                <otherwise>FALSE</otherwise>
+            </choose>
+            <if test="principalKeys != null and principalKeys.size() > 0">
+                OR EXISTS (SELECT 1 FROM kb_document_acl va WHERE va.doc_id = d.id AND va.permission = 'view'
+                    AND va.principal_key IN <foreach collection="principalKeys" item="viewKey" open="(" separator="," close=")">#{viewKey}</foreach>)
+            </if>) AS view_granted,
+            (<choose>
+                <when test="commentSpaceIds != null and commentSpaceIds.size() > 0">
+                    d.space_id IN <foreach collection="commentSpaceIds" item="commentSpace" open="(" separator="," close=")">#{commentSpace}</foreach>
+                </when>
+                <otherwise>FALSE</otherwise>
+            </choose>
+            <if test="principalKeys != null and principalKeys.size() > 0">
+                OR EXISTS (SELECT 1 FROM kb_document_acl ca WHERE ca.doc_id = d.id AND ca.permission = 'comment'
+                    AND ca.principal_key IN <foreach collection="principalKeys" item="commentKey" open="(" separator="," close=")">#{commentKey}</foreach>)
+            </if>) AS comment_granted,
+            v.publication_policy, v.publication_protocol, v.uploader_user_id, v.publication_evidence, v.published_at
+        FROM kb_document d
+        JOIN kb_space s ON s.id = d.space_id
+        JOIN kb_document_version v ON v.doc_id = d.id AND v.id = #{versionId}
+        WHERE d.id = #{documentId}
+    </sql>
+
+    <select id="facts" resultMap="target" useCache="false" timeout="5">
+        <include refid="facts"/>
+    </select>
+
+    <!-- 只锁文档行：版本发布证据一经写入不可变，不必对版本行加锁，避免与 Worker 的版本锁顺序交错。 -->
+    <select id="lockFacts" resultMap="target" useCache="false" timeout="5">
+        <include refid="facts"/> FOR SHARE OF d
+    </select>
+</mapper>

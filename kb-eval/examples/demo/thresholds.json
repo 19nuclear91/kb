@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "rules": [
+    {
+      "metric": "recall",
+      "k": 5,
+      "min": 0.7,
+      "maxRegression": 0.02
+    },
+    {
+      "metric": "duplicateRate",
+      "k": 5,
+      "max": 0.4
+    },
+    {
+      "metric": "emptyResultAccuracy",
+      "min": 0.9
+    }
+  ]
+}

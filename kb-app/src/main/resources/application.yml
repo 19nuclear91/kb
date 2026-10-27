@@ -1,0 +1,157 @@
+server:
+  port: 8081
+
+spring:
+  profiles:
+    default: prod
+  application:
+    name: kb-app
+
+  datasource:
+    url: ${KB_DB_URL:}
+    username: ${KB_DB_USERNAME:}
+    password: ${KB_DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      # 检索查询可能较重，给出明确上限避免拖垮连接池
+      connection-timeout: 5000
+
+  data:
+    redis:
+      host: ${KB_REDIS_HOST:}
+      port: ${KB_REDIS_PORT:6379}
+      database: ${KB_REDIS_DATABASE:1}
+      password: ${KB_REDIS_PASSWORD:}
+      timeout: ${KB_REDIS_TIMEOUT:2s}
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # 开发种子位于 db/dev，仅 application-dev.yml 加载；不自动基线化未知数据库。
+    baseline-on-migrate: false
+
+  servlet:
+    multipart:
+      max-file-size: ${KB_MAX_UPLOAD_SIZE:50MB}
+      max-request-size: ${KB_MAX_UPLOAD_SIZE:50MB}
+
+  task:
+    scheduling:
+      # 默认调度线程池只有 1 个线程；对账轮次会阻塞 Embedding 就绪探测。
+      pool:
+        size: 2
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+logging:
+  level:
+    com.zhishiku.kb: INFO
+    com.zhishiku.kb.app.search.mapper: "OFF"
+    com.zhishiku.kb.app.conversation.mapper: "OFF"
+    com.zhishiku.kb.app.auth.mapper.IdentityQueryMapper: "OFF"
+    com.zhishiku.kb.app.auth.mapper.AuditQueryMapper: "OFF"
+    com.zhishiku.kb.app.document.mapper.DocumentAdminQueryMapper: "OFF"
+
+kb:
+  conversation:
+    enabled: ${KB_CONVERSATION_ENABLED:false}
+    secret: ${KB_CONVERSATION_SECRET:}
+    ai-base-url: ${KB_AI_BASE_URL:}
+  # 开发态登录入口开关。生产必须为 false，由网关或 SSO 提供可信身份后建立 Sa-Token 会话。
+  dev-auth:
+    enabled: false
+  auth:
+    sso:
+      public-origin: ${KB_SSO_PUBLIC_ORIGIN:}
+      result-page-uri: ${KB_SSO_RESULT_PAGE_URI:}
+      connections:
+        dingtalk:
+          enabled: ${KB_SSO_DINGTALK_ENABLED:false}
+          target-enterprise-id: ${KB_SSO_DINGTALK_CORP_ID:}
+          client-id: ${KB_SSO_DINGTALK_CLIENT_ID:}
+          client-secret: ${KB_SSO_DINGTALK_CLIENT_SECRET:}
+          callback-uri: ${KB_SSO_DINGTALK_CALLBACK_URI:}
+        wecom:
+          enabled: ${KB_SSO_WECOM_ENABLED:false}
+          target-enterprise-id: ${KB_SSO_WECOM_CORP_ID:}
+          client-id: ${KB_SSO_WECOM_APP_ID:}
+          client-secret: ${KB_SSO_WECOM_SECRET:}
+          agent-id: ${KB_SSO_WECOM_AGENT_ID:}
+          callback-uri: ${KB_SSO_WECOM_CALLBACK_URI:}
+        feishu:
+          enabled: ${KB_SSO_FEISHU_ENABLED:false}
+          target-enterprise-id: ${KB_SSO_FEISHU_TENANT_KEY:}
+          client-id: ${KB_SSO_FEISHU_APP_ID:}
+          client-secret: ${KB_SSO_FEISHU_APP_SECRET:}
+          callback-uri: ${KB_SSO_FEISHU_CALLBACK_URI:}
+    # 本地凭据 bcrypt 成本；调低削弱抗爆破，调高增加登录延迟。
+    bcrypt-strength: ${KB_BCRYPT_STRENGTH:10}
+    login:
+      # 同一账户连续失败达到该次数即节流；TTL 到期自动解锁，无需人工干预。
+      max-failures: ${KB_LOGIN_MAX_FAILURES:5}
+      # 失败计数存活时长，也是最长锁定时长。
+      lock-duration: ${KB_LOGIN_LOCK_DURATION:15m}
+    password:
+      # 新密码最小长度；初始密码、自助改密与管理员重置共用。
+      min-length: ${KB_PASSWORD_MIN_LENGTH:8}
+  bootstrap:
+    # 首个管理员引导（设计 D10）。用户名与密码都为空即完全跳过，零动作；
+    # 两者都设置后，显示名/密级/部门留空也会得到下方默认值。
+    admin:
+      username: ${KB_BOOTSTRAP_ADMIN_USERNAME:}
+      password: ${KB_BOOTSTRAP_ADMIN_PASSWORD:}
+      display-name: ${KB_BOOTSTRAP_ADMIN_DISPLAY_NAME:系统管理员}
+      clearance-level: ${KB_BOOTSTRAP_ADMIN_CLEARANCE_LEVEL:0}
+    department:
+      code: ${KB_BOOTSTRAP_DEPARTMENT_CODE:HQ}
+      name: ${KB_BOOTSTRAP_DEPARTMENT_NAME:总部}
+  storage:
+    endpoint: ${KB_S3_ENDPOINT:}
+    region: ${KB_S3_REGION:us-east-1}
+    access-key: ${KB_S3_ACCESS_KEY:}
+    secret-key: ${KB_S3_SECRET_KEY:}
+    bucket: ${KB_S3_BUCKET:}
+    path-style-access: ${KB_S3_PATH_STYLE:true}
+  # 对象存储对账：以桶为起点识别孤儿对象与缺失对象；默认只报告不删除。
+  # 语义、启用步骤与回滚方式见 docs/storage-reconciliation-operations.md。
+  storage-reconciliation:
+    interval-ms: ${KB_STORAGE_RECONCILIATION_INTERVAL_MS:3600000}
+    initial-delay-ms: ${KB_STORAGE_RECONCILIATION_INITIAL_DELAY_MS:300000}
+    orphan-grace-seconds: ${KB_STORAGE_ORPHAN_GRACE_SECONDS:3600}
+    prefix: ${KB_STORAGE_RECONCILIATION_PREFIX:documents/}
+    delete-enabled: ${KB_STORAGE_RECONCILIATION_DELETE_ENABLED:false}
+    max-deletes-per-cycle: ${KB_STORAGE_RECONCILIATION_MAX_DELETES_PER_CYCLE:500}
+    missing-check-enabled: ${KB_STORAGE_RECONCILIATION_MISSING_CHECK_ENABLED:true}
+    missing-check-max-per-cycle: ${KB_STORAGE_RECONCILIATION_MISSING_CHECK_MAX_PER_CYCLE:100}
+  # 站内通知派生：同库短事务与租约，不引入消息中间件。默认值与边界见 docs/in-app-notifications.md。
+  notification:
+    derivation-enabled: ${KB_NOTIFICATION_DERIVATION_ENABLED:true}
+    scan-delay-ms: ${KB_NOTIFICATION_SCAN_DELAY_MS:5000}
+  # 固定版本评论：回退时可只关闭发表与回复，保留读取与本人删除。见 docs/version-comments.md。
+  comment:
+    creation-enabled: ${KB_COMMENT_CREATION_ENABLED:true}
+  search:
+    rerank:
+      # 本地规则是确定性兜底；生产可切到任意兼容 /rerank 的服务。
+      provider: ${KB_RERANK_PROVIDER:local}
+      base-url: ${KB_RERANK_BASE_URL:}
+      api-key: ${KB_RERANK_API_KEY:}
+      model: ${KB_RERANK_MODEL:local-token-overlap-v1}
+      timeout-seconds: ${KB_RERANK_TIMEOUT_SECONDS:30}
+
+sa-token:
+  token-name: satoken
+  timeout: ${KB_SA_TOKEN_TIMEOUT:2592000}
+  active-timeout: ${KB_SA_TOKEN_ACTIVE_TIMEOUT:-1}
+  is-concurrent: true
+  is-share: true
+  token-style: uuid
+  is-log: ${KB_SA_TOKEN_LOG:false}
+
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
