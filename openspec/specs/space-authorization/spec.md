@@ -89,7 +89,7 @@ manage 的空间管理员 MUST NOT 授出或撤销任何主体的 manage，以�
 
 ### Requirement: 空间授权只能使用已被执行的权限位
 
-系统 SHALL 只接受 view、download、edit、review 作为可委派授予的空间权限位，manage 另受全局管理员限制。review 只表示空间审核人池成员资格，不隐含 view、download、edit 或足够密级；文档例外不接受 review。对系统中没有任何功能执行的权限位，授权请求 MUST 被拒绝，而不得被静默接受。
+系统 SHALL 只接受 view、download、edit、review、comment 作为可委派授予的空间权限位，manage 另受全局管理员限制。review 只表示空间审核人池成员资格，comment 只表示发表评论资格；两者均不隐含 view、download、edit 或足够密级，文档例外不接受 review。对系统中没有任何功能执行的权限位，授权请求 MUST 被拒绝，而不得被静默接受。
 
 #### Scenario: 授予受支持的权限位
 
@@ -98,8 +98,8 @@ manage 的空间管理员 MUST NOT 授出或撤销任何主体的 manage，以�
 
 #### Scenario: 授予未被执行的权限位
 
-- **WHEN** 操作者请求授予尚未实现的 comment
-- **THEN** 系统返回参数错误并说明该权限位尚未被执行
+- **WHEN** 操作者请求授予未定义或尚未实现的其他权限位
+- **THEN** 系统返回参数错误并说明该权限位不被支持
 - **AND** 不写入任何授权记录
 
 #### Scenario: 委派空间审核人池
@@ -113,6 +113,10 @@ manage 的空间管理员 MUST NOT 授出或撤销任何主体的 manage，以�
 #### Scenario: 文档级审核例外被拒绝
 - **WHEN** 管理员尝试为某文档单独授予 review
 - **THEN** 返回参数错误，不写入例外或绕过空间审核人池
+
+#### Scenario: 委派评论资格
+- **WHEN** 合格空间管理员向用户、角色或部门授予空间 comment
+- **THEN** 按既有主体及祖先部门继承规则生效，但实际发表仍需目标版本当前 view、密级和发布证据
 
 ### Requirement: 授权不得绕过密级
 
@@ -170,7 +174,7 @@ MUST 告知其中因密级而当前不生效的主体数量。
 
 ### Requirement: 归档空间必须退出读取范围但保留管理可达性
 
-系统 SHALL 使已归档空间不出现在 view、download、edit、review 的有效资源范围内，因此其文档不参与检索、列表、下载及审核处理。manage 的可见范围 MUST 仍包含已归档空间，使被委派的管理员能够取消归档。已有审核轮次不因归档自动批准，取消归档后仍按当次资源与版本规则读取。
+系统 SHALL 使已归档空间不出现在 view、download、edit、review、comment 的有效资源范围内，因此其文档不参与检索、列表、下载、审核处理及评论读取／发表。manage 的可见范围 MUST 仍包含已归档空间，使被委派的管理员能够取消归档。已有审核轮次不因归档自动批准，取消归档后仍按当次资源与版本规则读取；本人评论的无正文删除不授予资源读取资格。
 
 #### Scenario: 归档后内容退出检索
 
@@ -193,6 +197,10 @@ MUST 告知其中因密级而当前不生效的主体数量。
 #### Scenario: 归档期间审核
 - **WHEN** 有 review 的用户尝试读取待审正文、送审或批准
 - **THEN** 按当前归档事实拒绝，旧待办和版本策略不构成例外
+
+#### Scenario: 归档期间评论
+- **WHEN** 有 comment 或文档例外的用户尝试读取或发表评论
+- **THEN** 当前归档事实阻止该资源访问，不能凭评论作者或管理员身份放行
 
 ### Requirement: 空间删除必须保持文档引用完整性
 
@@ -332,8 +340,20 @@ ACL、不调整密级、不允许空间管理员据此授出 manage，也不承�
 
 ### Requirement: 审核授权必须保留文档例外的封闭范围
 
-本阶段文档例外 SHALL 继续只接受 view、download、edit，不能授予 review、manage 或尚未实现的 comment。空间 review 可由空间管理员按现有资源管理规则授予和撤销，授出仍不可提升密级或自动授予阅读；搬迁继续清除全部文档例外。
+文档例外 SHALL 只接受 view、download、edit、comment，不能授予 review 或 manage。空间 review 与空间／文档 comment 可由当前资源管理员按现有管理规则授予和撤销，授出仍不可提升密级或自动授予阅读；例外只扩权，搬迁继续清除全部文档例外。
 
 #### Scenario: review 与文档 view 组合
 - **WHEN** 用户通过文档 view 例外及空间 review 同时满足目标版本的当前条件
 - **THEN** 可按审核规则参与该文档审核，不因此获得其他文档阅读权或文档级 review
+
+#### Scenario: 文档 comment 例外
+- **WHEN** 管理员向空间外用户授予某文档的 comment 例外
+- **THEN** 仅该文档获得评论资格，用户仍须另有当前 view、足够密级及目标版本发布证据
+
+#### Scenario: 撤销例外但空间仍授权
+- **WHEN** 删除某用户的文档 comment 例外，而其有效空间主体仍持有 comment
+- **THEN** 空间授予继续生效，不将删除例外解释为 deny
+
+#### Scenario: 搬迁后原评论资格失效
+- **WHEN** 文档迁往另一空间并清除全部原例外
+- **THEN** 后续评论读取与写入使用目标空间及新例外，原 comment 记录不保留跨空间资格

@@ -93,8 +93,8 @@ public class PermissionService {
      *
      * @param userId     <b>必须</b>来自服务端已验证的身份。绝不能采信请求体或请求头里
      *                   客户端自称的用户 / 角色 / 部门。
-     * @param permission {@link #PERM_VIEW}、{@link #PERM_DOWNLOAD}、
-     *                   {@link #PERM_EDIT} 或 {@link #PERM_MANAGE}
+     * @param permission {@link #PERM_VIEW}、{@link #PERM_DOWNLOAD}、{@link #PERM_EDIT}、
+     *                   {@link #PERM_REVIEW}、{@link #PERM_COMMENT} 或 {@link #PERM_MANAGE}
      */
     public PermissionScope resolve(long userId, String permission) {
         return resolve(principalOf(userId), permission);
@@ -142,8 +142,8 @@ public class PermissionService {
      * 构造位置，避免语义漂移。每个权限位只发出一次 {@code findVisibleSpaceIds}。
      *
      * @param handle     {@link #principalOf(long)} 铸造的句柄；不接受其他来源
-     * @param permission {@link #PERM_VIEW}、{@link #PERM_DOWNLOAD}、
-     *                   {@link #PERM_EDIT} 或 {@link #PERM_MANAGE}
+     * @param permission {@link #PERM_VIEW}、{@link #PERM_DOWNLOAD}、{@link #PERM_EDIT}、
+     *                   {@link #PERM_REVIEW}、{@link #PERM_COMMENT} 或 {@link #PERM_MANAGE}
      */
     public PermissionScope resolve(PrincipalHandle handle, String permission) {
         Objects.requireNonNull(handle, "主体句柄不可为 null；请先调用 principalOf(userId)");

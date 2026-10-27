@@ -54,8 +54,8 @@ public class DocumentAclController {
 
     @PostMapping
     @Operation(summary = "授予文档例外授权",
-            description = "需要该文档所属空间的 manage。可授予 view、download、edit；"
-                    + "manage 不能用于文档级例外。例外不修改密级，"
+            description = "需要该文档所属空间的 manage。可授予 view、download、edit、comment；"
+                    + "comment 只为该文档增加发表评论资格，不隐含 view；review 与 manage 不能用于文档级例外。例外不修改密级，"
                     + "响应会回执因密级而当前不生效的主体数量；重复授予是幂等的")
     /**
      * 为文档所属空间之外的主体增加一条文档级访问例外。

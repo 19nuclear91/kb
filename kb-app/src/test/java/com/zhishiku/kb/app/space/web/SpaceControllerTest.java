@@ -152,7 +152,7 @@ class SpaceControllerTest {
     void grantingUnexecutedPermissionBitReturnsBadRequest() throws Exception {
         when(acls.grant(eq(1L), any(), eq(2L), eq("approve"), any(), eq("req-6")))
                 .thenThrow(IdentityException.badRequest(
-                        "权限位 approve 尚未被执行，可授予的权限位仅为 view、download、edit、review、comment"));
+                        "权限位 approve 不被支持，可授予的权限位仅为 view、download、edit、review、comment（manage 需 space:grant-manage）"));
 
         mvc().perform(post("/api/admin/spaces/1/acl")
                         .contentType(MediaType.APPLICATION_JSON)

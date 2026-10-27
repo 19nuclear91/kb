@@ -6,9 +6,11 @@ import type { CommentItem, CommentPage } from './api';
 type ListState = {
   base: string; revision: number; items: CommentItem[]; cursor: string | null; canCreate: boolean;
   loading: boolean; failed: boolean; status?: number; loaded: boolean; revalidating: boolean;
+  /** 同一游标连续失败次数；成功或首页读取后归零。大于 0 期间（含重试在途）对外报告 incomplete。 */
+  misses: number;
 };
 const empty = (base: string, revision: number): ListState =>
-  ({ base, revision, items: [], cursor: null, canCreate: false, loading: true, failed: false, loaded: false, revalidating: false });
+  ({ base, revision, items: [], cursor: null, canCreate: false, loading: true, failed: false, loaded: false, revalidating: false, misses: 0 });
 
 /**
  * 一条独立的服务端游标列表（根评论或单个根下的回复）。键含会话 epoch 与固定目标，变化即中止并清空；
@@ -38,16 +40,17 @@ export function useCommentList(load: ((cursor: string | null, signal: AbortSigna
         if (current.base !== key || current.revision !== at) return current;
         const items = cursor === null ? page.items : [...current.items, ...page.items];
         if (new Set(items.map(item => item.commentId)).size !== items.length)
-          return { ...current, loading: false, failed: true, status: 503, ...(cursor === null ? { items: [], canCreate: false, loaded: false, revalidating: false } : {}) };
+          return { ...current, loading: false, failed: true, status: 503, misses: current.misses + 1,
+            ...(cursor === null ? { items: [], canCreate: false, loaded: false, revalidating: false, misses: 0 } : {}) };
         return { base: key, revision: at, items, cursor: page.hasMore ? page.nextCursor : null, canCreate: page.canCreate,
-          loading: false, failed: false, loaded: true, revalidating: false };
+          loading: false, failed: false, loaded: true, revalidating: false, misses: 0 };
       });
     }, error => {
       if (controller.signal.aborted || isAbort(error)) return;
       const status = error instanceof ApiError ? error.status : undefined;
       setState(current => current.base !== key || current.revision !== at ? current
         : cursor === null ? { ...empty(key, at), loading: false, failed: true, status }
-          : { ...current, loading: false, failed: true, status });
+          : { ...current, loading: false, failed: true, status, misses: current.misses + 1 });
     });
   }, []);
   const snapshot = useRef(state); snapshot.current = state;
@@ -64,10 +67,13 @@ export function useCommentList(load: ((cursor: string | null, signal: AbortSigna
   const more = () => {
     if (enabled && !current.loading && current.cursor && current === state) fetchPage(base, revision, current.cursor, current);
   };
-  /** 续页失败后按同一游标重试；首页失败则整体重读。 */
+  /**
+   * 续页失败后先按同一游标重试；同一游标第二次失败或游标被拒绝（400）时改为从首页重读，
+   * 避免确定性故障让列表与发表一直停在续页失败。首页失败则整体重读。
+   */
   const retry = () => {
     if (!enabled || current.loading) return;
-    if (current.loaded && current.cursor) fetchPage(base, revision, current.cursor, current);
+    if (current.loaded && current.cursor && current.misses < 2 && current.status !== 400) fetchPage(base, revision, current.cursor, current);
     else setRevision(value => value + 1);
   };
   const reload = useCallback(() => setRevision(value => value + 1), []);
@@ -76,8 +82,9 @@ export function useCommentList(load: ((cursor: string | null, signal: AbortSigna
     ...value, items: value.items.map(item => item.commentId === id
       ? { ...item, deleted: true, author: null, body: null, isOwn: false, canDelete: false } : item),
   }), [base]);
+  // incomplete：续页失败后、同一游标重新读取成功前为真（含重试在途期间），调用方须暂停发表。
   return { items: current.items, loading: current.loading, failed: current.failed, status: current.status, loaded: current.loaded,
     canCreate: current.loaded && current.canCreate, revalidating: current.revalidating, hasMore: current.loaded && current.cursor !== null,
-    more, retry, reload, tombstone };
+    incomplete: current.misses > 0, more, retry, reload, tombstone };
 }
 export type CommentList = ReturnType<typeof useCommentList>;

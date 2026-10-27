@@ -9,6 +9,7 @@ import com.zhishiku.kb.app.notification.model.NotificationRow;
 import com.zhishiku.kb.app.notification.model.NotificationViews;
 import com.zhishiku.kb.app.support.MapperRowStub;
 import org.apache.ibatis.builder.xml.XMLMapperBuilder;
+import org.apache.ibatis.builder.xml.XMLMapperEntityResolver;
 import org.apache.ibatis.mapping.ParameterMapping;
 import org.apache.ibatis.parsing.XPathParser;
 import org.apache.ibatis.session.Configuration;
@@ -198,6 +199,31 @@ class NotificationMappingTest {
             assertThat(probed.getMappedStatement(id).getBoundSql(parameters).getParameterMappings())
                     .extracting(ParameterMapping::getProperty).contains("liveReplyProbe", "evidenceProbe");
         }
+    }
+
+    @Test
+    void notificationSqlIncludesOnlyTheRuleFragmentsSourceModulesPublish() throws Exception {
+        // 通知只以 include 复用源模块公开的授权片段；引用其他片段等同于直接读取源模块的表。
+        Set<String> allowed = Set.of("facts", "visible",
+                "com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate",
+                "com.zhishiku.kb.app.document.mapper.DocumentMapper.versionInteractivePredicate",
+                "com.zhishiku.kb.app.document.mapper.DocumentMapper.currentViewGrant",
+                "com.zhishiku.kb.app.document.mapper.DocumentMapper.commentTargetEvidence",
+                PENDING_REVIEWER,
+                "com.zhishiku.kb.app.comment.mapper.DocumentCommentMapper.liveReply");
+        var all = new TreeSet<String>();
+        for (String resource : List.of("/mapper/UserNotificationMapper.xml", "/mapper/NotificationDerivationMapper.xml")) {
+            try (var input = NotificationMappingTest.class.getResourceAsStream(resource)) {
+                assertThat(input).as(resource).isNotNull();
+                var parser = new XPathParser(input, true, null, new XMLMapperEntityResolver());
+                var referenced = parser.evalNodes("//include").stream().map(node -> node.getStringAttribute("refid"))
+                        .collect(Collectors.toCollection(TreeSet::new));
+                assertThat(allowed).as(resource).containsAll(referenced);
+                all.addAll(referenced);
+            }
+        }
+        // 确认确实解析到了 include，避免空集合使白名单断言恒真。
+        assertThat(all).contains(PENDING_REVIEWER, "com.zhishiku.kb.app.comment.mapper.DocumentCommentMapper.liveReply");
     }
 
     @Test

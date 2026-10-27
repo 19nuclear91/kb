@@ -45,7 +45,7 @@
 
 - 评论只在有发布证据的版本上开放。待审版本的讨论只能写在审核模块的私有意见里，两者使用不同的表、接口和页面区域。
 - 批准不会把审核意见转成评论，读取评论也不会预取审核意见，或把审核通过当作意见公开。
-- ArchUnit 规则限制 comment 包只经 document 与 collaboration 的 service 契约取事实和写事实，不依赖 notification、search、conversation、embedding、aiusage、parse、storage、space 包或其他模块的 mapper。其他模块的 Java 代码也不依赖 comment 包。
+- ArchUnit 规则限制 comment 包不依赖 notification、search、conversation、embedding、aiusage、parse、storage、space 包或其他模块的 mapper，其他模块的 Java 代码也不依赖 comment 包。实现上，comment 经 document 与 collaboration 的 service 契约取事实和写事实，身份门禁和作者标签使用 auth 的 `AdminQueryAccess`、`IdentityQueryService`；这些允许的依赖不由该规则单独约束。
 
 ### 旧发布证据边界
 
@@ -238,7 +238,7 @@ V25 修改约束时会对 `kb_collaboration_event` 和 `kb_collaboration_coverag
 - 回复事务写入 `COMMENT_REPLIED` 事实，收件人意图是根评论作者。回复本人的根评论时不记录收件人。根创建（`COMMENT_CREATED`）和删除（`COMMENT_DELETED`）不产生个人提醒，派生时直接完成。
 - 事实按 `KIND:commentId` 业务键去重，只含 `comment_id`、`root_comment_id`、文档/版本、操作者和服务器时间，不含正文。
 - 通知目标为 `{"kind":"DOCUMENT_VERSION_COMMENT","documentId":...,"versionId":...,"reviewId":null,"commentId":"<回复 UUID>"}`，其中 `commentId` 是 UUID，定位固定版本上的那条回复，不跟随最新版本。
-- 列表和未读数共用 `UserNotificationMapper.xml` 的 `visible` 片段。`COMMENT_REPLIED` 分支要求 `discussable`（文档当前 view、密级、未删除未归档，且版本有 `PUBLISHED`/`OBSERVED_CURRENT` 证据，引用 document 模块的 `commentTargetEvidence` 片段）和 `reply_readable`（引用评论模块的 `liveReply` 片段：回复仍是同版本未删除的回复）。通知模块只以 SQL 片段引用评论规则，不依赖评论模块的 Java 或 Mapper。
+- 列表和未读数共用 `UserNotificationMapper.xml` 的 `visible` 片段。`COMMENT_REPLIED` 分支要求 `discussable`（文档当前 view、密级、未删除未归档，且版本有 `PUBLISHED`/`OBSERVED_CURRENT` 证据，引用 document 模块的 `commentTargetEvidence` 片段）和 `reply_readable`（引用评论模块的 `liveReply` 片段：回复仍是同版本未删除的回复）。通知模块只以 SQL 片段引用评论规则，不依赖评论模块的 Java 或 Mapper；`NotificationMappingTest` 限定通知 XML 只能 include 源模块公开的授权片段，新增引用须同时更新该白名单。
 - 读取列表时，`CommentNotificationTargets` 会按 SQL 投影的事实再判断一次。两边不一致时整页返回 503，并让 `kb.notification.read.mismatch` 加一。修改 `liveReply` 或 `commentTargetEvidence` 时必须同步这个类。
 - 根评论被删除不会隐藏合法回复的提醒。回复被删除、撤权、升密、归档或删除后，提醒在下一次读取时从列表和未读数中隐藏，但不会删除已生成的通知或已读状态。权限恢复且回复仍存在时，提醒可以重新出现。
 - 解析器未安装时，回复事实保持 `WAITING_SOURCE` 并按退避等待，安装后继续派生，不修改源事件、收件人或已读状态。派生失败只会让 projection 退避重试，不会回滚已提交的回复，也不会再次创建回复。
@@ -248,12 +248,14 @@ V25 修改约束时会对 `kb_collaboration_event` 和 `kb_collaboration_coverag
 
 ### 文档详情
 
-- 在文档中心选中某个版本后，审核进度下方出现“版本评论 · 固定版本 N”。只有当前状态确认该版本有 `PUBLISHED` 或 `OBSERVED_CURRENT` 证据且可读时才请求评论；否则显示“该版本尚无发布证据，不开放评论”，不请求正文，也不按索引状态推断。
+- 在文档中心选中某个版本后，审核进度下方出现“版本评论 · 固定版本 vN”，N 与版本历史表一致。只有当前状态确认该版本有 `PUBLISHED` 或 `OBSERVED_CURRENT` 证据且可读时才请求评论；否则显示“该版本尚无发布证据，不开放评论”，不请求正文，也不按索引状态推断。
 - 根评论按倒序显示，“更多评论”按服务端游标续页。每条根评论下点击“查看回复”才读取回复，“更多回复”独立续页，不会预取全部回复。正在读取、暂无评论、已显示全部和读取失败分别有不同提示；失败时显示“重新读取评论/回复”，不会当作没有评论。续页失败时保留已显示的项。
 - 有 comment 时显示“评论内容”输入框和“发表评论”，回复区显示“回复内容”和“提交回复”；只有 view 时提示可以阅读但没有发表资格。回复只能挂在根评论下，回复项没有回复、编辑或附件入口。
 - 输入框下方显示按 code point 计算的字数。超过 4000 时提示删减，不会截断；含 NUL 时不能提交。正文用纯文本显示，脚本、HTML、图片标记和链接都不执行或加载。
 - 提交期间按钮不可重复点击。成功后清空草稿并重新读取当前页，不乐观追加未确认的评论。结果不确定时提示“待核对”，可以“按原内容重试”（复用原请求标识）、“重新读取核对”或“放弃核对”；放弃后修改正文再提交会使用新标识。重放成功时提示“已核对为同一次提交，未重复发表”，原评论已删除时提示未重新发表。
-- 发表时如果返回 403 或 409，页面停止提交并重新读取，不按旧按钮状态放行。每次重新读取首页（包括发表成功后）返回之前，已确认的评论继续显示，但“发表评论”“提交回复”和“按原内容重试”都不可用，并提示“正在重新核对发表资格…”，直到服务端重新确认资格。
+- 待核对的绑定由评论面板的持有者保存在页面内存中，不随输入框卸载丢失：收起再展开回复、“重新读取核对”失败后恢复读取、版本状态重读后重新确认，输入框重新出现时仍显示待核对，“按原内容重试”沿用原标识。以下情况绑定随之丢弃：版本状态确认不可评论；资源被拒绝；本人删除该根评论（其下回复的绑定），或删除的评论正文与同一输入框中打开删除确认时已待核对的内容相同（打开确认时请求仍在途、之后才变为不确定，或确认期间被重新发出且删除完成时仍在途的，都不丢弃，照常显示待核对）；切换版本或身份、隐藏页面、窗口重新获得焦点（会话进入新世代）。丢弃后再提交会使用新标识，因此窗口切回后重新提交同一段文字，可能与此前结果不确定的那次重复，请先读取列表核对。
+- 发表或回复返回 403 或 409 时，页面停止提交，并重新读取根评论与已展开的回复，不按旧按钮状态放行；从拒绝出现到重读开始之间，“发表评论”“提交回复”同样不可用。重读首页返回之前，已确认的评论继续显示，但这些按钮和“按原内容重试”都不可用，并提示“正在重新核对发表资格…”，直到服务端重新确认资格。发表成功后只重读该输入框所在的列表，期间该输入框同样暂停。回复遇到根已删除时，根评论显示为已删除，回复区提示不能追加回复。
+- 续页读取失败时保留已显示的项和草稿，在原“更多评论/更多回复”的位置显示故障和“重新读取评论/回复”，失败期间不提供续页按钮，并暂停发表，提示“读取未完成，请在列表末尾重新读取后再发表”。按同一游标重试的请求返回前同样暂停，提示“正在重新读取，完成后才能发表”，续页按钮显示为读取中、不可点击。“重新读取评论/回复”先按同一游标重试；同一游标第二次失败，或游标被拒绝（400）时，改为从首页重新读取。从首页重新读取仍失败时按首页失败处理，已显示的项和草稿不再保留。
 
 ### 删除本人评论
 
@@ -264,11 +266,11 @@ V25 修改约束时会对 `kb_collaboration_event` 和 `kb_collaboration_coverag
 ### 撤权与通知目标
 
 - 读取得到 401、403 或 404 时，立即清理页面中的评论正文、作者、草稿和游标，提示该版本评论当前不可访问。如果当前身份在本页已知自己的评论，会列出“删除本人评论”（只显示 ID 前缀，不显示正文），不会为此重读讨论。点击“重新核对”后重新读取。
-- 在站内通知中打开回复提醒，会按通知记录的固定版本核对那条评论，然后可以“查看本版本讨论”。目标失效时清理旧内容并提示，不改为显示其他版本或最新版本的讨论。打开目标不会标记已读。
+- 在站内通知中打开回复提醒，会按通知记录的固定版本核对那条评论，然后可以“查看本版本讨论”。目标失效时清理旧内容并提示，不改为显示其他版本或最新版本的讨论。展开的讨论读取得到 401、403 或 404 时，目标评论的正文和作者也一并清理；此时讨论区不再单独提供“重新核对”，只能点击“重新核对目标”重新读取，避免目标内容在提示已清理时重新出现。打开目标不会标记已读。
 
 ### 生命周期
 
-评论正文、作者、草稿、游标、写意图和已知本人评论 ID 只保存在当前页面内存中，不写入 URL、localStorage、日志或遥测。切换版本或文档、离开页面、标签页隐藏、退出、强制改密或切换账号时，会卸载评论面板、取消请求并清空上述内容。恢复时先核对身份，再读取当前资格，旧账号迟到的列表、回执或删除目标不会进入新页面。
+评论正文、作者、草稿、游标、写意图和已知本人评论 ID 只保存在当前页面内存中，不写入 URL、localStorage、日志或遥测。切换版本或文档、离开页面、标签页隐藏、退出、强制改密或切换账号时，会卸载评论面板、取消请求并清空上述内容。窗口重新获得焦点时，全局会话会重新核对身份并进入新的会话世代，评论状态同样清空，所选版本回到当前发布版本。恢复时先核对身份，再读取当前资格，旧账号迟到的列表、回执或删除目标不会进入新页面。
 
 ### 授权管理页面
 
@@ -291,6 +293,8 @@ V25 修改约束时会对 `kb_collaboration_event` 和 `kb_collaboration_coverag
 
 以下命令在 Windows PowerShell 中执行。测试只运行明确列出的范围，排除了需要 `KB_TEST_POSTGRES_URL` 的 PostgreSQL 烟测，没有运行包含集成测试或外部组件的全量套件。
 
+首次在新环境执行时，先在项目根目录运行 `mvn -q install -N '-DskipTests'` 安装父 POM，并去掉下列命令中的 `-o` 在线解析一次依赖；`kb-web` 目录需先 `npm ci` 按 lockfile 安装依赖，否则 `npx` 会临时下载未锁定版本的 vitest。
+
 项目根目录：
 
 ```powershell
@@ -300,17 +304,17 @@ mvn -o -pl kb-app test '-Dtest=com/zhishiku/kb/app/comment/**/*Test,com/zhishiku
 mvn -o -pl kb-gateway,kb-worker test '-Dtest=ReviewResponsePolicyTest,ReviewRouteTest,VersionedChunkPublicationTest' '-Dsurefire.failIfNoSpecifiedTests=false' '-Dstyle.color=never'
 ```
 
-结果：kb-common 26 项（含 `VersionAccessRulesTest` 的 COMMENT_TARGET 目的与 `CollaborationEventTest` 的评论事实结构），kb-app 840 项，kb-gateway 3 项，kb-worker 4 项，全部通过，失败、错误、跳过均为 0。其中与评论直接相关的 kb-app 测试：
+结果：kb-common 26 项（含 `VersionAccessRulesTest` 的 COMMENT_TARGET 目的与 `CollaborationEventTest` 的评论事实结构），kb-app 841 项，kb-gateway 3 项，kb-worker 4 项，全部通过，失败、错误、跳过均为 0。其中与评论直接相关的 kb-app 测试：
 
 - 模型与输入（`CommentModelTest`）：正文规范化、code point 上限、NUL/孤立代理、请求绑定、UUID 路径和墓碑投影。
 - 无连接映射（`DocumentCommentMappingTest`、`DocumentCommentTargetTest`）：评论行与命令绑定的精确映射，命令绑定只存摘要不存正文，每条读取和锁语句都绑定完整文档版本路径，view/comment 两组范围分开绑定，语句不投影文档或存储列。
 - 资格矩阵（`DocumentCommentTargetTest`、`VersionAccessPurposeTest`）：`PUBLISHED`/`OBSERVED_CURRENT`、`LEGACY_COMPAT` 单独不足、候选拒绝、view 与 comment 合取、密级和主体/归档/删除门禁；空间 comment 与文档例外是独立的并集分支，删除例外后空间授予照常绑定。
-- ACL（`CommentPermissionScopeTest`、`SpaceAclServiceTest`、`DocumentAclServiceTest`、`DocumentRelocationServiceTest`、`SpaceControllerTest`）：用户/角色/祖先部门、空间与例外并集、只扩权、搬迁清除、文档 review 拒绝、其他权限不暗含 comment。
+- ACL（`CommentPermissionScopeTest`、`SpaceAclServiceTest`、`DocumentAclServiceTest`、`DocumentRelocationServiceTest`）：用户/角色/祖先部门、空间与例外并集、只扩权、搬迁清除、文档 review 拒绝、其他权限不暗含 comment。`SpaceControllerTest` 覆盖空间授权接口的 HTTP 映射（含未支持权限位返回 400），不包含 comment 授予用例。
 - 创建（`DocumentCommentCreateTest`）：并发匹配请求只产生一条评论和一条事实、先到者回滚后等待者自建、不同正文/操作者冲突、深层/跨版本/已删根拒绝、事实写入失败时不确认成功、根作者收件人与自身排除、事务配置；新建开关关闭时发表、回复和重放为 403（不可见目标仍为 404），读取提示同步关闭，本人删除不受影响，重新开启后原标识可重放。`CommentPropertiesTest` 按实际 `application.yml`/`application-dev.yml` 离线绑定 `kb.comment`，确认默认开启且 `KB_COMMENT_CREATION_ENABLED` 可以关闭和重新开启。
 - 删除（`DocumentCommentDeleteTest`）：重复删除幂等、撤权后仍可无正文删除、他人与管理员统一 404、根删除不级联且禁止新回复、删除后重放只返回 deleted 回执。
 - 读取（`DocumentCommentQueryTest`）：`limit + 1`、跨版本/跨根游标 400、墓碑无正文、作者标签批量投影、固定评论目标不跟随新版本。
 - 控制器（`DocumentCommentControllerTest`）：400/401/403/404/409/503、禁止客户端身份/时间覆盖、未授权读取无资源明细、no-store。
-- 通知（`CommentNotificationContractTest`、`NotificationMappingTest`、`NotificationRetryTest`）：合法回复定位、已删回复/撤权/升密/归档/无证据隐藏、SQL 与 Java 复核不一致返回 503、列表与计数共用类型、只提醒他人回复、`WAITING_SOURCE` 恢复、重复事实与重新派生不重置已读、派生失败保留源事实。
+- 通知（`CommentNotificationContractTest`、`NotificationMappingTest`、`NotificationRetryTest`）：合法回复定位、已删回复/撤权/升密/归档/无证据隐藏、SQL 与 Java 复核不一致返回 503、列表与计数共用类型、通知 XML 只 include 白名单内的源模块授权片段、只提醒他人回复、`WAITING_SOURCE` 恢复、重复事实与重新派生不重置已读、派生失败保留源事实。
 - 架构（`ModuleBoundaryTest`）：评论与通知、检索、会话、Embedding 解耦，其他模块不依赖评论包。
 
 网关的 `ReviewRouteTest`、`ReviewResponsePolicyTest` 覆盖评论路径的路由与 no-store；Worker 的 `VersionedChunkPublicationTest` 是受影响的发布回归。
@@ -323,6 +327,6 @@ npm run typecheck
 npm run build
 ```
 
-结果：58 个测试文件、670 项全部通过。评论新增 24 项（`comments/api.test.ts` 8、`comments/panel.test.tsx` 14、`comments/lifecycle.test.tsx` 2），其中包括重读首页期间暂停发表与“按原内容重试”，覆盖发布证据门控、V1/V2 切换与迟到结果、根/回复独立游标、故障不冒充空讨论、code point 校验、纯文本显示、显式匹配重试与新标识、单层回复、本人删除与墓碑、删除结果不确定、发表前撤权、撤权遮蔽与无正文删除、通知目标固定版本、隐藏/账号切换清理。另外更新了通知、ACL 和文档页测试（评论目标打开、comment 选项、文档面板无 review、版本切换时评论跟随所选版本）。全部使用 mock 会话、受控 Promise 和 jsdom。类型检查通过。静态构建通过，主 chunk 为 1,229.13 kB，高于 1200 kB 的告警阈值，这是告警，不是失败。
+结果：58 个测试文件、691 项全部通过。评论新增 41 项（`comments/api.test.ts` 8、`comments/panel.test.tsx` 30、`comments/lifecycle.test.tsx` 3），`admin/hooks.test.tsx` 新增 4 项（调用方保存的未决绑定跨卸载沿用原标识、旧会话世代条目被删除、条目被删后待核对回到空闲、在途标记只由最近一次发送清除），其中包括重读首页期间暂停发表与“按原内容重试”、拒绝提交到 DOM 时按钮不重新可用（以 MutationObserver 记录每次提交）、收起回复/核对重读失败/版本状态重读后仍按原标识核对、版本确认不可评论或隐藏页面即丢弃绑定、删除本人评论时丢弃同内容与其下回复的绑定（只丢弃打开删除确认时已待核对、删除完成时不在途的绑定；打开时在途、删除完成前才变为不确定，或确认期间被重新发出的照常待核对）、删除确认框待核对跨关闭保留、任一入口 403/409 同步重读根与回复、回复遇根已删除、续页失败暂停发表并在续页位置显示故障与重试（同一游标重试在途期间仍暂停）且同一游标再失败或被拒绝时改读首页、通知目标讨论被拒时清理目标正文且只经“重新核对目标”恢复、标题显示 vN，覆盖发布证据门控、V1/V2 切换与迟到结果、根/回复独立游标、故障不冒充空讨论、code point 校验、纯文本显示、显式匹配重试与新标识、单层回复、本人删除与墓碑、删除结果不确定、发表前撤权、撤权遮蔽与无正文删除、通知目标固定版本、隐藏/账号切换清理。另外更新了通知、ACL 和文档页测试（评论目标打开、comment 选项、文档面板无 review、版本切换时评论跟随所选版本）。全部使用 mock 会话、受控 Promise 和 jsdom。类型检查通过。静态构建通过，主 chunk 为 1,231.74 kB，高于 1200 kB 的告警阈值，这是告警，不是失败。
 
 以上结果不包含迁移执行、真实 SQL 权限与执行计划、事务回滚和锁互斥、多实例并发、网关或应用启动、浏览器端到端，以及说明文档或 SQL 文本断言。没有启动数据库、Redis、MinIO、Docker 或模型服务。

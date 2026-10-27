@@ -8,7 +8,7 @@ import { AdminError, adminWrite, intentKey, uncertain, uncertainMessage, type Ad
 export type WritePhase = 'idle' | 'submitting' | 'confirmed' | 'uncertain' | 'rejected';
 export type WriteOutcome<T> = { status: 'confirmed'; value: T } | { status: 'uncertain' } | { status: 'rejected'; error: ApiError } | { status: 'ignored' };
 export interface WriteView { phase: WritePhase; message?: string; reason?: AdminReason; status?: number }
-type Binding = { key: string; requestId: string; intent: WriteIntent };
+export type Binding = { key: string; requestId: string; intent: WriteIntent };
 // 403 后仅自动核对一次；守卫重挂载时保留拒绝状态，显式重读或身份世代变化才重新请求。
 const deniedReads = new WeakMap<object, { epoch: number; keys: Set<string> }>();
 function deniedFor(session: object, epoch: number) {
@@ -17,21 +17,52 @@ function deniedFor(session: object, epoch: number) {
   return record.keys;
 }
 
+/** 调用方持有的未决绑定：按“epoch|scope”保存，随持有者卸载、被显式清空或会话世代变化而丢弃。 */
+export type WriteBindings = Map<string, Binding>;
+// 正在发送的绑定 → 最近一次发送的标记；旧发送结束时只清除自己的标记，不影响重挂载后对同一绑定的重试。
+const sending = new WeakMap<Binding, object>();
+/** 绑定的请求是否仍在途：结果尚未知，调用方不应据外部事实（如同正文评论被删）把它当作已执行而丢弃。 */
+export function inFlight(entry: Binding): boolean {
+  return sending.has(entry);
+}
+
 /**
  * 管理写入的共用状态：提交互斥；结果不确定时保留内存绑定，仅在显式重试或同内容再提交时复用请求标识；
- * 内容、目标或版本变化即新标识。scope 或会话 epoch 变化、组件卸载时丢弃绑定，晚到结果不再更新界面。
+ * 内容、目标或版本变化即新标识。晚到结果不再更新界面。
+ * 未传 bindings 时，scope 或会话 epoch 变化、组件卸载都丢弃绑定。
+ * 传入 bindings 时绑定改存于调用方：组件卸载后重新挂载仍显示待核对并沿用原标识，直到确认、拒绝或放弃核对；
+ * 会话 epoch 变化即删除表中旧世代的条目；调用方删除条目后，待核对视图回到空闲，不再提供无对象的重试。
  */
-export function useAdminWrite(scope: string, execute: typeof adminWrite = adminWrite) {
+export function useAdminWrite(scope: string, execute: typeof adminWrite = adminWrite, bindings?: WriteBindings) {
   const { session, state } = useSession(), access = useAdminAccess();
   const recheck = useRef(access.check); recheck.current = access.check;
   const context = `${state.epoch}|${scope}`, latest = useRef(context); latest.current = context;
-  const lock = useRef(false), generation = useRef(0), controller = useRef<AbortController | null>(null), binding = useRef<Binding | null>(null);
-  const [view, setView] = useState<WriteView & { context: string }>({ context, phase: 'idle' });
-  useEffect(() => () => { generation.current++; controller.current?.abort(); controller.current = null; binding.current = null; lock.current = false; }, [context]);
+  const lock = useRef(false), generation = useRef(0), controller = useRef<AbortController | null>(null), local = useRef<Binding | null>(null);
+  const binding = {
+    get current(): Binding | null { return bindings ? bindings.get(latest.current) ?? null : local.current; },
+    set current(value: Binding | null) {
+      if (!bindings) local.current = value;
+      else if (value) bindings.set(latest.current, value);
+      else bindings.delete(latest.current);
+    },
+  };
+  const restored = (at: string): WriteView & { context: string } => ({ context: at, ...(bindings?.has(at) ? { phase: 'uncertain', message: uncertainMessage } : { phase: 'idle' }) });
+  const [view, setView] = useState<WriteView & { context: string }>(() => restored(context));
+  useEffect(() => () => { generation.current++; controller.current?.abort(); controller.current = null; local.current = null; lock.current = false; }, [context]);
+  // 调用方的表跨世代存活时，旧身份的未决绑定（含写入内容）不得留在内存中。
+  useEffect(() => {
+    if (!bindings) return;
+    const prefix = `${state.epoch}|`;
+    for (const key of bindings.keys()) {
+      if (!key.startsWith(prefix)) bindings.delete(key);
+    }
+  }, [bindings, state.epoch]);
 
   async function run<T>(entry: Binding): Promise<WriteOutcome<T>> {
     const id = ++generation.current, at = latest.current, epoch = session.getSnapshot().epoch, abort = new AbortController();
     const live = () => id === generation.current && at === latest.current && epoch === session.getSnapshot().epoch;
+    const mark = {};
+    sending.set(entry, mark);
     lock.current = true; controller.current = abort; setView({ context: at, phase: 'submitting' });
     try {
       const value = await execute<T>(session, entry.intent, entry.requestId, abort.signal);
@@ -46,7 +77,10 @@ export function useAdminWrite(scope: string, execute: typeof adminWrite = adminW
       setView({ context: at, phase: 'rejected', message: failure.message, reason: failure instanceof AdminError ? failure.reason : undefined, status: failure.status });
       if (failure.status === 403) recheck.current(true);
       return { status: 'rejected', error: failure };
-    } finally { if (id === generation.current) { lock.current = false; controller.current = null; } }
+    } finally {
+      if (sending.get(entry) === mark) sending.delete(entry);
+      if (id === generation.current) { lock.current = false; controller.current = null; }
+    }
   }
   /** 提交新意图；构造失败（非法 ID、版本等）在发送前拒绝。双击或提交中再次触发直接忽略。 */
   function submit<T>(build: WriteIntent | (() => WriteIntent)): Promise<WriteOutcome<T>> {
@@ -71,7 +105,8 @@ export function useAdminWrite(scope: string, execute: typeof adminWrite = adminW
   }
   /** 放弃核对：只丢弃本地绑定，旧提交仍可能已经执行。 */
   function reset() { if (lock.current) return; binding.current = null; setView({ context: latest.current, phase: 'idle' }); }
-  const current: WriteView = view.context === context ? view : { phase: 'idle' };
+  const discarded = bindings !== undefined && view.phase === 'uncertain' && !bindings.has(context);
+  const current: WriteView = view.context !== context ? restored(context) : discarded ? { phase: 'idle' } : view;
   return { ...current, busy: current.phase === 'submitting', pending: current.phase === 'submitting' || current.phase === 'uncertain', submit, retry, reset };
 }
 export type AdminWrite = ReturnType<typeof useAdminWrite>;

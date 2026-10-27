@@ -7,7 +7,7 @@ import { deferred, json, me, storage } from '../test/fixtures';
 import { emptyAdminAccess, AdminAccessContext } from './access';
 import { adminWrites, type WriteIntent } from './api';
 import { spaceWrites } from './spaceApi';
-import { useAdminResource, useAdminWrite, type AdminWrite, type WriteOutcome } from './hooks';
+import { inFlight, useAdminResource, useAdminWrite, type AdminWrite, type WriteBindings, type WriteOutcome } from './hooks';
 
 type Call = { path: string; init: RequestInit; reply: ReturnType<typeof deferred<Response>> };
 const failure = (status: number, reasonCode: string) => new Response(JSON.stringify({ code: 500, message: '原文', data: null, reasonCode }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -141,6 +141,74 @@ describe('与会话 epoch、目标和表单生命周期关联', () => {
     expect(h.calls[0].init.signal?.aborted).toBe(true); expect(h.session.getSnapshot().phase).toBe('ready');
     h.calls[0].reply.resolve(json({ departmentId: 4 }));
     await expect(promise).resolves.toEqual({ status: 'ignored' });
+  });
+  it('调用方保存绑定时卸载重挂载仍待核对并沿用原标识；调用方清空后同内容使用新标识', async () => {
+    const h = harness(), bindings: WriteBindings = new Map(); let write!: AdminWrite;
+    function Form() { write = useAdminWrite('role-name:3', undefined, bindings); return <output>{write.phase}</output>; }
+    const view = render(<h.wrapper><Form /></h.wrapper>);
+    await h.ready();
+    const intent = adminWrites.renameRole('3', '新名'), first = start(() => write, intent);
+    await act(async () => { offline(h.calls[0]); await first; });
+    expect(write.phase).toBe('uncertain');
+    view.rerender(<h.wrapper>{null}</h.wrapper>);
+    view.rerender(<h.wrapper><Form /></h.wrapper>);
+    expect(write).toMatchObject({ phase: 'uncertain', pending: true });
+    let retried!: Promise<WriteOutcome<unknown>>;
+    act(() => { retried = write.retry(); });
+    expect(idOf(h.calls[1])).toBe(idOf(h.calls[0])); expect(h.calls[1].init.body).toBe(h.calls[0].init.body);
+    await act(async () => { offline(h.calls[1]); await retried; });
+    view.rerender(<h.wrapper>{null}</h.wrapper>);
+    bindings.clear();
+    view.rerender(<h.wrapper><Form /></h.wrapper>);
+    expect(write.phase).toBe('idle');
+    start(() => write, intent);
+    expect(idOf(h.calls[2])).not.toBe(idOf(h.calls[0]));
+  });
+  it('调用方的表跨会话世代存活时，旧世代的未决绑定被删除，新身份下同内容使用新标识', async () => {
+    const h = harness(), bindings: WriteBindings = new Map(), { result } = renderHook(() => useAdminWrite('role-name:3', undefined, bindings), { wrapper: h.wrapper });
+    await h.ready();
+    const intent = adminWrites.renameRole('3', '新名'), promise = start(() => result.current, intent);
+    await act(async () => { offline(h.calls[0]); await promise; });
+    expect(result.current.phase).toBe('uncertain'); expect(bindings.size).toBe(1);
+    await act(async () => { await h.session.login('carol', 'pw'); });
+    expect(bindings.size).toBe(0); expect(result.current.phase).toBe('idle');
+    start(() => result.current, intent);
+    expect(idOf(h.calls[1])).not.toBe(idOf(h.calls[0]));
+  });
+  it('调用方删除条目后待核对视图回到空闲，不再提供无对象的重试', async () => {
+    const h = harness(), bindings: WriteBindings = new Map(), { result, rerender } = renderHook(() => useAdminWrite('role-name:3', undefined, bindings), { wrapper: h.wrapper });
+    await h.ready();
+    const promise = start(() => result.current, adminWrites.renameRole('3', '新名'));
+    await act(async () => { offline(h.calls[0]); await promise; });
+    expect(result.current.phase).toBe('uncertain');
+    bindings.clear(); rerender();
+    expect(result.current).toMatchObject({ phase: 'idle', pending: false });
+    await act(async () => { await expect(result.current.retry()).resolves.toEqual({ status: 'ignored' }); });
+    expect(h.calls).toHaveLength(1);
+  });
+  it('绑定只在请求在途时标记；重挂载后对同一绑定重试，旧请求结束不清除新请求的在途标记', async () => {
+    const h = harness({ honorAbort: false }), bindings: WriteBindings = new Map(); let write!: AdminWrite;
+    function Form() { write = useAdminWrite('role-name:3', undefined, bindings); return <output>{write.phase}</output>; }
+    const view = render(<h.wrapper><Form /></h.wrapper>);
+    await h.ready();
+    const first = start(() => write, adminWrites.renameRole('3', '新名'));
+    const entry = [...bindings.values()][0];
+    expect(inFlight(entry)).toBe(true);
+    await act(async () => { offline(h.calls[0]); await first; });
+    expect(write.phase).toBe('uncertain'); expect(inFlight(entry)).toBe(false);
+    act(() => { void write.retry(); });
+    expect(inFlight(entry)).toBe(true);
+    // 旧请求不响应中止，卸载后仍挂起；重挂载后立即对同一绑定再次重试。
+    view.rerender(<h.wrapper>{null}</h.wrapper>);
+    view.rerender(<h.wrapper><Form /></h.wrapper>);
+    let latest!: Promise<WriteOutcome<unknown>>;
+    act(() => { latest = write.retry(); });
+    expect(idOf(h.calls[2])).toBe(idOf(h.calls[0]));
+    await act(async () => { offline(h.calls[1]); });
+    expect(inFlight(entry)).toBe(true);
+    await act(async () => { offline(h.calls[2]); await latest; });
+    expect(inFlight(entry)).toBe(false); expect(write.phase).toBe('uncertain');
+    expect(bindings.size).toBe(1); expect([...bindings.values()][0]).toBe(entry);
   });
   it('切换目标后旧目标的回执不会更新新目标', async () => {
     const h = harness({ honorAbort: false }), { result, rerender } = renderHook(({ scope }) => useAdminWrite(scope), { wrapper: h.wrapper, initialProps: { scope: 'user-clearance:5' } });

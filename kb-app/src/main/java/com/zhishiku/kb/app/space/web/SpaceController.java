@@ -188,8 +188,8 @@ public class SpaceController {
 
     @PostMapping("/{spaceId}/acl")
     @Operation(summary = "授予空间访问权",
-            description = "需要该空间的 manage。可授予 view、download、edit、review；"
-                    + "review 不隐含阅读或下载，comment 尚未实现并拒绝。"
+            description = "需要该空间的 manage。可授予 view、download、edit、review、comment；"
+                    + "review 只表示审核人池成员资格，comment 只表示发表评论资格，两者都不隐含 view、download、edit 或足够密级。"
                     + "manage 的授予需要 space:grant-manage。"
                     + "授权不修改任何主体的密级，因此响应会回执因密级而当前不生效的主体数量，"
                     + "并且重复授予同一条授权是幂等的")

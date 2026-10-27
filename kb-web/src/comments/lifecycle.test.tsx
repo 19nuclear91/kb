@@ -1,6 +1,8 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { ApiError } from '../api';
 import { deferred, json } from '../test/fixtures';
+import type { WriteBindings } from '../admin/hooks';
 import { CommentPanel } from './CommentPanel';
 
 const h = vi.hoisted(() => ({ json: vi.fn(), send: vi.fn(), refresh: vi.fn(), state: { phase: 'ready', epoch: 1 } }));
@@ -36,6 +38,24 @@ it('隐藏立即卸载正文、草稿与删除目标；恢复先核对身份，�
   expect(await screen.findByText('A 的正文1')).toBeTruthy();
   expect((screen.getByLabelText('评论内容') as HTMLTextAreaElement).value).toBe('');
   expect(h.send).not.toHaveBeenCalled();
+});
+
+it('隐藏即丢弃持有者保存的未决绑定：恢复后不再显示待核对，也不沿用原标识', async () => {
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  const bindings: WriteBindings = new Map();
+  h.json.mockResolvedValue(listing([]));
+  h.send.mockRejectedValueOnce(new ApiError(0));
+  render(<CommentPanel documentId="10" versionId="21" bindings={bindings} />);
+  fireEvent.change(await screen.findByLabelText('评论内容'), { target: { value: '隐藏前待核对' } });
+  fireEvent.click(screen.getByRole('button', { name: '发表评论' }));
+  expect(await screen.findByText(/提交结果尚未确认/)).toBeTruthy();
+  expect(bindings.size).toBe(1);
+  visibility.mockReturnValue('hidden'); fireEvent(document, new Event('visibilitychange'));
+  expect(bindings.size).toBe(0);
+  visibility.mockReturnValue('visible'); fireEvent(document, new Event('visibilitychange'));
+  expect(await screen.findByLabelText('评论内容')).toBeTruthy();
+  expect(screen.queryByText(/提交结果尚未确认/)).toBeNull();
+  visibility.mockRestore();
 });
 
 it('账号切换后 A 的迟到列表、写回执与删除目标不能进入 B 的页面', async () => {
