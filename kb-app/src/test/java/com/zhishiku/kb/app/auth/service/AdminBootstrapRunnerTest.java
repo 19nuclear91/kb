@@ -178,6 +178,7 @@ class AdminBootstrapRunnerTest {
         verify(rolePermissions, times(Permission.codes().size())).grantPermission(eq(11L), anyString());
         verify(rolePermissions).grantPermission(11L, "embedding:read");
         verify(rolePermissions).grantPermission(11L, "embedding:rebuild");
+        verify(rolePermissions).grantPermission(11L, "operations:reports:read");
 
         ArgumentCaptor<String> requestIds = ArgumentCaptor.forClass(String.class);
         verify(audit, times(Permission.codes().size() + 4)).success(any(), requestIds.capture(), isNull(), any(),
@@ -273,7 +274,8 @@ class AdminBootstrapRunnerTest {
                 Permission.codes().stream()
                         .filter(code -> !code.equals("document:security-level:write")
                                 && !code.startsWith("embedding:") && !code.equals("audit:read")
-                                && !code.equals("identity:external:read") && !code.startsWith("ai:")).toList());
+                                && !code.equals("identity:external:read") && !code.startsWith("ai:")
+                                && !code.equals("operations:reports:read")).toList());
         when(mapper.findIdentityByUsername(USERNAME)).thenReturn(credential(31L));
         when(mapper.findIdentity(31L)).thenReturn(new IdentityRecord(31L, USERNAME, "系统管理员",
                 21L, (short) 1, true, 0L, null, null));
@@ -294,7 +296,8 @@ class AdminBootstrapRunnerTest {
                 && event.getFormattedMessage().contains("不自动修复")
                 && event.getFormattedMessage().contains("document:security-level:write")
                 && event.getFormattedMessage().contains("embedding:read")
-                && event.getFormattedMessage().contains("embedding:rebuild"));
+                && event.getFormattedMessage().contains("embedding:rebuild")
+                && event.getFormattedMessage().contains("operations:reports:read"));
     }
 
     private static List<UserRolePermission> qualifiedUser() {

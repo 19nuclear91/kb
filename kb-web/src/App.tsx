@@ -22,6 +22,7 @@ import { EmbeddingPage } from './admin/EmbeddingPage';
 import { ParseDeadLettersPage } from './admin/ParseDeadLettersPage';
 import { AuditsPage } from './admin/AuditsPage';
 import { AiUsagePage, AiAuditsPage } from './admin/AiUsagePages';
+import { OperationsReportsPage } from './admin/OperationsReportsPage';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { SsoResultPage } from './pages/SsoResultPage';
 import { browserStorage, RESULT_PATH } from './sso/storage';
@@ -35,10 +36,10 @@ export function Navigation({ extras = {} }: { extras?: Partial<Record<string, Re
 
 export function ProtectedLayout() {
   const { session, state } = useSession(), location = useLocation();
-  if (state.phase === 'anonymous') return <Navigate to="/login" state={{ from: safeReturnPath(location.pathname) }} replace />;
+  if (state.phase === 'anonymous') return <Navigate to="/login" state={{ from: safeReturnPath(location.pathname + location.search + location.hash) }} replace />;
   if (state.phase === 'password') return <Navigate to="/change-password" replace />;
   // 仅在身份 ready 后挂载本人权限上下文；强制改密阶段已在上方重定向，不预取管理权限或数据。
-  return <AdminAccessProvider><div className="app-shell"><aside className="sidebar"><div className="brand"><span className="brand-mark">知</span><div>知序<small>企业知识库</small></div></div><Navigation extras={{ '/notifications': <UnreadBadge /> }} /><AdminNavigation />
+  return <AdminAccessProvider loadSpaces={location.pathname !== '/admin/reports/operations'}><div className="app-shell"><aside className="sidebar"><div className="brand"><span className="brand-mark">知</span><div>知序<small>企业知识库</small></div></div><Navigation extras={{ '/notifications': <UnreadBadge /> }} /><AdminNavigation />
     <div style={{ marginTop: 48 }}><p className="muted">{state.me?.user.displayName}</p><Button onClick={() => void session.logout()}>退出登录</Button></div></aside>
     <main className="workspace"><Outlet /></main></div></AdminAccessProvider>;
 }
@@ -67,6 +68,7 @@ export function AppRoutes() {
       <Route path="/admin/parse/dead-letters" element={<AdminGuard code={perm.deadLetterRead} title="解析死信"><ParseDeadLettersPage /></AdminGuard>} />
       <Route path="/admin/audits" element={<AdminGuard code={perm.auditRead} title="审计查询"><AuditsPage /></AdminGuard>} />
       <Route path="/admin/ai/usage" element={<AdminGuard code={perm.aiUsageRead} title="AI 用量"><AiUsagePage /></AdminGuard>} />
+      <Route path="/admin/reports/operations" element={<AdminGuard code={perm.operationsReportsRead} title="运营概览"><OperationsReportsPage /></AdminGuard>} />
       <Route path="/admin/ai/audits" element={<AdminGuard code={perm.aiAuditRead} title="AI 调用审计"><AiAuditsPage /></AdminGuard>} />
       <Route path="*" element={<div><h1>页面不存在</h1><NavLink to="/documents">返回文档中心</NavLink></div>} />
     </Route></Routes>;

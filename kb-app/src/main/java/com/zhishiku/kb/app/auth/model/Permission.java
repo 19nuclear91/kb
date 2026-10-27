@@ -22,6 +22,7 @@ public enum Permission {
     AUDIT_READ("audit:read", "跨目标查询管理与登录审计"),
     AI_USAGE_READ("ai:usage:read", "跨部门查询聊天用量统计"),
     AI_AUDIT_READ("ai:audit:read", "跨部门查询聊天调用审计"),
+    OPERATIONS_REPORTS_READ("operations:reports:read", "查询全局安全运营汇总，不授予资源明细或 AI 读取资格"),
     PARSE_DEADLETTER_READ("parse:deadletter:read", "查询解析死信"),
     PARSE_DEADLETTER_REPLAY("parse:deadletter:replay", "重放解析死信"),
     SPACE_CREATE("space:create", "创建空间"),

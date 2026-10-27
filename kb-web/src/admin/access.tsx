@@ -17,7 +17,7 @@ export const useAdminAccess = () => useContext(AdminAccessContext);
 type View = { epoch: number; status: AccessStatus; spaceStatus: AccessStatus; spaces: readonly AdminSpace[]; codes: ReadonlySet<string>; checking: boolean };
 const loading = (epoch: number): View => ({ epoch, status: 'loading', spaceStatus: 'loading', spaces: [], codes: none, checking: true });
 /** 本人当前功能权限，以会话 epoch 为界；读取失败只影响管理区，ready 的空集合代表确实无权限。 */
-export function AdminAccessProvider({ children }: { children: ReactNode }) {
+export function AdminAccessProvider({ children, loadSpaces = true }: { children: ReactNode; loadSpaces?: boolean }) {
   const { session, state } = useSession();
   const [view, setView] = useState<View>(loading(state.epoch));
   const sequence = useRef(0), active = useRef<AbortController | null>(null);
@@ -27,7 +27,7 @@ export function AdminAccessProvider({ children }: { children: ReactNode }) {
     const controller = new AbortController(), seq = ++sequence.current, epoch = session.getSnapshot().epoch;
     active.current = controller;
     setView(loading(epoch));
-    let pending = 2;
+    let pending = loadSpaces ? 2 : 1;
     const apply = (next: Partial<View>) => {
       if (seq !== sequence.current || epoch !== session.getSnapshot().epoch || controller.signal.aborted) return;
       pending--;
@@ -38,12 +38,13 @@ export function AdminAccessProvider({ children }: { children: ReactNode }) {
       if (Array.isArray(codes) && codes.every((code): code is string => typeof code === 'string')) apply({ status: 'ready', codes: new Set(codes) });
       else apply({ status: 'unavailable', codes: none });
     }, () => apply({ status: 'unavailable', codes: none }));
-    void session.json<unknown>(spacePaths.spaces, { signal: controller.signal }).then(result => {
+    if (!loadSpaces) setView(previous => ({ ...previous, spaceStatus: 'ready', spaces: [] }));
+    if (loadSpaces) void session.json<unknown>(spacePaths.spaces, { signal: controller.signal }).then(result => {
       if (Array.isArray(result) && result.every(space => space && typeof space.spaceId === 'string' && typeof space.manageable === 'boolean'))
         apply({ spaceStatus: 'ready', spaces: (result as AdminSpace[]).filter(space => space.manageable) });
       else apply({ spaceStatus: 'unavailable', spaces: [] });
     }, () => apply({ spaceStatus: 'unavailable', spaces: [] }));
-  }, [session]);
+  }, [session, loadSpaces]);
   useEffect(() => {
     check();
     return () => { sequence.current++; active.current?.abort(); active.current = null; };
@@ -80,6 +81,7 @@ export const perm = {
   embeddingRead: 'embedding:read', embeddingRebuild: 'embedding:rebuild', deadLetterRead: 'parse:deadletter:read', deadLetterReplay: 'parse:deadletter:replay',
   auditRead: 'audit:read',
   aiUsageRead: 'ai:usage:read', aiAuditRead: 'ai:audit:read',
+  operationsReportsRead: 'operations:reports:read',
 } as const;
 export const canOpenSpaces = (access: AdminAccess) => (access.spaceStatus === 'ready' && access.spaces.length > 0) || access.has(perm.spaceCreate) || access.has(perm.spaceManageAll);
 export const adminNavigation = [
@@ -92,6 +94,7 @@ export const adminNavigation = [
   { path: '/admin/audits', label: '审计查询', mark: 'A7', visible: (access: AdminAccess) => access.has(perm.auditRead) },
   { path: '/admin/ai/usage', label: 'AI 用量', mark: 'A8', visible: (access: AdminAccess) => access.has(perm.aiUsageRead) },
   { path: '/admin/ai/audits', label: 'AI 调用审计', mark: 'A9', visible: (access: AdminAccess) => access.has(perm.aiAuditRead) },
+  { path: '/admin/reports/operations', label: '运营概览', mark: 'A10', visible: (access: AdminAccess) => access.has(perm.operationsReportsRead) },
 ] as const;
 export function AdminNavigation() {
   const access = useAdminAccess();

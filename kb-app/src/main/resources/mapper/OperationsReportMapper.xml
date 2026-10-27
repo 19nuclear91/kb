@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.reporting.mapper.OperationsReportMapper">
+    <select id="asOf" resultType="java.time.Instant" timeout="5" useCache="false">
+        SELECT statement_timestamp()
+    </select>
+    <select id="documents" resultType="map" timeout="5" useCache="false">
+        ${@com.zhishiku.kb.app.reporting.model.OperationsReportDefinition@DOCUMENTS.sql()}
+    </select>
+    <select id="versions" resultType="map" timeout="5" useCache="false">
+        ${@com.zhishiku.kb.app.reporting.model.OperationsReportDefinition@VERSIONS.sql()}
+    </select>
+    <select id="pendingReviews" resultType="map" timeout="5" useCache="false">
+        ${@com.zhishiku.kb.app.reporting.model.OperationsReportDefinition@PENDING_REVIEWS.sql()}
+    </select>
+    <select id="coverage" resultType="map" timeout="5" useCache="false">
+        <!-- 固定 kind 各走索引首行，只检查起点矛盾，不把最早事实当作覆盖起点。 -->
+        WITH first_facts AS (
+            SELECT k.domain, min(f.occurred_at) AS first_occurred_at
+            FROM (VALUES ('REVIEW','REVIEW_SUBMITTED'), ('REVIEW','REVIEW_APPROVED'),
+                         ('REVIEW','REVIEW_REJECTED'), ('REVIEW','REVIEW_WITHDRAWN'),
+                         ('REVIEW','REVIEW_CANCELLED'), ('REVIEW','VERSION_PUBLISHED'),
+                         ('COMMENT','COMMENT_CREATED'), ('COMMENT','COMMENT_REPLIED'),
+                         ('COMMENT','COMMENT_DELETED')) k(domain, kind)
+            LEFT JOIN LATERAL (
+                SELECT occurred_at FROM kb_collaboration_event
+                WHERE kind = k.kind ORDER BY occurred_at LIMIT 1
+            ) f ON true
+            GROUP BY k.domain
+        )
+        SELECT coalesce(c.domain, e.domain) AS domain, c.protocol_version AS "protocolVersion",
+               c.started_at AS "startedAt", e.first_occurred_at AS "firstOccurredAt"
+        FROM kb_collaboration_coverage c
+        FULL JOIN first_facts e ON c.domain = e.domain
+        WHERE c.domain IS NOT NULL OR e.first_occurred_at IS NOT NULL
+    </select>
+    <select id="events" resultType="map" timeout="5" useCache="false">
+        ${@com.zhishiku.kb.app.reporting.model.OperationsReportDefinition@EVENTS.sql()}
+    </select>
+</mapper>

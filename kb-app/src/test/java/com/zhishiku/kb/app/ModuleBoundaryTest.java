@@ -141,6 +141,19 @@ class ModuleBoundaryTest {
     }
 
     @Test
+    void reportingOnlyUsesItsOwnReadMapperAndSafeModels() {
+        noClasses().that().resideInAPackage("..app.reporting..")
+                .should().dependOnClassesThat(DescribedPredicate.describe("其他模块的 mapper",
+                        (JavaClass type) -> type.getPackageName().contains(".mapper")
+                                && type.getPackageName().startsWith("com.zhishiku.kb.app.")
+                                && !type.getPackageName().startsWith("com.zhishiku.kb.app.reporting.")))
+                .check(classes);
+        noClasses().that().resideInAPackage("..app.reporting.model..")
+                .should().dependOnClassesThat().resideOutsideOfPackages("java..", "..app.reporting.model..")
+                .check(classes);
+    }
+
+    @Test
     @DisplayName("分层依赖方向：web → service → mapper，不得反向")
     void layersMustNotBeInverted() {
         Architectures.layeredArchitecture()

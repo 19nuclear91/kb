@@ -29,6 +29,30 @@ class AdminQueryAccessTest {
     private final AdminQueryAccess access = new AdminQueryAccess(permissions, mapper);
 
     @Test
+    void operationsUsesCurrentRoleUnionWithoutResourceOrAiPrivileges() {
+        when(identity.resolvePrincipal(7)).thenReturn(new ResolvedPrincipal(7, 2L, (short) 1,
+                List.of(3L, 4L), List.of(2L)));
+        when(mapper.findMustChangePasswordById(7)).thenReturn(false);
+        try (var login = mockStatic(StpUtil.class)) {
+            login.when(StpUtil::getLoginIdAsLong).thenReturn(7L);
+            when(roles.findUserPermissions(7)).thenReturn(List.of("operations:reports:read", "operations:reports:read"),
+                    List.of("operations:reports:read"), List.of());
+            assertThat(access.require(Permission.OPERATIONS_REPORTS_READ).functionalPermissions())
+                    .containsExactly("operations:reports:read");
+            assertThat(access.require(Permission.OPERATIONS_REPORTS_READ).userId()).isEqualTo(7);
+            assertThatThrownBy(() -> access.require(Permission.OPERATIONS_REPORTS_READ)).isInstanceOf(QueryException.class);
+            for (String code : List.of("ROLE_ADMIN", "operations:reports:*", "operations:reports:read:extra",
+                    "ai:usage:read", "ai:audit:read", "audit:read", "space:manage-all")) {
+                when(roles.findUserPermissions(7)).thenReturn(List.of(code));
+                assertThatThrownBy(() -> access.require(Permission.OPERATIONS_REPORTS_READ)).isInstanceOf(QueryException.class);
+            }
+            when(roles.findUserPermissions(7)).thenReturn(List.of("operations:reports:read"));
+            assertThatThrownBy(() -> access.require(Permission.AI_USAGE_READ)).isInstanceOf(QueryException.class);
+            assertThatThrownBy(() -> access.require(Permission.AI_AUDIT_READ)).isInstanceOf(QueryException.class);
+        }
+    }
+
+    @Test
     void aiReadsAreIndependentAndRoleNamesCannotAuthorizeThem() {
         when(identity.resolvePrincipal(7)).thenReturn(new ResolvedPrincipal(7, 2L, (short) 1, List.of(3L), List.of(2L)));
         when(mapper.findMustChangePasswordById(7)).thenReturn(false);

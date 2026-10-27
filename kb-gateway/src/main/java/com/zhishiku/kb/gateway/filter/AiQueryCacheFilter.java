@@ -14,7 +14,8 @@ import reactor.core.publisher.Mono;
 public class AiQueryCacheFilter implements WebFilter, Ordered {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
-        if (exchange.getRequest().getPath().value().startsWith("/api/admin/ai/")) {
+        String path = exchange.getRequest().getPath().value();
+        if (path.startsWith("/api/admin/ai/") || path.startsWith("/api/admin/reports/")) {
             exchange.getResponse().beforeCommit(() -> {
                 exchange.getResponse().getHeaders().setCacheControl("no-store");
                 return Mono.empty();
