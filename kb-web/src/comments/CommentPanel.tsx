@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Modal, Space, Tag } from 'antd';
 import { useSession } from '../SessionProvider';
+import { useDocumentOperations } from '../documents/OperationContext';
 import { useResource } from '../useResource';
 import { inFlight, useAdminWrite, type Binding, type WriteBindings } from '../admin/hooks';
 import { WriteNotice } from '../admin/ui';
@@ -155,6 +156,7 @@ function Replies({ root, rootDeleted, erased }: { root: string; rootDeleted: boo
 
 /** 正文按纯文本渲染；墓碑不显示原正文或作者。删除入口只给本人，管理资格不会出现删除按钮。 */
 function CommentBody({ item, erased, onErased }: { item: CommentItem; erased: ReadonlySet<string>; onErased: () => void }) {
+  const { state: documentState } = useDocumentOperations();
   // 非空即确认框打开；内容为打开时取得的同内容待核对绑定快照。
   const thread = useThread(), [copies, setCopies] = useState<readonly Binding[] | null>(null);
   const gone = item.deleted || erased.has(item.commentId);
@@ -162,7 +164,7 @@ function CommentBody({ item, erased, onErased }: { item: CommentItem; erased: Re
   return <>
     <div className="comment-meta"><strong>{item.author!.label}</strong>{item.isOwn && <Tag>本人</Tag>}<span className="muted">{when(item.createdAt)}</span></div>
     <pre className="content-text">{item.body}</pre>
-    {item.canDelete && <Button size="small" danger
+    {item.canDelete && <Button size="small" danger disabled={documentState.exclusive}
       onClick={() => setCopies(thread.copies({ parentId: item.parentId, body: item.body! }))}>删除评论</Button>}
     {copies && <DeleteDialog id={item.commentId} onClose={() => setCopies(null)}
       onDone={() => { setCopies(null); thread.erased(item.commentId, copies); onErased(); }} />}
@@ -186,7 +188,7 @@ function Composer({ parent, label, hold, onSettled }: { parent: string | null; l
   const thread = useThread();
   const write = useAdminWrite(composerScope(thread.documentId, thread.versionId, parent), commentWrite, thread.writes);
   const [draft, setDraft] = useState(''), [notice, setNotice] = useState('');
-  const blocked = hold !== '';
+  const blocked = hold !== '' || write.blocked;
   const action = parent === null ? '发表评论' : '提交回复';
   const length = commentLength(draft), valid = length >= 1 && length <= COMMENT_MAX && !/\u0000/.test(draft);
   const receive = (result: Awaited<ReturnType<typeof write.submit<CommentReceipt>>>) => {
@@ -217,7 +219,7 @@ function Composer({ parent, label, hold, onSettled }: { parent: string | null; l
       onChange={event => { setNotice(''); setDraft(event.target.value); }} /></label>
     <Space><span className="muted" aria-live="polite">{length} / {COMMENT_MAX}</span>
       {length > COMMENT_MAX && <span role="alert">超过 {COMMENT_MAX} 个字符，不会截断，请删减后提交。</span>}
-      {blocked && <span role="status" className="muted">{hold}</span>}
+      {blocked && <span role="status" className="muted">{hold || '正在确认删除文档，暂不能发表。'}</span>}
       <Button type="primary" disabled={!valid || write.pending || blocked} onClick={submit}>{action}</Button></Space>
   </div>;
 }
@@ -233,9 +235,9 @@ function DeleteDialog({ id, onClose, onDone }: { id: string; onClose: () => void
   return <Modal title="删除本人评论" open footer={null} destroyOnHidden closable={!write.busy} mask={{ closable: !write.busy }}
     onCancel={() => { if (!write.busy) onClose(); }}>
     <p>删除后正文立即清除，无法恢复；他人的回复不受影响。</p>
-    <WriteNotice write={write} onRetry={() => void write.retry<void>().then(receive)} />
+    <WriteNotice write={write} disabled={write.blocked} onRetry={() => void write.retry<void>().then(receive)} />
     {missing && <Alert type="info" title="该评论已不存在或不属于当前账号。" />}
-    <Button danger type="primary" disabled={write.pending || missing}
+    <Button danger type="primary" disabled={write.pending || missing || write.blocked}
       onClick={() => void write.submit<void>(() => deleteIntent(thread.documentId, thread.versionId, id)).then(receive)}>确认删除</Button>
   </Modal>;
 }
@@ -245,6 +247,7 @@ function DeleteDialog({ id, onClose, onDone }: { id: string; onClose: () => void
  * onRecover 为空时由持有者统一重新核对（如通知目标），这里不另设入口，避免绕过持有者的清理。
  */
 function Denied({ erased, onRecover }: { erased: ReadonlySet<string>; onRecover?: () => void }) {
+  const { state: documentState } = useDocumentOperations();
   const thread = useThread(), [target, setTarget] = useState<string | null>(null);
   const known = [...thread.own].filter(id => !erased.has(id));
   return <>
@@ -252,7 +255,7 @@ function Denied({ erased, onRecover }: { erased: ReadonlySet<string>; onRecover?
       action={onRecover && <Button onClick={onRecover}>重新核对</Button>} />
     {known.length > 0 && <><p className="muted">仍可删除本页已知的本人评论；不会显示正文或重新读取讨论。</p>
       <ul className="admin-list">{known.map(id => <li key={id}><span>本人评论 {id.slice(0, 8)}</span>
-        <Button size="small" danger onClick={() => setTarget(id)}>删除本人评论</Button></li>)}</ul></>}
+        <Button size="small" danger disabled={documentState.exclusive} onClick={() => setTarget(id)}>删除本人评论</Button></li>)}</ul></>}
     {target && <DeleteDialog id={target} onClose={() => setTarget(null)} onDone={() => { thread.erased(target); setTarget(null); }} />}
   </>;
 }

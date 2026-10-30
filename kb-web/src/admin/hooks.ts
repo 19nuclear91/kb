@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, isAbort, messageOf } from '../api';
 import { useSession } from '../SessionProvider';
+import { useDocumentOperations } from '../documents/OperationContext';
 import type { QueryPage } from '../types';
 import { useAdminAccess } from './access';
 import { AdminError, adminWrite, intentKey, uncertain, uncertainMessage, type AdminReason, type WriteIntent } from './api';
@@ -35,6 +36,7 @@ export function inFlight(entry: Binding): boolean {
  */
 export function useAdminWrite(scope: string, execute: typeof adminWrite = adminWrite, bindings?: WriteBindings) {
   const { session, state } = useSession(), access = useAdminAccess();
+  const { operations, state: documentState } = useDocumentOperations();
   const recheck = useRef(access.check); recheck.current = access.check;
   const context = `${state.epoch}|${scope}`, latest = useRef(context); latest.current = context;
   const lock = useRef(false), generation = useRef(0), controller = useRef<AbortController | null>(null), local = useRef<Binding | null>(null);
@@ -48,6 +50,9 @@ export function useAdminWrite(scope: string, execute: typeof adminWrite = adminW
   };
   const restored = (at: string): WriteView & { context: string } => ({ context: at, ...(bindings?.has(at) ? { phase: 'uncertain', message: uncertainMessage } : { phase: 'idle' }) });
   const [view, setView] = useState<WriteView & { context: string }>(() => restored(context));
+  useEffect(() => {
+    if (bindings?.has(context)) operations?.markUncertain(context);
+  }, [operations, bindings, context]);
   useEffect(() => () => { generation.current++; controller.current?.abort(); controller.current = null; local.current = null; lock.current = false; }, [context]);
   // 调用方的表跨世代存活时，旧身份的未决绑定（含写入内容）不得留在内存中。
   useEffect(() => {
@@ -59,6 +64,8 @@ export function useAdminWrite(scope: string, execute: typeof adminWrite = adminW
   }, [bindings, state.epoch]);
 
   async function run<T>(entry: Binding): Promise<WriteOutcome<T>> {
+    const operation = operations?.beginWrite(context);
+    if (operations && !operation) return { status: 'ignored' };
     const id = ++generation.current, at = latest.current, epoch = session.getSnapshot().epoch, abort = new AbortController();
     const live = () => id === generation.current && at === latest.current && epoch === session.getSnapshot().epoch;
     const mark = {};
@@ -66,10 +73,12 @@ export function useAdminWrite(scope: string, execute: typeof adminWrite = adminW
     lock.current = true; controller.current = abort; setView({ context: at, phase: 'submitting' });
     try {
       const value = await execute<T>(session, entry.intent, entry.requestId, abort.signal);
+      operation?.settle('confirmed');
       if (!live()) return { status: 'ignored' };
       binding.current = null; setView({ context: at, phase: 'confirmed' });
       return { status: 'confirmed', value };
     } catch (error) {
+      operation?.settle(isAbort(error) || uncertain(error) ? 'uncertain' : 'rejected');
       if (!live()) return { status: 'ignored' };
       if (isAbort(error) || uncertain(error)) { setView({ context: at, phase: 'uncertain', message: uncertainMessage }); return { status: 'uncertain' }; }
       const failure = error as ApiError;
@@ -84,7 +93,7 @@ export function useAdminWrite(scope: string, execute: typeof adminWrite = adminW
   }
   /** 提交新意图；构造失败（非法 ID、版本等）在发送前拒绝。双击或提交中再次触发直接忽略。 */
   function submit<T>(build: WriteIntent | (() => WriteIntent)): Promise<WriteOutcome<T>> {
-    if (lock.current) return Promise.resolve({ status: 'ignored' });
+    if (lock.current || operations?.getSnapshot().exclusive) return Promise.resolve({ status: 'ignored' });
     let intent: WriteIntent;
     try { intent = typeof build === 'function' ? build() : build; }
     catch (error) {
@@ -107,7 +116,7 @@ export function useAdminWrite(scope: string, execute: typeof adminWrite = adminW
   function reset() { if (lock.current) return; binding.current = null; setView({ context: latest.current, phase: 'idle' }); }
   const discarded = bindings !== undefined && view.phase === 'uncertain' && !bindings.has(context);
   const current: WriteView = view.context !== context ? restored(context) : discarded ? { phase: 'idle' } : view;
-  return { ...current, busy: current.phase === 'submitting', pending: current.phase === 'submitting' || current.phase === 'uncertain', submit, retry, reset };
+  return { ...current, blocked: documentState.exclusive, busy: current.phase === 'submitting', pending: current.phase === 'submitting' || current.phase === 'uncertain', submit, retry, reset };
 }
 export type AdminWrite = ReturnType<typeof useAdminWrite>;
 

@@ -1,7 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Alert, Button, Form, Input, Modal, Pagination, Select, Space, Table, Tag } from 'antd';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useSession } from '../SessionProvider';
+import { DocumentOperationContext, useDocumentOperations } from '../documents/OperationContext';
+import { DocumentOperations, operationFailure } from '../documents/operations';
+import { canDelete } from '../documents/capabilities';
+import { deletionTransport, DocumentDeletion } from '../documents/deletion';
+import { DeleteConfirmation, DeletionFeedback } from '../documents/DeleteControls';
+import { consumeDocumentDeleted, rememberDocumentDeleted } from '../documents/notice';
 import { useResource } from '../useResource';
 import { ApiError, isAbort, messageOf, positiveId } from '../api';
 import { pendingProgress, progressLabel, retryable } from '../logic';
@@ -71,6 +77,7 @@ function ReadableProgress({ documentId, versionId, revision, onDenied }: { docum
 
 export function UploadDialog({ open, documentId, onClose, onUploaded }: { open: boolean; documentId?: string; onClose: () => void; onUploaded: (result: UploadResult) => void }) {
   const { session } = useSession();
+  const { operations, state: documentState } = useDocumentOperations();
   const [spaces, setSpaces] = useState<UploadSpace[]>([]), [cursor, setCursor] = useState<string | null>(null), [levels, setLevels] = useState<number[]>([]);
   const [busy, setBusy] = useState(false), [loading, setLoading] = useState(false), [error, setError] = useState('');
   const [file, setFile] = useState<File | null>(null), [form] = Form.useForm();
@@ -95,13 +102,21 @@ export function UploadDialog({ open, documentId, onClose, onUploaded }: { open: 
       if (lock.current) return;
       if (!file || file.size === 0 || file.size > 50 * 1024 * 1024) { setError('请选择非空且不超过 50 MiB 的文件；实际限制由服务器判定。'); return; }
       if (!/\.(pdf|txt|md|doc|docx|xls|xlsx|ppt|pptx)$/i.test(file.name)) { setError('只支持 PDF、TXT、Markdown（.md）和常规 Office 文档。'); return; }
+      const operation = operations?.beginWrite('upload-version');
+      if (operations && !operation) return;
+      const request = active.current;
       lock.current = true; setBusy(true); setError('');
       try {
         const body = new FormData(); body.set('file', file);
         if (!documentId) { body.set('spaceId', positiveId(values.spaceId)); body.set('securityLevel', String(values.securityLevel)); if (values.title) body.set('title', values.title); }
-        const result = await session.json<UploadResult>(documentId ? `/api/documents/${positiveId(documentId)}/versions` : '/api/documents', { method: 'POST', body, signal: active.current?.signal });
+        const result = await session.json<UploadResult>(documentId ? `/api/documents/${positiveId(documentId)}/versions` : '/api/documents', { method: 'POST', body, signal: request?.signal });
+        operation?.settle('confirmed');
+        if (request?.signal.aborted) return;
         onUploaded(result); onClose();
-      } catch (failure) { if (!isAbort(failure)) setError(failure instanceof ApiError && failure.status === 0 ? '提交结果尚未确认，请先核对文档列表，不会自动重复上传。' : messageOf(failure)); }
+      } catch (failure) {
+        operation?.settle(operationFailure(failure));
+        if (!request?.signal.aborted && !isAbort(failure)) setError(failure instanceof ApiError && failure.status === 0 ? '提交结果尚未确认，请先核对文档列表，不会自动重复上传。' : messageOf(failure));
+      }
       finally { lock.current = false; setBusy(false); }
     }}>
       {!documentId && <><Form.Item name="spaceId" label="目标空间" rules={[{ required: true, message: '请选择可上传空间' }]}>
@@ -117,19 +132,26 @@ export function UploadDialog({ open, documentId, onClose, onUploaded }: { open: 
       </>}
       <Form.Item label="原始文件" required><input aria-label="原始文件" type="file" accept=".pdf,.txt,.md,.doc,.docx,.xls,.xlsx,.ppt,.pptx" onChange={event => setFile(event.target.files?.[0] ?? null)} /></Form.Item>
       <p className="muted">支持 PDF、文本和常规 Office。上传成功后将异步解析。</p>
-      <Button type="primary" htmlType="submit" loading={busy} disabled={loading || (!documentId && (!spaces.length || !levels.length))}>提交文件</Button>
+      <Button type="primary" htmlType="submit" loading={busy} disabled={documentState.exclusive || loading || (!documentId && (!spaces.length || !levels.length))}>提交文件</Button>
     </Form>
   </Modal>;
 }
 
 export function DocumentsPage() {
-  const { session } = useSession();
+  const { session, state: identity } = useSession();
+  const [deletionNotice, setDeletionNotice] = useState<number | null>(null);
+  useEffect(() => {
+    if (consumeDocumentDeleted(session)) setDeletionNotice(identity.epoch);
+    const timer = setTimeout(() => setDeletionNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [session, identity.epoch]);
   const [page, setPage] = useState(1), [spaceId, setSpaceId] = useState<string | undefined>();
   const [upload, setUpload] = useState(false), [submitted, setSubmitted] = useState<UploadResult | null>(null);
   const query = useResource(signal => session.json<DocumentPage>(`/api/documents?page=${page}&size=20${spaceId ? `&spaceId=${spaceId}` : ''}`, { signal }), `${page}/${spaceId}`);
   const spaces = useResource(signal => session.json<KnowledgeSpace[]>('/api/admin/spaces', { signal }), 'spaces');
   const favorites = useFavorites(query.data?.items.map(item => item.id) ?? [], query.data);
   return <><PageHeader title="文档中心" description="整理团队知识，在权限范围内发现可靠资料" extra={<Button type="primary" size="large" onClick={() => setUpload(true)}>上传文档</Button>} />
+    {deletionNotice === identity.epoch && <Alert type="success" title="文档已删除" />}
     {submitted && !favorites.unavailable(submitted.documentId) && <ProgressCard key={submitted.versionId} documentId={submitted.documentId} versionId={submitted.versionId} submitted />}
     <section className="panel"><div className="toolbar"><Select aria-label="知识空间" allowClear placeholder="全部文档" style={{ minWidth: 220 }} value={spaceId}
       options={(spaces.data ?? []).filter(space => !space.archived && space.viewable).map(space => ({ value: space.spaceId, label: space.name }))}
@@ -149,10 +171,37 @@ export function DocumentsPage() {
 export function DocumentDetailPage() {
   const { documentId = '' } = useParams();
   const scope = useReviewScope();
-  return scope.active ? <DocumentDetail key={`${scope.key}:${documentId}`} documentId={documentId} /> : <Alert type="info" title="请先完成登录与身份确认" />;
+  return scope.active ? <DocumentWorkspace key={`${scope.key}:${documentId}`} documentId={documentId} /> : <Alert type="info" title="请先完成登录与身份确认" />;
 }
-function DocumentDetail({ documentId }: { documentId: string }) {
+function DocumentWorkspace({ documentId }: { documentId: string }) {
+  const { session } = useSession(), navigate = useNavigate();
+  const [operations] = useState(() => new DocumentOperations());
+  const [controller] = useState(() => new DocumentDeletion(documentId, operations, session, deletionTransport(session), () => {
+    rememberDocumentDeleted(session); navigate('/documents', { replace: true });
+  }, () => document.visibilityState !== 'hidden'));
+  const deletion = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const operationState = useSyncExternalStore(operations.subscribe, operations.getSnapshot);
+  useLayoutEffect(() => {
+    controller.activate();
+    const epoch = session.getSnapshot().epoch;
+    const hide = () => { if (document.visibilityState === 'hidden') controller.dispose(); };
+    const changed = () => {
+      if (session.getSnapshot().phase !== 'ready' || session.getSnapshot().epoch !== epoch) controller.dispose();
+    };
+    const unsubscribe = session.subscribe(changed);
+    document.addEventListener('visibilitychange', hide);
+    return () => { unsubscribe(); document.removeEventListener('visibilitychange', hide); controller.dispose(); };
+  }, [controller, session]);
+  return <DocumentOperationContext value={operations}>
+    {deletion.showContent ? <DocumentDetail documentId={documentId} onDelete={controller.open} onInvalidate={controller.invalidateConfirmation} />
+      : <PageHeader title="文档详情" description="删除结果与当前状态" extra={<Link to="/documents">返回文档中心</Link>} />}
+    <DeletionFeedback state={deletion} onVerify={() => void controller.verify()} onReconfirm={() => void controller.open()} />
+    <DeleteConfirmation state={deletion} operations={operationState} onCancel={controller.cancel} onConfirm={acknowledge => void controller.submit(acknowledge)} />
+  </DocumentOperationContext>;
+}
+function DocumentDetail({ documentId, onDelete, onInvalidate }: { documentId: string; onDelete: () => Promise<void>; onInvalidate: (unavailable?: boolean) => void }) {
   const { session } = useSession();
+  const { operations, state: documentState } = useDocumentOperations();
   const adminAccess = useAdminAccess();
   const query = useResource(signal => session.json<DocumentSummary>(`/api/documents/${positiveId(documentId)}`, { signal }), documentId);
   const capabilities = useResource(signal => session.json<Capabilities>(`/api/documents/${positiveId(documentId)}/capabilities`, { signal }), documentId);
@@ -164,6 +213,12 @@ function DocumentDetail({ documentId }: { documentId: string }) {
   const [versionStatus, setVersionStatus] = useState<ReviewStatus | undefined>();
   const [deniedVersions, setDeniedVersions] = useState<Set<string>>(() => new Set());
   const lock = useRef(false);
+  const retryRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => retryRequest.current?.abort(), []);
+  useEffect(() => {
+    if (blocked || query.status === 404 || capabilities.status === 404) onInvalidate(true);
+    else if (query.error || capabilities.error || (capabilities.data && !canDelete(capabilities.data))) onInvalidate();
+  }, [blocked, query.status, query.error, capabilities.status, capabilities.error, capabilities.data, onInvalidate]);
   useEffect(() => { setSelected(null); setPreview(null); setUpload(false); setError(''); }, [documentId]);
   useEffect(() => { if (query.error || blocked) { setPreview(null); setUpload(false); setSelected(null); } }, [query.error, blocked]);
   const versions = (detail?.versions ?? []).filter(item => !deniedVersions.has(item.id));
@@ -180,14 +235,25 @@ function DocumentDetail({ documentId }: { documentId: string }) {
   return <><PageHeader title={detail?.title ?? '文档详情'} description="版本、处理状态与原始文件" extra={<Link to="/documents">返回文档中心</Link>} />
     <Feedback {...query} retry={query.reload} />{blocked && <Alert type="info" title="文档当前不可查看" action={<Button onClick={query.reload}>重新读取</Button>} />}{detail && <>
       <section className="panel"><div className="toolbar"><Tag>密级 {detail.securityLevel}</Tag><span className="muted">当前发布：{detail.currentVersionNo == null ? '尚无版本' : `v${detail.currentVersionNo}`}</span></div>
-        <Space wrap><FavoriteButton id={documentId} favorites={favorites} />{(adminAccess.canManageSpace(detail.spaceId) || adminAccess.has(perm.securityLevelWrite)) && <Link to={`/admin/documents/${documentId}`}>管理此文档</Link>}<Button disabled={!capabilities.data?.canUploadVersion} onClick={() => setUpload(true)}>上传新版本</Button>
+        <Space wrap><FavoriteButton id={documentId} favorites={favorites} />{(adminAccess.canManageSpace(detail.spaceId) || adminAccess.has(perm.securityLevelWrite)) && <Link to={`/admin/documents/${documentId}`}>管理此文档</Link>}<Button disabled={documentState.exclusive || !capabilities.data?.canUploadVersion} onClick={() => setUpload(true)}>上传新版本</Button>
           <Button disabled={!versionId || !canRead} onClick={() => setPreview(`${path}/preview`)}>预览选中版本</Button>
           {versionId && <DownloadButton key={path} path={`${path}/download`} name={version?.fileName ?? detail.title} disabled={!capabilities.data?.canDownload || !canRead || !currentStatus?.capabilities.canDownload} onDenied={loseVersion} />}
-          <Button loading={busy} disabled={!capabilities.data?.canRetry || !version || !retryable(version)} onClick={async () => {
-            if (lock.current || !versionId) return; lock.current = true; setBusy(true); setError('');
-            try { await session.json(`/api/documents/${documentId}/retry?versionId=${versionId}`, { method: 'POST' }); setRevision(value => value + 1); query.reload(); }
-            catch (failure) { if (!isAbort(failure)) { setError(messageOf(failure)); capabilities.reload(); } } finally { lock.current = false; setBusy(false); }
-          }}>重试失败解析</Button></Space>
+          <Button loading={busy} disabled={documentState.exclusive || !capabilities.data?.canRetry || !version || !retryable(version)} onClick={async () => {
+            if (lock.current || !versionId) return;
+            const operation = operations?.beginWrite('parse-retry');
+            if (operations && !operation) return;
+            const controller = new AbortController(); retryRequest.current = controller;
+            lock.current = true; setBusy(true); setError('');
+            try {
+              await session.json(`/api/documents/${documentId}/retry?versionId=${versionId}`, { method: 'POST', signal: controller.signal });
+              operation?.settle('confirmed');
+              if (!controller.signal.aborted) { setRevision(value => value + 1); query.reload(); }
+            } catch (failure) {
+              operation?.settle(operationFailure(failure));
+              if (!controller.signal.aborted && !isAbort(failure)) { setError(messageOf(failure)); capabilities.reload(); }
+            } finally { lock.current = false; setBusy(false); }
+          }}>重试失败解析</Button>
+          <Button danger disabled={documentState.exclusive || !canDelete(capabilities.data)} onClick={() => void onDelete()}>删除文档</Button></Space>
         {capabilities.error && <Alert style={{ marginTop: 16 }} type="warning" title="操作资格暂不可确认，相关操作已禁用。" />}
         {error && <Alert style={{ marginTop: 16 }} type="error" title={error} />}
       </section>

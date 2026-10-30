@@ -1,5 +1,6 @@
 import { ApiError, isAbort, messageOf } from '../api';
 import type { Session } from '../session';
+import { operationFailure, type DocumentOperations } from '../documents/operations';
 import { favoriteStates, setFavorite, uniqueIds } from './api';
 
 export interface FavoriteStatus {
@@ -20,7 +21,7 @@ export class FavoriteStore {
   private controllers = new Set<AbortController>();
   private listeners = new Set<() => void>();
 
-  constructor(private session: Session) {}
+  constructor(private session: Session, private operations?: DocumentOperations | null) {}
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish() { this.snapshot = { ...this.snapshot }; this.listeners.forEach(listener => listener()); }
@@ -74,13 +75,17 @@ export class FavoriteStore {
   async set(id: string, target: boolean) {
     const before = this.snapshot[id];
     if (this.disposed || before?.phase !== 'ready' || before.busy) return;
+    const operation = this.operations?.beginWrite(`favorite:${id}`);
+    if (this.operations && !operation) return;
     const generation = this.generation, revision = this.next(id);
     this.snapshot[id] = { ...before, busy: true, message: undefined }; this.publish();
     const controller = new AbortController(); this.controllers.add(controller);
     try {
       const result = await setFavorite(this.session, id, target, controller.signal);
+      operation?.settle('confirmed');
       if (this.current(generation, id, revision)) this.snapshot[id] = { phase: 'ready', favorited: result.favorited };
     } catch (error) {
+      operation?.settle(operationFailure(error));
       if (this.current(generation, id, revision) && !isAbort(error)) {
         if (error instanceof ApiError && error.status === 404) this.snapshot[id] = { phase: 'unavailable' };
         else if (error instanceof ApiError && [400, 401, 403, 415].includes(error.status)) {
@@ -96,6 +101,6 @@ export class FavoriteStore {
   dispose() {
     this.disposed = true; this.generation++;
     this.controllers.forEach(controller => controller.abort()); this.controllers.clear();
-    this.snapshot = {}; this.revisions.clear(); this.publish();
+    this.source = undefined; this.snapshot = {}; this.revisions.clear(); this.publish();
   }
 }

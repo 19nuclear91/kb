@@ -45,12 +45,14 @@ public class DocumentCapabilitiesService {
             new QueryParameters(input);
             long documentId = QueryParameters.positiveValue(id);
             var view = permissions.resolve(handle, PermissionService.PERM_VIEW);
-            if (!matches(documentId, view, PermissionService.PERM_VIEW)) throw QueryException.missing();
+            if (!matches(documentId, view, PermissionService.PERM_VIEW)) {
+                throw QueryException.missing();
+            }
             boolean download = matches(documentId, permissions.resolve(handle, PermissionService.PERM_DOWNLOAD),
                     PermissionService.PERM_DOWNLOAD);
             boolean edit = matches(documentId, permissions.resolve(handle, PermissionService.PERM_EDIT),
                     PermissionService.PERM_EDIT);
-            return new DocumentCapabilities(documentId, download, edit, edit);
+            return new DocumentCapabilities(documentId, download, edit, edit, edit);
         } catch (ApiException | QueryException expected) {
             throw expected;
         } catch (RuntimeException unavailable) {

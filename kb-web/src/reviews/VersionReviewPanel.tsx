@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Space, Tag } from 'antd';
 import { Link } from 'react-router-dom';
 import { useSession } from '../SessionProvider';
+import { useDocumentOperations } from '../documents/OperationContext';
 import { useResource } from '../useResource';
 import { useAdminWrite } from '../admin/hooks';
 import { AdminModal } from '../admin/ui';
@@ -33,6 +34,7 @@ function ReviewContext({ documentId, versionId, onChanged, onStatus, onDenied, f
   documentId: string; versionId: string; onChanged?: () => void; onStatus?: (value: ReviewStatus | undefined) => void; onDenied?: () => void; files: boolean;
 }) {
   const { session, state } = useSession();
+  const { state: documentState } = useDocumentOperations();
   const query = useResource(signal => session.json<ReviewStatus>(reviewPaths.status(documentId, versionId), { signal }), `${state.epoch}:${documentId}/${versionId}`);
   const current = !query.loading && !query.error ? query.data : undefined;
   const [opinions, setOpinions] = useState(false), [preview, setPreview] = useState(false);
@@ -55,7 +57,7 @@ function ReviewContext({ documentId, versionId, onChanged, onStatus, onDenied, f
       {current.capabilities.canRead && <p>当前发布版本：{current.state.currentVersionId ?? '尚无版本'}</p>}
       {!current.capabilities.canRead && <p>当前仅可查看本人最小状态；没有正文、文件或私有意见读取资格。</p>}
       <Space wrap>{commands.filter(([, ability]) => current.capabilities[ability]).map(([command, , label]) =>
-        <Button key={command} aria-label={label} onClick={() => setChosen({ command, state: { ...current.state } })}>{label}</Button>)}
+        <Button key={command} aria-label={label} disabled={documentState.exclusive} onClick={() => setChosen({ command, state: { ...current.state } })}>{label}</Button>)}
         {files && current.capabilities.canRead && <><Link to={`/documents/${documentId}`}>打开文档</Link><Button onClick={() => setPreview(true)}>预览此版本</Button></>}
         {files && current.capabilities.canRead && current.capabilities.canDownload && <DownloadButton path={`${filePath}/download`} name={`版本-${current.state.versionNo}`} onDenied={refresh} />}
         {current.capabilities.canReadOpinions && <Button onClick={() => setOpinions(value => !value)}>{opinions ? '关闭私有意见' : '查看私有意见'}</Button>}
@@ -92,7 +94,7 @@ function CommandDialog({ command, target, current, close, refresh, done }: {
   const invalidated = !!current && !allowed;
   // 重读暂未完成时仅暂停；已确认失效的窗口必须关闭重选，不能随旧资格恢复而复活。
   useEffect(() => { if (invalidated) setConflict(true); }, [invalidated]);
-  const disabled = !allowed || conflict;
+  const disabled = !allowed || conflict || write.blocked;
   const receive = (result: Awaited<ReturnType<typeof write.submit<ReviewReceipt>>>) => {
     if (result.status === 'confirmed') done(result.value);
     else if (result.status === 'rejected' && [403, 404, 409].includes(result.error.status)) { setConflict(true); refresh(); }
@@ -103,7 +105,7 @@ function CommandDialog({ command, target, current, close, refresh, done }: {
     {command === 'approve' && <Alert type="warning" title="通过即发布，并替换当前发布版本。" />}
     {command === 'refresh' && <Alert type="warning" title="将重新解析候选并取消旧活动审核；完成后必须重新送审。" />}
     {write.message && <Alert type={write.phase === 'uncertain' ? 'warning' : 'error'} title={write.message} />}
-    {write.phase === 'uncertain' && <Space><Button onClick={() => void write.retry<ReviewReceipt>().then(receive)}>按原内容重试</Button><Button onClick={verify}>重新读取核对</Button></Space>}
+    {write.phase === 'uncertain' && <Space><Button disabled={write.blocked} onClick={() => void write.retry<ReviewReceipt>().then(receive)}>按原内容重试</Button><Button onClick={verify}>重新读取核对</Button></Space>}
     {(conflict || invalidated) && <Alert type="info" title={`当前操作资格或版本状态已变化；本窗口不会把决定应用到新状态或新轮次。${write.phase === 'uncertain' ? '仅可按原内容重试或重新读取核对。' : '请关闭后重新选择操作。'}`} />}
     {command === 'reject' && <label>私有驳回原因<textarea aria-label="私有驳回原因" value={reason} disabled={disabled || write.pending} onChange={event => setReason(event.target.value)} /></label>}
     <p>取消浏览器请求或关闭页面不会撤销服务器已执行的操作。</p>

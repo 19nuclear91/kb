@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useSession } from '../SessionProvider';
+import { useDocumentOperations } from '../documents/OperationContext';
 import { FavoriteStore, unknownFavorite } from './store';
 import { uniqueIds } from './api';
 
 export function useFavorites(ids: readonly string[], resource: unknown, seeded = false) {
   const { session, state } = useSession();
-  const store = useMemo(() => new FavoriteStore(session), [session, state.epoch, state.phase]);
+  const { operations } = useDocumentOperations();
+  const store = useMemo(() => new FavoriteStore(session, operations), [session, state.epoch, state.phase, operations]);
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const key = uniqueIds(ids).join(',');
   const active = state.phase === 'ready' && resource != null;

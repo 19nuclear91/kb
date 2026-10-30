@@ -61,6 +61,16 @@ Ant Design 运行时样式需要上述样式许可；脚本没有 `unsafe-inline
 3. 只回退前端时恢复旧静态产物或撤下入口，新增只读后端可保留。若需同时回退后端，应先撤下依赖新增接口的前端。
 4. 回退不删除文档、会话、用户或凭据，不自动重放上传、重试解析和生成请求。
 
+### 文档删除发布与结果核对
+
+1. 先发布新增 `canDelete` 投影的 kb-app，再发布用户端静态产物。该字段复用已有 edit 判定并保留 view 门禁，不新增权限、数据库迁移或服务端删除回执。现有 `/api/documents/**` 路由继续转发无请求体的 `DELETE /api/documents/{documentId}`，不得把 API 响应转换为 SPA 页面。
+2. 新前端只有读到明确的 `canDelete=true` 才开放详情页入口；遇到旧服务缺少字段或能力查询故障时禁用。删除作用于整份文档及全部版本，无法通过选中历史版本缩小范围；确认前重新读取事实，并协调本页已有写入。
+3. 仅当前 DELETE 的合法 HTTP 200 成功封装确认删除成功。随后清理详情、释放预览并 replace 返回文档中心；成功提示只在当前会话短期内存中消费一次，列表加载失败不推翻已确认的删除。
+4. 网络中断、15 秒客户端等待到期、响应正文损坏及可能发生在提交后的服务异常均保留“结果未确认”。用户主动核对只读取详情与能力：404 仅表示当前不可访问，200 仅表示查询时仍可访问，均不能代替原请求回执；核对失败继续未确认，不自动重发 DELETE。新的删除必须重新读取事实并再次明确确认。
+5. 退出、换用户、强制改密、切换文档、隐藏或离开详情使旧回调失效。取消本地等待不证明服务端回滚，恢复后重新确认身份和资源，不恢复旧确认或自动重发。
+
+回退时恢复旧前端即可撤下入口，新增后端字段兼容旧前端；回退后端后新前端会因缺少能力字段禁用删除。版本回退不会恢复已删除的文档，不自动重建版本、重放请求或提供业务撤销。对象存储清理仍遵循原删除流程与既有对账机制，不能把成功提示解释为原件立即物理擦除。
+
 ### 文档收藏发布
 
 1. 由 kb-app 单点执行 `V20__document_favorites.sql`，发布支持四个收藏端点的 kb-app，并发布包含收藏 `no-store` 策略的 kb-gateway。网关路由范围保持 `/api/documents/**`。
@@ -88,3 +98,25 @@ mvn -o -pl kb-app -am test '-Dtest=UploadSpaceQueryServiceTest,DocumentCapabilit
 ```
 
 前端测试使用内存请求、受控流、虚拟时间与模拟 DOM；后端仅运行独立 service/controller、无连接 MyBatis 映射与 ModuleBoundaryTest。未执行全量旧测试、JavaSourceConventionTest、集成测试、文档文案测试或任何需要外部组件的检查。未启动开发服务器、网关、浏览器、数据库、Redis、MinIO、容器和真实模型服务。
+
+## 文档删除本地检查记录（2026-10-30）
+
+本次 `user-web-document-deletion` 使用以下白名单执行隔离单元测试，未启动应用或外部服务：
+
+```powershell
+mvn -pl kb-app -am test '-Dtest=DocumentCapabilitiesServiceTest,DocumentManagementServiceTest,DocumentCapabilitiesSerializationTest,UserResourceControllerTest' '-Dsurefire.failIfNoSpecifiedTests=false' '-Dstyle.color=never'
+```
+
+后端 24 项测试通过，失败、错误、跳过均为 0；包括删除能力投影、DTO 实际序列化，以及原删除流程的任务、审核和存储清理单元回归。
+
+在 `kb-web` 执行：
+
+```powershell
+npm test -- --run src/documents/capabilities.test.ts src/documents/operations.test.tsx src/documents/deletion.test.ts src/documents/controls.test.tsx src/documents/notice.test.ts src/documents/write-coordination.test.tsx src/session.test.ts src/favorites/store.test.ts
+npm run typecheck
+npm run build
+```
+
+前端 8 个测试文件、107 项单元测试通过，类型检查及生产构建通过。其中新增 11 个恢复回归用例：未提交删除的核对恢复后清除旧提示并释放删除锁，保留普通写入记录；在途核对作废后可以主动重试，迟到成功或失败响应不能覆盖新事实，已提交删除的未确认结果及明确拒绝事实继续保留。构建提示主包超过既有 1200 kB 警告阈值，不影响产物生成。删除控制器、协调逻辑和确认界面以 Mock 传输、上下文或回调隔离，未挂载完整页面或真实业务子组件进行联合回归。
+
+本次未执行集成测试、文档内容断言或人工文档核对，未运行 DB、Redis、MinIO、网关、开发服务器、浏览器 E2E 或真实模型服务；本地单元测试结果不表示真实部署链路已验收。
