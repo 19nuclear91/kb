@@ -74,6 +74,7 @@ public class ChatService {
         return Flux.defer(() -> {
             UsageAccumulator usage = new UsageAccumulator();
             return retrievalClient.retrieve(question, tokenValue)
+                    .switchIfEmpty(Mono.error(new RetrievalFailure(RetrievalFailure.Kind.PROTOCOL)))
                     .flatMapMany(citations -> {
                         if (citations.isEmpty()) {
                             observation.result("NO_RESULTS");
@@ -113,6 +114,10 @@ public class ChatService {
                             new ChatEvent.Done(usage.promptTokens(), usage.completionTokens(),
                                     System.currentTimeMillis() - startedAt)))
                     .onErrorResume(e -> {
+                        if (e instanceof RetrievalFailure) {
+                            observation.result("FAILED");
+                            return Flux.just(new ChatEvent.Error(RetrievalFailure.MESSAGE, RetrievalFailure.CODE));
+                        }
                         SafeChatLog.error(log, "chat", e);
                         // 不回传 e.getMessage()：异常消息里可能带着上游返回的内容，
                         // 而那里面装的是文档正文。见 ChatEvent.Error 的说明。

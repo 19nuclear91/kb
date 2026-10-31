@@ -61,6 +61,11 @@ export function AssistantWorkspace() {
 }
 
 export function ConversationPanel({ conversationId, onDeleted }: { conversationId: string; onDeleted: () => void }) {
+  const { state } = useSession();
+  return state.phase === 'ready' ? <ConversationContent key={`${conversationId}:${state.epoch}`} conversationId={conversationId} onDeleted={onDeleted} /> : null;
+}
+
+function ConversationContent({ conversationId, onDeleted }: { conversationId: string; onDeleted: () => void }) {
   const { session } = useSession();
   const query = useResource(async signal => {
     const id = positiveId(conversationId);
@@ -79,6 +84,16 @@ export function ConversationPanel({ conversationId, onDeleted }: { conversationI
   const [context] = useState(() => new AbortController());
   const dispose = () => { generation.current++; stream.current?.abort(); reconciliation.current?.abort(); };
   useEffect(() => () => { context.abort(); generation.current++; stream.current?.abort(); reconciliation.current?.abort(); }, [context]);
+  useEffect(() => {
+    const hidden = () => {
+      if (document.visibilityState !== 'hidden') return;
+      generation.current++; stream.current?.abort(); reconciliation.current?.abort();
+      setQuarantined(true); setTemporary(null); setTurns([]); setCitation(null); setQuestion(''); setError(''); setHint('');
+      binding.current = undefined; lock.current = false; setRunning(false);
+    };
+    document.addEventListener('visibilitychange', hidden);
+    return () => document.removeEventListener('visibilitychange', hidden);
+  }, []);
   useEffect(() => { setTurns(mergeTurns([], query.data?.history.items ?? [])); setCursor(query.data?.history.nextCursor ?? null); setLiveMeta(query.data?.meta ?? null); setCitation(null); }, [query.data]);
   const meta = liveMeta ?? query.data?.meta;
 
@@ -103,6 +118,7 @@ export function ConversationPanel({ conversationId, onDeleted }: { conversationI
         if (!active()) return;
         if (event.type === 'delta') setTemporary(previous => previous && { ...previous, text: previous.text + event.text });
         if (event.type === 'citation') setTemporary(previous => previous && { ...previous, citations: [...previous.citations, event.citation] });
+        if (event.type === 'error') setError(event.code === 'SEARCH_UNAVAILABLE' ? '检索暂不可用，请稍后重试。' : '生成或保存暂未完成，请查看历史状态。');
       });
       if (active() && result === 'eof') setHint('连接已结束，正在核对已保存内容。');
     } catch (failure) {
@@ -127,7 +143,7 @@ export function ConversationPanel({ conversationId, onDeleted }: { conversationI
             }
             else setHint('持久状态仍在处理中，请稍后刷新核对。');
           }
-        } catch (failure) { if (active() && !isAbort(failure)) { setTemporary(null); setTurns([]); setError(messageOf(failure)); setHint('请稍后刷新核对保存结果。'); } }
+        } catch (failure) { if (active() && !isAbort(failure)) { setTemporary(null); setTurns([]); setError(previous => previous || messageOf(failure)); setHint('请稍后刷新核对保存结果。'); } }
       } else if (active()) { setTemporary(null); setHint('尚未确认受理结果；相同输入可使用匹配重试。'); }
       if (active()) { setRunning(false); lock.current = false; }
     }
@@ -153,7 +169,7 @@ export function ConversationPanel({ conversationId, onDeleted }: { conversationI
           {running && <Button onClick={() => { stream.current?.abort(); setHint('已停止接收，正在核对保存结果。'); }}>停止</Button>}
           <span className="muted">最多 8000 个字符 · 请核对参考材料</span></div></div>
     </>}
-    {quarantined && <Alert type="info" title="已关闭当前连接并清除本页内容。可刷新核对删除结果。" />}
+    {quarantined && <Alert type="info" title="已关闭当前连接并清除本页内容。可刷新核对保存状态。" />}
     {error && <Alert type="warning" title={error} />}{hint && <p role="status" className="muted">{hint}</p>}
     <Modal title={`删除会话「${query.data?.meta.title ?? conversationId}」？`} open={confirmDelete} confirmLoading={deleting} okText="删除会话" okButtonProps={{ danger: true }} cancelText="取消" onCancel={() => { if (!deleting) setConfirmDelete(false); }} onOk={async () => {
       if (deleteLock.current) return; deleteLock.current = true; setDeleting(true); setError('');

@@ -18,6 +18,11 @@ it('error 和无 done EOF 不表示成功，残缺帧不提交', async () => {
   expect(await readSse(response('event: error\ndata: {"message":"private"}\n\n'), new AbortController().signal, vi.fn())).toBe('error');
   const emit = vi.fn(); expect(await readSse(response('event: delta\ndata: {"text":"partial"}'), new AbortController().signal, emit)).toBe('eof'); expect(emit).not.toHaveBeenCalled();
 });
+it.each([undefined, 'UNKNOWN', 'SEARCH_UNAVAILABLE'])('错误码 %s 仅透传白名单并忽略任意消息', async code => {
+  const emit = vi.fn();
+  expect(await readSse(response(`event: error\ndata: ${JSON.stringify({ code, message: 'private upstream' })}\n\n`), new AbortController().signal, emit)).toBe('error');
+  expect(emit).toHaveBeenCalledExactlyOnceWith(code === 'SEARCH_UNAVAILABLE' ? { type: 'error', code } : { type: 'error' });
+});
 it.each(['event: delta\ndata: invalid\n\n', 'event: delta\ndata: {"text":1}\n\n', 'event: citation\ndata: {}\n\n'])('畸形帧中断并交由调用者核对', async text => {
   await expect(readSse(response(text), new AbortController().signal, vi.fn())).rejects.toMatchObject({ status: 503 });
 });

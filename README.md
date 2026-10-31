@@ -345,18 +345,18 @@ mvn -B clean package
 一道是"AI 服务不能直连数据库"，一道是"AI 服务必须跑响应式栈"。
 两者都曾被依赖传递悄悄破坏过（见下），注释拦不住，所以钉成了测试。
 
-### 5.2 AI 服务与 SSE（✅ 已实测）
+### 5.2 检索韧性与 AI SSE
 
-无需 PG 即可验证——检索失败会优雅退化为"未找到相关内容"：
+搜索默认共享 8 秒预算：Embedding 最多 2 秒、数据库召回最多 3 秒、rerank 最多 1.5 秒，预留 500 毫秒准备响应。每 app 实例最多 8 个实际在途请求，同一用户最多 2 个；用户超限 429、实例满载 503，附 Retry-After。超时响应不会提前释放仍运行的工作。输入、传输、降级和指标见 [检索限界与降级](docs/search-resilience.md)。
 
-```bash
-java -jar kb-ai/target/kb-ai-0.1.0-SNAPSHOT.jar
-curl -sN -X POST "http://localhost:8082/api/ai/chat" \
-  -H "satoken: $TOKEN" -H "Content-Type: application/json" \
-  -d '{"question":"测试"}'
+AI 检索独立等待 10 秒。拒绝、超时或协议故障以固定错误结束，不再伪装为无结果：
+
+```text
+event:error
+data:{"message":"检索暂不可用，请稍后重试。","code":"SEARCH_UNAVAILABLE"}
 ```
 
-实测结果：
+只有授权检索合法成功返回空列表时，单轮才保留原无结果事件：
 
 ```
 event:delta
@@ -365,6 +365,8 @@ data:{"text":"未找到与问题相关的内容。"}
 event:done
 data:{"promptTokens":0,"completionTokens":0,"elapsedMs":351}
 ```
+
+上述为协议示例。多轮检索故障进入既有 FAILED 与 NOT_INVOKED/零 token 结算；匹配重放不再次召回，持久终态未确认时读取服务端事实。本变更通过显式单元测试名单、内存替身、类型检查及静态构建验证，范围与命令记录在检索说明中。
 
 启动日志应为 `Netty started on port 8082`。
 **若出现 `Starting Servlet engine: Apache Tomcat` 就是回归了**——

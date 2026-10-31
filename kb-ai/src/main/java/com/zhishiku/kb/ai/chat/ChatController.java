@@ -143,7 +143,10 @@ public class ChatController {
                                 .thenReturn(event);
                     }
                     if (event instanceof ChatEvent.Error) {
-                        return activeLease.failAsync().thenReturn(event);
+                        return activeLease.failAsync().onErrorResume(error -> {
+                            SafeChatLog.error(log, "stream_settlement", error);
+                            return Mono.empty();
+                        }).thenReturn(event);
                     }
                     return Mono.just(event);
                 })

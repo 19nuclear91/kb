@@ -4,7 +4,7 @@ import type { Citation } from './types';
 import type { TurnBinding } from './logic';
 
 export type StreamEvent = { type: 'delta'; text: string } | { type: 'citation'; citation: Citation }
-  | { type: 'done' } | { type: 'error' };
+  | { type: 'done' } | { type: 'error'; code?: 'SEARCH_UNAVAILABLE' };
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function readSse(response: Response, signal: AbortSignal, emit: (event: StreamEvent) => void,
@@ -27,7 +27,10 @@ export async function readSse(response: Response, signal: AbortSignal, emit: (ev
       } else if (event === 'citation') {
         if (++sources > limits.citations || typeof value.chunkId !== 'string') throw new ApiError(503);
         emit({ type: 'citation', citation: value as unknown as Citation });
-      } else { terminal = event as 'done' | 'error'; emit({ type: terminal }); }
+      } else {
+        terminal = event as 'done' | 'error';
+        emit(terminal === 'error' && value.code === 'SEARCH_UNAVAILABLE' ? { type: 'error', code: 'SEARCH_UNAVAILABLE' } : { type: terminal });
+      }
     }
     event = ''; data = []; bytes = 0;
   };

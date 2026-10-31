@@ -4,6 +4,7 @@ import com.zhishiku.kb.ai.chat.AiProperties;
 import com.zhishiku.kb.ai.chat.ChatQuotaAuditService;
 import com.zhishiku.kb.ai.chat.QuotaPrincipalRejectedException;
 import com.zhishiku.kb.ai.chat.RetrievalClient;
+import com.zhishiku.kb.ai.chat.RetrievalFailure;
 import com.zhishiku.kb.ai.conversation.config.ConversationProperties;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -135,9 +136,13 @@ public class MultiTurnChatService {
             var key = state.result.execution();
             var budget = new ConversationBudget(properties);
             Flux<ServerSentEvent<Object>> body = app.prepare(key.conversationId(), state.token)
-                    .flatMap(history -> retrieval.retrieve(budget.query(history, state.question), state.token).map(materials -> {
+                    .flatMap(history -> retrieval.retrieve(budget.query(history, state.question), state.token)
+                            .switchIfEmpty(Mono.error(new RetrievalFailure(RetrievalFailure.Kind.PROTOCOL))).map(materials -> {
                         var versioned =
                                 materials.stream().filter(c -> c.versionId() != null && c.versionId() > 0).toList();
+                        if (!materials.isEmpty() && versioned.isEmpty()) {
+                            throw new RetrievalFailure(RetrievalFailure.Kind.PROTOCOL);
+                        }
                         return versioned.isEmpty() ? new ConversationBudget.Plan(null, List.of()) :
                                 budget.select(state.model, state.question, history, versioned);
                     })).flatMapMany(plan -> {
@@ -158,9 +163,7 @@ public class MultiTurnChatService {
             Flux<ServerSentEvent<Object>> keepAlive = Flux.interval(Duration.ofMillis(ai.keepAliveMs()))
                     .onBackpressureDrop().map(t -> ServerSentEvent.builder().comment("keep-alive").<Object>build());
             return Flux.merge(1, body, keepAlive).takeUntil(e -> "done".equals(e.event()) || "error".equals(e.event()))
-                    .onErrorResume(error -> cleanup(state, "FAILED").thenMany(Flux.just(event("error", Map.of(
-                            "conversationId", state.result.conversationId(), "turnId", state.result.turnId(),
-                            "message", "生成或保存暂未完成，请查看历史状态。")))))
+                    .onErrorResume(error -> cleanup(state, "FAILED").thenMany(Flux.just(event("error", failure(state, error)))))
                     .doFinally(signal -> {
                         if (signal == SignalType.CANCEL && !state.terminal)
                             cleanup(state, "CANCELLED").subscribe(ignored -> {
@@ -265,7 +268,7 @@ public class MultiTurnChatService {
                     state.intent = intent;
                     state.terminal = true;
                 })
-                .flatMap(intent -> settlement.settle(intent).then(app.acknowledge(intent)))
+                .flatMap(intent -> settlement.settle(intent).then(Mono.defer(() -> app.acknowledge(intent))))
                 .doOnSuccess(ignored -> state.terminal = true);
     }
 
@@ -294,6 +297,17 @@ public class MultiTurnChatService {
 
     private static ServerSentEvent<Object> event(String name, Object value) {
         return ServerSentEvent.builder(value).event(name).build();
+    }
+
+    private static Map<String, Object> failure(Prepared state, Throwable error) {
+        var data = new LinkedHashMap<String, Object>();
+        data.put("conversationId", state.result.conversationId());
+        data.put("turnId", state.result.turnId());
+        data.put("message", error instanceof RetrievalFailure ? RetrievalFailure.MESSAGE : "生成或保存暂未完成，请查看历史状态。");
+        if (error instanceof RetrievalFailure) {
+            data.put("code", RetrievalFailure.CODE);
+        }
+        return data;
     }
 
     private static ResponseStatusException preflightError(Throwable error) {
@@ -342,4 +356,3 @@ public class MultiTurnChatService {
         }
     }
 }
-

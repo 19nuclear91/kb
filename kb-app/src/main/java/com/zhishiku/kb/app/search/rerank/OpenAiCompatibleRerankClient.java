@@ -1,15 +1,16 @@
 package com.zhishiku.kb.app.search.rerank;
 
 import com.zhishiku.kb.app.search.model.ChunkHit;
+import com.zhishiku.kb.app.search.config.SearchLimitsProperties;
+import com.zhishiku.kb.app.search.execution.SearchCallBudget;
+import com.zhishiku.kb.app.search.execution.SearchContext;
+import com.zhishiku.kb.app.search.execution.SearchHttpTransport;
+import com.zhishiku.kb.app.search.execution.SearchStageFailure;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 
-import java.net.http.HttpClient;
-import java.time.Duration;
+import java.net.URI;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -23,47 +24,68 @@ import java.util.Map;
 public class OpenAiCompatibleRerankClient implements RerankClient {
 
     private final RerankProperties props;
-    private final RestClient client;
+    private final SearchHttpTransport transport;
+    private final SearchLimitsProperties limits;
+    private final URI endpoint;
 
-    public OpenAiCompatibleRerankClient(RerankProperties props, RestClient.Builder builder) {
+    public OpenAiCompatibleRerankClient(RerankProperties props, SearchHttpTransport transport, SearchLimitsProperties limits) {
         this.props = props;
-        var requestFactory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(props.timeoutSeconds()))
-                .build());
-        requestFactory.setReadTimeout(Duration.ofSeconds(props.timeoutSeconds()));
-        var configured = builder.baseUrl(stripTrailingSlash(props.baseUrl())).requestFactory(requestFactory);
-        if (props.apiKey() != null && !props.apiKey().isBlank()) {
-            configured.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + props.apiKey());
-        }
-        this.client = configured.build();
+        this.transport = transport;
+        this.limits = limits;
+        this.endpoint = URI.create(stripTrailingSlash(props.baseUrl()) + "/rerank");
     }
 
     @Override
     public List<ChunkHit> rerank(String query, List<ChunkHit> candidates, int topK) {
-        if (candidates.isEmpty() || topK <= 0) return List.of();
+        if (candidates.isEmpty() || topK <= 0) {
+            return List.of();
+        }
+        int expected = Math.min(topK, candidates.size());
         List<String> documents = candidates.stream().map(ChunkHit::content).toList();
-        Map<String, Object> response = client.post().uri("/rerank")
-                .body(Map.of("model", props.model(), "query", query,
-                        "documents", documents, "top_n", topK))
-                .retrieve().body(new ParameterizedTypeReference<>() {
-                });
+        Map<String, Object> response = transport.post(endpoint, props.apiKey(),
+                Map.of("model", props.model(), "query", query, "documents", documents, "top_n", expected),
+                new SearchCallBudget(SearchContext.current(), limits.maxRerankResponseBytes()),
+                limits.maxRerankRequestBytes(), props.timeoutSeconds());
         Object raw = response == null ? null : response.get("results");
-        if (!(raw instanceof List<?> results)) return candidates.subList(0, Math.min(topK, candidates.size()));
+        if (!(raw instanceof List<?> results) || results.size() != expected) {
+            throw invalid();
+        }
         List<Ranked> ranked = new ArrayList<>();
+        boolean[] seen = new boolean[candidates.size()];
         for (Object item : results) {
             if (!(item instanceof Map<?, ?> map)
-                    || !(map.get("index") instanceof Number index)) continue;
-            double score = map.get("relevance_score") instanceof Number n ? n.doubleValue() : 0;
-            int i = index.intValue();
-            if (i >= 0 && i < candidates.size()) ranked.add(new Ranked(i, score));
+                    || !(map.get("relevance_score") instanceof Number number)) {
+                throw invalid();
+            }
+            Object index = map.get("index");
+            if (!(index instanceof Integer || index instanceof Long || index instanceof BigInteger)) {
+                throw invalid();
+            }
+            int i;
+            try {
+                i = new BigInteger(index.toString()).intValueExact();
+            } catch (ArithmeticException overflow) {
+                throw invalid();
+            }
+            double score = number.doubleValue();
+            if (i < 0 || i >= candidates.size() || seen[i] || !Double.isFinite(score)) {
+                throw invalid();
+            }
+            seen[i] = true;
+            ranked.add(new Ranked(i, score));
         }
-        ranked.sort(Comparator.comparingDouble(Ranked::score).reversed());
-        if (ranked.isEmpty()) return candidates.subList(0, Math.min(topK, candidates.size()));
-        return ranked.stream().limit(topK).map(r -> candidates.get(r.index())).toList();
+        ranked.sort(Comparator.comparingDouble(Ranked::score).reversed().thenComparingInt(Ranked::index));
+        return ranked.stream().map(r -> candidates.get(r.index())).toList();
+    }
+
+    private static SearchStageFailure invalid() {
+        return new SearchStageFailure(SearchStageFailure.Reason.INVALID_RESPONSE);
     }
 
     private static String stripTrailingSlash(String value) {
-        if (value == null || value.isBlank()) throw new IllegalArgumentException("kb.search.rerank.base-url 不能为空");
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("kb.search.rerank.base-url 不能为空");
+        }
         return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }
 

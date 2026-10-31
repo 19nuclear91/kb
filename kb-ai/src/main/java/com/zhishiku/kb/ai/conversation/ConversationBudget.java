@@ -89,7 +89,7 @@ public class ConversationBudget {
             }
         }
         previous.add(current);
-        return String.join("\\n", previous);
+        return String.join("\n", previous);
     }
 
     private boolean validHistory(HistoryTurn h) {
@@ -127,4 +127,3 @@ public class ConversationBudget {
         return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "多轮模型能力暂不可用");
     }
 }
-

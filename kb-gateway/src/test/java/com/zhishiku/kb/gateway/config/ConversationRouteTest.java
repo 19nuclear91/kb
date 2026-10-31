@@ -35,10 +35,10 @@ class ConversationRouteTest {
                         var applied = factory.apply(config);
                         assertThat(applied.test(MockServerWebExchange.from(MockServerHttpRequest.post("/internal" +
                                 "/conversations/finish")))).isFalse();
-                        if (route.getId().equals("kb-app"))
+                        if (route.getId().equals("kb-app")) {
                             assertThat(applied.test(MockServerWebExchange.from(MockServerHttpRequest.get("/api" +
                                     "/conversations/9")))).isTrue();
-                        else {
+                        } else if (route.getId().equals("kb-ai-stream")) {
                             assertThat(applied.test(MockServerWebExchange.from(MockServerHttpRequest.post("/api/ai" +
                                     "/conversations/9/turns")))).isTrue();
                             assertThat(applied.test(MockServerWebExchange.from(MockServerHttpRequest.post("/api/ai" +
@@ -57,4 +57,3 @@ class ConversationRouteTest {
                 });
     }
 }
-

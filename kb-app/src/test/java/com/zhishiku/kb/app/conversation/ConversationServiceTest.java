@@ -82,6 +82,17 @@ class ConversationServiceTest {
     }
 
     @Test
+    void failedTurnNeverEntersHistoryEvenWithAnOtherwiseValidSourceDeclaration() {
+        conversation();
+        when(documents.visible(any(), any())).thenAnswer(call -> call.getArgument(1));
+        var failed = turn("MODEL", Set.of(new SourceKey(1, 2)));
+        failed.setStatus("FAILED");
+        when(mapper.history(eq(9L), org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of(failed));
+        assertThat(service.prepareContext(1, 9)).isEmpty();
+        assertThat(service.prepare(1, 9)).isEmpty();
+    }
+
+    @Test
     void createsDefaultTitleAndNormalizesReplayBinding() {
         when(mapper.insertConversation(any())).thenAnswer(call -> {
             ((ConversationRow) call.getArgument(0)).setId(9L);
@@ -206,4 +217,3 @@ class ConversationServiceTest {
                 e -> assertThat(e.httpStatus()).isEqualTo(status));
     }
 }
-

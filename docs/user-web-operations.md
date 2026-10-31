@@ -22,6 +22,16 @@ app 与 AI 的 `kb.conversation.enabled` 应先统一，再对齐前端开关。
 
 ## 同源路由与响应边界
 
+### 搜索限界与 SSE 检索错误
+
+构建变量 `VITE_SEARCH_MAX_QUERY_CODEPOINTS` 默认 8000，可设正整数收紧搜索词上限；非法配置回落默认值。客户端按 code point 检查且不截断，NUL/孤立代理项禁止发送；app 实际限制仍为最终判定。搜索专用 400/413/429/503 提示与文件上传、部门 AI 配额分开，保留真实状态和 `Retry-After`，不自动重试。
+
+AI error 的可选白名单 code `SEARCH_UNAVAILABLE` 显示固定“检索暂不可用，请稍后重试。”，旧或未知 code 保持通用错误流程。页面继续核对服务器持久终态，不从错误事件推造 FAILED 或成功回答。页面隐藏、离开、身份代次变化会废弃旧结果与提示；客户端取消只表示停止等待，不表示服务端工作或供应商计算实际结束。
+
+2026-10-31 本组显式单元测试 `npx vitest run src/search.test.tsx src/stream.test.ts src/assistant.test.tsx src/lifecycle.test.tsx`：4 文件、46 项通过，全部使用会话/API 替身与模拟 DOM。
+
+同轮 `npm run typecheck` 与 `npm run build` 均通过；构建生成 dist，报告单包超过 1200 kB 的体积提示。
+
 建议将 `dist` 内容托管在站点根路径，以 HTTPS 提供服务。先匹配 `/api/**` 转发到现有网关并保留原 HTTP 状态、Content-Type、认证头和 SSE 轮次响应头，再处理静态资源和 SPA 页面回退。只有页面路径可回退 `index.html`；API 的 401/403/404/503 不得转换为 200 HTML。缺失静态资源返回真实 404，避免把 JS 请求回退为页面。
 
 `/favorites` 为受保护的 SPA 页面，直接访问与刷新需要页面回退；登录及必要改密完成后可返回此路径。收藏入口不依赖会话功能开关或管理员资格。四个 `/api/documents/**` 收藏端点沿用现有网关路由及 PUT/DELETE CORS 配置，保留 JSON 正文和真实状态码。

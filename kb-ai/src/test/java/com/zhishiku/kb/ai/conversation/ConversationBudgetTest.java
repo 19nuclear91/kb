@@ -59,7 +59,30 @@ class ConversationBudgetTest {
         assertThat(plan.input().messages()).containsExactly(new MultiTurnModel.Message("user", "任务租约"),
                 new MultiTurnModel.Message("assistant", "有效答案"), new MultiTurnModel.Message("user", question));
         assertThat(plan.input().maxOutputTokens()).isEqualTo(2048);
-        assertThat(budget.query(List.of(recent), question)).isEqualTo("任务租约\\n" + question);
+        assertThat(budget.query(List.of(recent), question)).isEqualTo("任务租约\n" + question);
+    }
+
+    @Test
+    void followUpSeparatorsFitTheExactCodepointBudgetWithoutTruncatingCurrentQuestion() {
+        var first = history(1, "旧", "answer", new SourceKey(1, 2));
+        var second = history(2, "😀", "answer", new SourceKey(3, 4));
+        String current = "q".repeat(7998);
+        String single = budget.query(List.of(first), current);
+        assertThat(single).isEqualTo("旧\n" + current);
+        assertThat(single.codePointCount(0, single.length())).isEqualTo(8000);
+
+        current = "😀".repeat(7996);
+        String both = budget.query(List.of(second, first), current);
+        assertThat(both).isEqualTo("旧\n😀\n" + current);
+        assertThat(both.codePointCount(0, both.length())).isEqualTo(8000);
+
+        current = "😀".repeat(7997);
+        String recentOnly = budget.query(List.of(first, second), current);
+        assertThat(recentOnly).isEqualTo("😀\n" + current);
+        assertThat(recentOnly.codePointCount(0, recentOnly.length())).isLessThanOrEqualTo(8000);
+
+        current = "😀".repeat(8000);
+        assertThat(budget.query(List.of(first, second), current)).isEqualTo(current);
     }
 
     @Test
@@ -111,4 +134,3 @@ class ConversationBudgetTest {
         assertThatThrownBy(() -> budget.ready(unsupported)).isInstanceOf(ResponseStatusException.class);
     }
 }
-

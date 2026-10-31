@@ -78,7 +78,9 @@ public class AiObservedChat {
                             long amount = (long) chargedPrompt + chargedCompletion;
                             return close("COMPLETED", amount, result).thenReturn(event);
                         }
-                        if (event instanceof ChatEvent.Error) return close("FAILED", 0, "FAILED").thenReturn(event);
+                        if (event instanceof ChatEvent.Error) {
+                            return close("FAILED", 0, "FAILED").onErrorResume(error -> Mono.empty()).thenReturn(event);
+                        }
                         return Mono.just(event);
                     }).onErrorResume(error -> {
                         if (lease == null && error instanceof QuotaPrincipalRejectedException) acquisitionIntended = false;

@@ -1,19 +1,35 @@
 package com.zhishiku.kb.ai.chat;
 
 import com.zhishiku.kb.common.security.AuthHeaders;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadConstraints;
+import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.ParameterizedTypeReference;
+import org.reactivestreams.Subscription;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferLimitException;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.BaseSubscriber;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigInteger;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 语料召回客户端：调用 {@code kb-app} 的授权检索接口。
@@ -47,16 +63,25 @@ public class RetrievalClient {
      */
     static final String TOKEN_HEADER = AuthHeaders.SA_TOKEN;
 
-    private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
-            new ParameterizedTypeReference<>() {
-            };
+    private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
+            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+            .streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(64).build()).build())
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     private final WebClient webClient;
     private final AiProperties props;
+    private final RetrievalProperties retrieval;
 
     public RetrievalClient(WebClient.Builder builder, AiProperties props) {
+        this(builder, props, RetrievalProperties.defaults());
+    }
+
+    @Autowired
+    public RetrievalClient(WebClient.Builder builder, AiProperties props, RetrievalProperties retrieval) {
         this.props = props;
-        this.webClient = builder.baseUrl(props.appBaseUrl()).build();
+        this.retrieval = retrieval;
+        this.webClient = builder.clone().baseUrl(props.appBaseUrl())
+                .filter((request, next) -> next.exchange(request).map(RetrievalClient::singleUseBody)).build();
     }
 
     /**
@@ -64,16 +89,14 @@ public class RetrievalClient {
      *
      * @param query      检索问题
      * @param tokenValue 调用者的 Sa-Token，由 {@code ChatController} 从入站请求原样取出
-     * @return 召回结果；调用失败时返回空列表而不是抛出——
-     * 检索失败应退化为"没有找到相关内容"，而不是让整个对话 500。
-     * <b>但绝不能退化为"不带权限条件再查一次"。</b>
+     * @return 恰好一个合法材料列表，或固定检索失败；合法空结果与故障严格区分
      */
     public Mono<List<Citation>> retrieve(String query, String tokenValue) {
         return webClient.post()
                 .uri("/api/search")
                 .contentType(MediaType.APPLICATION_JSON)
                 // RRF 后的 rerank 需要较大的候选集，最终只把 top-k 送入 prompt。
-                .bodyValue(Map.of("query", query, "candidates", Math.max(50, props.retrieveTopK() * 4),
+                .bodyValue(Map.of("query", query, "candidates", Math.min(200, Math.max(50, 4L * props.retrieveTopK())),
                         "topK", props.retrieveTopK()))
                 .headers(h -> {
                     if (tokenValue != null) {
@@ -82,26 +105,68 @@ public class RetrievalClient {
                     // tokenValue 为 null 时不补默认值。kb-app 会因缺少身份而拒绝，
                     // 这正是期望行为——"没有身份"必须等于"看不到任何东西"。
                 })
-                .retrieve()
-                .bodyToMono(MAP_TYPE)
-                .timeout(Duration.ofSeconds(props.upstreamTimeout()))
-                .map(RetrievalClient::toCitations)
-                .onErrorResume(e -> {
-                    SafeChatLog.warn(log, "retrieval", e);
-                    return Mono.just(List.of());
-                });
+                .exchangeToMono(this::readResponse)
+                .switchIfEmpty(Mono.error(new RetrievalFailure(RetrievalFailure.Kind.PROTOCOL)))
+                .timeout(Duration.ofMillis(retrieval.timeoutMs()))
+                .onErrorMap(error -> error instanceof RetrievalFailure ? error
+                        : new RetrievalFailure(error instanceof TimeoutException ? RetrievalFailure.Kind.TIMEOUT
+                        : error instanceof DataBufferLimitException ? RetrievalFailure.Kind.PAYLOAD_LIMIT
+                        : RetrievalFailure.Kind.DEPENDENCY))
+                .doOnError(RetrievalFailure.class, error -> log.warn("AI 检索失败 stage=retrieval category={}", error.kind()));
+    }
+
+    private static ClientResponse singleUseBody(ClientResponse response) {
+        var consumed = new AtomicBoolean();
+        // exchangeToMono 会在结束或报错时释放正文；该清理只能看到已消费的空流，不能重新读取上游。
+        return response.mutate().body(body -> Flux.defer(() -> consumed.compareAndSet(false, true)
+                ? body : Flux.empty()).doOnDiscard(DataBuffer.class, DataBufferUtils::release)).build();
+    }
+
+    private Mono<List<Citation>> readResponse(ClientResponse response) {
+        if (response.statusCode().value() != 200) {
+            // 订阅后立即取消，不请求错误正文，也不给自动清理留下再次订阅上游的机会。
+            response.bodyToFlux(DataBuffer.class).subscribe(new BaseSubscriber<>() {
+                @Override
+                protected void hookOnSubscribe(Subscription subscription) {
+                    cancel();
+                }
+
+                @Override
+                protected void hookOnNext(DataBuffer buffer) {
+                    DataBufferUtils.release(buffer);
+                }
+            });
+            return Mono.error(new RetrievalFailure(RetrievalFailure.Kind.HTTP));
+        }
+        return DataBufferUtils.join(response.bodyToFlux(DataBuffer.class), retrieval.maxResponseBytes())
+                .map(buffer -> {
+                    try {
+                        byte[] bytes = new byte[buffer.readableByteCount()];
+                        buffer.read(bytes);
+                        return toCitations(JSON.readValue(bytes, new TypeReference<Map<String, Object>>() { }));
+                    } catch (IOException malformed) {
+                        throw new RetrievalFailure(RetrievalFailure.Kind.PROTOCOL);
+                    } finally {
+                        DataBufferUtils.release(buffer);
+                    }
+                })
+                .switchIfEmpty(Mono.error(new RetrievalFailure(RetrievalFailure.Kind.PROTOCOL)));
     }
 
     private static List<Citation> toCitations(Map<String, Object> body) {
-        Object data = body.get("data");
-        if (!(data instanceof List<?> list)) {
-            return List.of();
+        if (body == null || !Long.valueOf(200).equals(asLong(body.get("code")))
+                || !(body.get("data") instanceof List<?> list)) {
+            throw new RetrievalFailure(RetrievalFailure.Kind.PROTOCOL);
         }
-        return list.stream()
+        var citations = list.stream()
                 .filter(Map.class::isInstance)
                 .map(o -> toCitation((Map<?, ?>) o))
                 .filter(Objects::nonNull)
                 .toList();
+        if (!list.isEmpty() && citations.isEmpty()) {
+            throw new RetrievalFailure(RetrievalFailure.Kind.PROTOCOL);
+        }
+        return citations;
     }
 
     private static Citation toCitation(Map<?, ?> row) {

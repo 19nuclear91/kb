@@ -1,6 +1,14 @@
 package com.zhishiku.kb.ai.observation;
 
-import com.zhishiku.kb.ai.chat.*;
+import com.zhishiku.kb.ai.chat.AiProperties;
+import com.zhishiku.kb.ai.chat.ChatEvent;
+import com.zhishiku.kb.ai.chat.ChatModelClient;
+import com.zhishiku.kb.ai.chat.ChatObservation;
+import com.zhishiku.kb.ai.chat.ChatQuotaAuditService;
+import com.zhishiku.kb.ai.chat.ChatService;
+import com.zhishiku.kb.ai.chat.QuotaPrincipalRejectedException;
+import com.zhishiku.kb.ai.chat.QuotaUnavailableException;
+import com.zhishiku.kb.ai.chat.RetrievalFailure;
 import com.zhishiku.kb.common.aiusage.AiObservation;
 import com.zhishiku.kb.common.security.QuotaPrincipal;
 import org.junit.jupiter.api.Test;
@@ -12,9 +20,20 @@ import reactor.test.StepVerifier;
 import java.time.Duration;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * 元数据、配额和模型均为内存替身，直接订阅编排流。
@@ -39,6 +58,21 @@ class AiObservedChatTest {
         when(lease.leaseId()).thenReturn(leaseId); when(lease.reservedTokens()).thenReturn(12000L);
         when(lease.completeAsync(anyInt(), anyInt())).thenReturn(Mono.empty()); when(lease.failAsync()).thenReturn(Mono.empty());
         when(lease.cancelAsync()).thenReturn(Mono.empty()); when(lease.renewAsync()).thenReturn(Mono.empty());
+    }
+
+    @Test
+    void retrievalErrorRemainsFailedNotInvokedEvenWhenObservationFinalizationFails() {
+        var error = new ChatEvent.Error(RetrievalFailure.MESSAGE, RetrievalFailure.CODE);
+        when(chat.chat(any(), any(), any())).thenReturn(Flux.just(error));
+        when(session.finalized(any(), any(), any(), nullable(Long.class), any()))
+                .thenReturn(Mono.error(AiObservationClient.unavailable()));
+        StepVerifier.create(observed.stream("q", "token"))
+                .expectNextMatches(event -> "error".equals(event.event()) && error.equals(event.data())).verifyComplete();
+        verify(session).finalized("FAILED", "FAILED", new AiObservation.Usage("NOT_INVOKED", 0L, 0L), 0L, "PENDING");
+        verify(lease).failAsync();
+        verify(chat).chat(any(), any(), any());
+        verify(session, never()).simple("DISPATCHED");
+        verify(lease, never()).completeAsync(anyInt(), anyInt());
     }
 
     @Test

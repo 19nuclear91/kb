@@ -5,10 +5,17 @@ spring:
   cloud:
     gateway:
       routes:
+        - id: kb-search
+          uri: ${KB_APP_BASE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/search,/api/search/**
+          metadata:
+            response-timeout: ${KB_SEARCH_RESPONSE_TIMEOUT_MS:10000}
+            connect-timeout: 2000
         - id: kb-app
           uri: ${KB_APP_BASE_URL:http://localhost:8081}
           predicates:
-            - Path=/api/search/**,/api/documents/**,/api/files/**,/api/auth/**,/api/admin/**,/api/reviews/**,/api/notifications/**
+            - Path=/api/documents/**,/api/files/**,/api/auth/**,/api/admin/**,/api/reviews/**,/api/notifications/**
           metadata:
             response-timeout: 10000
             connect-timeout: 2000

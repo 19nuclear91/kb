@@ -36,13 +36,21 @@ spring:
       # 光看配置不算验证——这条链路上每一跳都有独立的缓冲开关。
       # ============================================================
       routes:
+        - id: kb-search
+          uri: ${KB_APP_BASE_URL:}
+          predicates:
+            - Path=/api/search,/api/search/**
+          metadata:
+            response-timeout: ${KB_SEARCH_RESPONSE_TIMEOUT_MS:10000}
+            connect-timeout: 2000
+
         - id: kb-app
           uri: ${KB_APP_BASE_URL:}
           predicates:
             # /api/admin/** 覆盖身份、部门、空间、embedding 与授权管理接口。
             # 网关只做转发，鉴权仍在 kb-app：这些接口逐一校验全局管理员
             # 或目标空间的 manage 资格，把规则复制到网关会变成两份真相。
-            - Path=/api/search/**,/api/documents/**,/api/files/**,/api/auth/**,/api/admin/**,/api/conversations/**,/api/reviews/**,/api/notifications/**
+            - Path=/api/documents/**,/api/files/**,/api/auth/**,/api/admin/**,/api/conversations/**,/api/reviews/**,/api/notifications/**
           metadata:
             response-timeout: 10000
             connect-timeout: 2000
@@ -74,7 +82,7 @@ spring:
             allowedOrigins: ${KB_CORS_ALLOWED_ORIGINS:}
             allowedMethods: [ GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS ]
             allowedHeaders: "*"
-            exposedHeaders: [ X-Conversation-Id, X-Turn-Id ]
+            exposedHeaders: [ X-Conversation-Id, X-Turn-Id, Retry-After ]
             allowCredentials: true
 
 logging:

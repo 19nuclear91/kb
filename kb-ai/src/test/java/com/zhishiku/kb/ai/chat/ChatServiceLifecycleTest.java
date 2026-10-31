@@ -157,6 +157,22 @@ class ChatServiceLifecycleTest {
         return new ChatService(retrieval(List.of(SOURCE)), models, PROPS);
     }
 
+    @Test
+    void retrievalFailureOnlyEmitsFixedErrorAndNeverDispatchesOrReportsNoResults() {
+        var retrieval = mock(RetrievalClient.class);
+        ObjectProvider<ChatModelClient> models = mock(ObjectProvider.class);
+        var observation = mock(ChatObservation.class);
+        when(retrieval.retrieve(any(), any())).thenReturn(Mono.error(new RetrievalFailure(RetrievalFailure.Kind.TIMEOUT)));
+        var service = new ChatService(retrieval, models, PROPS);
+        StepVerifier.create(service.chat("q", "token", observation))
+                .expectNext(new ChatEvent.Error(RetrievalFailure.MESSAGE, RetrievalFailure.CODE)).verifyComplete();
+        verify(retrieval).retrieve("q", "token");
+        verify(observation).result("FAILED");
+        org.mockito.Mockito.verifyNoInteractions(models);
+        verify(observation, org.mockito.Mockito.never()).dispatch();
+        verify(observation, org.mockito.Mockito.never()).result("NO_RESULTS");
+    }
+
     private static RetrievalClient retrieval(List<RetrievalClient.Citation> sources) {
         RetrievalClient retrieval = mock(RetrievalClient.class);
         when(retrieval.retrieve(any(), any())).thenReturn(Mono.just(sources));

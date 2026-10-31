@@ -40,6 +40,26 @@ class ChatControllerTest {
             new AiProperties("http://localhost:8081", 8, 60_000L, 60);
 
     @Test
+    void retrievalCodeSurvivesLeaseFailureAndLegacyErrorsHaveNoCode() throws Exception {
+        var service = mock(ChatService.class);
+        var quota = mock(ChatQuotaAuditService.class);
+        var lease = mock(ChatQuotaAuditService.Lease.class);
+        var error = new ChatEvent.Error(RetrievalFailure.MESSAGE, RetrievalFailure.CODE);
+        when(service.chat(any(), any())).thenReturn(Flux.just(error));
+        when(quota.acquire(any(), anyInt())).thenReturn(Mono.just(lease));
+        when(lease.failAsync()).thenReturn(Mono.error(new IllegalStateException("private")));
+        when(lease.cancelAsync()).thenReturn(Mono.empty());
+        StepVerifier.create(new ChatController(service, PROPS, quota).chat("q", "token"))
+                .expectNextMatches(event -> "error".equals(event.event()) && error.equals(event.data())).verifyComplete();
+        verify(service).chat("q", "token");
+        verify(lease).failAsync();
+        verify(lease, never()).completeAsync(anyInt(), anyInt());
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertThat(json.readTree(json.writeValueAsBytes(new ChatEvent.Error("legacy"))).has("code")).isFalse();
+        assertThat(json.readTree(json.writeValueAsBytes(error)).get("code").textValue()).isEqualTo(RetrievalFailure.CODE);
+    }
+
+    @Test
     @DisplayName("收到 done 事件后 SSE 流必须结束，不能被无限心跳拖住")
     void streamTerminatesOnDone() {
         ChatService service = mock(ChatService.class);

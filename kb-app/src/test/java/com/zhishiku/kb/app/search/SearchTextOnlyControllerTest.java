@@ -44,15 +44,15 @@ class SearchTextOnlyControllerTest {
             mvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"query\":\"text\"}"))
                     .andExpect(status().isOk());
-            verify(service).search(7L, "text", null, 50, 50);
+            verify(service).searchResponse(7L, "text", null, 50, 50);
             mvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"query\":\"other\",\"candidates\":80,\"topK\":8}"))
                     .andExpect(status().isOk());
-            verify(service).search(7L, "other", null, 80, 8);
+            verify(service).searchResponse(7L, "other", null, 80, 8);
             mvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"query\":\"third\",\"candidates\":80}"))
                     .andExpect(status().isOk());
-            verify(service).search(7L, "third", null, 80, 80);
+            verify(service).searchResponse(7L, "third", null, 80, 80);
         }
     }
 
@@ -90,7 +90,7 @@ class SearchTextOnlyControllerTest {
                      "clearanceLevel":9,"clearance":9,"queryVector":"[1,0]",
                      "profileId":"forged","profile":"forged"}
                     """)).andExpect(status().isOk());
-            verify(service).search(7L, "text", null, 50, 50);
+            verify(service).searchResponse(7L, "text", null, 50, 50);
         }
     }
 
@@ -139,14 +139,14 @@ class SearchTextOnlyControllerTest {
             doThrow(
                     new IllegalStateException("message=" + canary,
                             new RuntimeException("cause=" + canary)))
-                    .when(service).search(7L, "x", null, 50, 50);
+                    .when(service).searchResponse(7L, "x", null, 50, 50);
             assertThat(mvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"query\":\"x\"}"))
                     .andExpect(status().isInternalServerError()).andReturn().getResponse()
                     .getContentAsString()).doesNotContain(canary);
 
             doThrow(IdentityException.forbidden(canary))
-                    .when(service).search(7L, "x", null, 50, 50);
+                    .when(service).searchResponse(7L, "x", null, 50, 50);
             assertThat(mvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"query\":\"x\"}"))
                     .andExpect(status().isForbidden()).andReturn().getResponse()

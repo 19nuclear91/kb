@@ -35,12 +35,28 @@ public final class RemoteProfileEmbeddingClient implements ProfileEmbeddingClien
 
     @Override
     public EmbeddingResult embed(List<String> texts) {
+        return embedInternal(texts, null);
+    }
+
+    @Override
+    public EmbeddingResult embed(List<String> texts, CallBudget budget) {
+        Objects.requireNonNull(budget, "budget").check();
+        EmbeddingResult result = embedInternal(texts, budget);
+        budget.check();
+        return result;
+    }
+
+    private EmbeddingResult embedInternal(List<String> texts, CallBudget budget) {
         List<String> inputs = definition.transform(role, texts);
         List<float[]> vectors = new ArrayList<>(inputs.size());
         for (int start = 0; start < inputs.size(); ) {
             int end = start + Math.min(definition.connection().batchSize(), inputs.size() - start);
-            Map<String, Object> response = transport.post(Map.of("model", profile().model(),
-                    "input", inputs.subList(start, end), "dimensions", profile().dimension()));
+            Map<String, Object> body = Map.of("model", profile().model(),
+                    "input", inputs.subList(start, end), "dimensions", profile().dimension());
+            Map<String, Object> response = budget == null ? transport.post(body) : transport.post(body, budget);
+            if (budget != null) {
+                budget.check();
+            }
             vectors.addAll(parse(response, end - start));
             start = end;
         }
@@ -79,13 +95,15 @@ public final class RemoteProfileEmbeddingClient implements ProfileEmbeddingClien
                 vector[i] = value.floatValue();
                 nonzero |= vector[i] != 0f;
             }
-            if (!nonzero) throw invalid();
+            if (!nonzero) {
+                throw invalid();
+            }
             vectors[index] = vector;
         }
         return Arrays.asList(vectors);
     }
 
-    private static IllegalStateException invalid() {
-        return new IllegalStateException("invalid embedding response");
+    private static EmbeddingProtocolFailure invalid() {
+        return new EmbeddingProtocolFailure();
     }
 }

@@ -1,6 +1,7 @@
 package com.zhishiku.kb.ai.chat;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
  * 流式对话事件。
@@ -152,7 +153,12 @@ public sealed interface ChatEvent {
      */
     @Schema(name = "ChatErrorEvent", description = "error 事件的数据，包含面向用户的错误说明")
     record Error(
-            @Schema(description = "给用户看的错误说明") String message) implements ChatEvent {
+            @Schema(description = "给用户看的错误说明") String message,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Schema(description = "可选固定错误码") String code) implements ChatEvent {
+        public Error(String message) {
+            this(message, null);
+        }
+
         @Override
         public String type() {
             return "error";

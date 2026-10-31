@@ -39,6 +39,29 @@ it('503 不伪造回答，保留输入；相同不确定重试保持三元组', 
   await screen.findByText('生成服务暂不可用，请稍后重试。'); expect((screen.getByLabelText('问题') as HTMLTextAreaElement).value).toBe('本次问题'); expect(screen.queryByText('已完成')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '匹配重试' })); await waitFor(() => expect(openTurn).toHaveBeenCalledTimes(2)); const calls = vi.mocked(openTurn).mock.calls; expect(calls[0][2]).toBe(calls[1][2]); expect(context.session.json).toHaveBeenCalledTimes(2);
 });
+it('检索错误显示固定提示并读取持久状态，不伪造成功或错误正文', async () => {
+  vi.mocked(context.session.json).mockImplementation(async path => (path.includes('/turns/') ? { ...turn, status: 'FAILED', answer: null, usageStatus: 'NOT_INVOKED', chargedTokens: 0 } : path.includes('/turns?') ? { items: [], nextCursor: null } : meta) as never);
+  vi.mocked(openTurn).mockImplementation(async (_session, _id, _binding, _signal, started, emit) => {
+    started(turn.id); emit({ type: 'error', code: 'SEARCH_UNAVAILABLE' }); return 'error';
+  });
+  render(<ConversationPanel conversationId="1" onDeleted={vi.fn()} />); await ask();
+  await screen.findByText('检索暂不可用，请稍后重试。');
+  await waitFor(() => expect(context.session.json).toHaveBeenCalledWith(`/api/conversations/1/turns/${turn.id}`, expect.anything(), false));
+  expect(screen.queryByText('已完成')).toBeNull(); expect(screen.queryByText('已保存前缀')).toBeNull();
+  expect(screen.queryByText('未找到与问题相关的内容。')).toBeNull(); expect(openTurn).toHaveBeenCalledOnce();
+});
+it.each(['hidden', 'identity'])('%s 后旧检索错误不能恢复提示或继续核对', async mode => {
+  const pending = deferred<'error'>(); let emit!: Parameters<typeof openTurn>[5], signal!: AbortSignal;
+  vi.mocked(openTurn).mockImplementation(async (_session, _id, _binding, incoming, started, callback) => { signal = incoming; emit = callback; started(turn.id); return pending.promise; });
+  const view = render(<ConversationPanel conversationId="1" onDeleted={vi.fn()} />); await ask(); await waitFor(() => expect(openTurn).toHaveBeenCalledOnce());
+  if (mode === 'hidden') { vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden'); fireEvent(document, new Event('visibilitychange')); }
+  else { context.state = { ...context.state, epoch: 2 }; view.rerender(<ConversationPanel conversationId="1" onDeleted={vi.fn()} />); }
+  expect(signal.aborted).toBe(true);
+  await act(async () => { emit({ type: 'error', code: 'SEARCH_UNAVAILABLE' }); pending.resolve('error'); });
+  expect(screen.queryByText('检索暂不可用，请稍后重试。')).toBeNull();
+  expect(vi.mocked(context.session.json).mock.calls.filter(call => call[0].includes('/turns/'))).toHaveLength(0);
+  expect(openTurn).toHaveBeenCalledOnce();
+});
 it('409 刷新事实保留输入，不循环新建请求；单个 404 不改变全局功能', async () => {
   vi.mocked(openTurn).mockRejectedValue(new ApiError(409)); render(<ConversationPanel conversationId="1" onDeleted={vi.fn()} />); await ask(); await screen.findByText('状态已变化，请刷新后确认。');
   await waitFor(() => expect(context.session.json).toHaveBeenCalledTimes(4)); expect((screen.getByLabelText('问题') as HTMLTextAreaElement).value).toBe('本次问题'); expect(openTurn).toHaveBeenCalledOnce();

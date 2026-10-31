@@ -1,6 +1,7 @@
 package com.zhishiku.kb.app.config;
 
 import cn.dev33.satoken.exception.SaTokenException;
+import com.zhishiku.kb.app.search.model.SearchFailure;
 import com.zhishiku.kb.common.api.ApiException;
 import com.zhishiku.kb.common.api.R;
 import com.zhishiku.kb.common.security.IdentityException;
@@ -36,6 +37,16 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(SearchFailure.class)
+    public ResponseEntity<R<Void>> handleSearch(SearchFailure failure) {
+        log.warn("搜索处理失败 stage=search category={} status={}", failure.kind(), failure.status());
+        var response = ResponseEntity.status(failure.status()).header("Cache-Control", "no-store");
+        if (failure.retryAfter() > 0) {
+            response.header("Retry-After", Integer.toString(failure.retryAfter()));
+        }
+        return response.body(R.fail(failure.safeMessage()));
+    }
 
     @ExceptionHandler(IdentityException.class)
     public ResponseEntity<R<Void>> handleIdentity(IdentityException e) {

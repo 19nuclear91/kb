@@ -3,21 +3,29 @@ package com.zhishiku.kb.ai.conversation;
 import com.zhishiku.kb.ai.chat.AiProperties;
 import com.zhishiku.kb.ai.chat.ChatQuotaAuditService;
 import com.zhishiku.kb.ai.chat.RetrievalClient;
+import com.zhishiku.kb.ai.chat.RetrievalFailure;
 import com.zhishiku.kb.ai.conversation.config.ConversationProperties;
 import com.zhishiku.kb.common.conversation.UsageSettlement;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import reactor.test.publisher.TestPublisher;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -112,6 +120,183 @@ class MultiTurnChatServiceTest {
         }));
         when(settlement.settle(any())).thenAnswer(call -> Mono.fromRunnable(() -> order.add("settle")));
         when(app.acknowledge(any())).thenReturn(Mono.empty());
+    }
+
+    @Test
+    void retrievalFailureAndUnversionedMaterialNeverSealOrAppendAndSettleZero() {
+        for (boolean unversioned : new boolean[]{false, true}) {
+            var fixture = new MultiTurnChatServiceTest();
+            when(fixture.retrieval.retrieve(anyString(), anyString())).thenReturn(unversioned
+                    ? Mono.just(List.of(new RetrievalClient.Citation(1, "old", null, 2, "text")))
+                    : Mono.error(new RetrievalFailure(RetrievalFailure.Kind.HTTP)));
+            var service = fixture.service(true);
+            var state = service.prepare(9, "q", "r", 0, "token").block();
+            StepVerifier.create(service.stream(state)).expectNextMatches(event -> "error".equals(event.event())
+                    && event.data().toString().contains("SEARCH_UNAVAILABLE")).verifyComplete();
+            assertThat(fixture.order).containsExactly("finish:FAILED", "settle");
+            assertThat(fixture.subscriptions).hasValue(0);
+            verify(fixture.app, never()).seal(any(), anyString(), any(), any(), anyString());
+            verify(fixture.app, never()).append(any(), anyLong(), anyString());
+            verify(fixture.app, never()).dispatch(any());
+            verify(fixture.settlement).settle(org.mockito.ArgumentMatchers.argThat(intent ->
+                    intent.generationStatus().equals("FAILED") && intent.usageStatus().equals("NOT_INVOKED")
+                            && intent.chargedTokens() == 0 && intent.promptTokens() == 0 && intent.completionTokens() == 0));
+        }
+    }
+
+    @Test
+    void cancellationWinsWhileRetrievalErrorDeliveryIsInFlight() throws Exception {
+        var source = TestPublisher.<List<RetrievalClient.Citation>>create();
+        var finishing = TestPublisher.<SettlementIntent>create();
+        var errorEntered = new CountDownLatch(1);
+        var releaseError = new CountDownLatch(1);
+        when(retrieval.retrieve(anyString(), anyString())).thenReturn(source.mono().doOnError(error -> {
+            errorEntered.countDown();
+            awaitErrorRelease(releaseError);
+        }));
+        when(app.finish(any(), anyString(), anyLong(), anyBoolean(), any(), any())).thenReturn(finishing.mono());
+        var service = service(true);
+        var state = service.prepare(9, "q", "r", 0, "token").block();
+        var output = new CopyOnWriteArrayList<ServerSentEvent<Object>>();
+        var errors = new CopyOnWriteArrayList<Throwable>();
+        var completed = new AtomicInteger();
+        var subscription = service.stream(state).subscribe(output::add, errors::add, completed::incrementAndGet);
+        var sender = Executors.newSingleThreadExecutor();
+        try {
+            var delivered = sender.submit(() -> source.error(new RetrievalFailure(RetrievalFailure.Kind.HTTP)));
+            assertThat(errorEntered.await(3, TimeUnit.SECONDS)).isTrue();
+            subscription.dispose();
+            finishing.assertSubscribers(1);
+            verify(app).finish(key, "CANCELLED", 0, false, null, null);
+            releaseError.countDown();
+            delivered.get(3, TimeUnit.SECONDS);
+            finishing.assertSubscribers(1).assertWasNotCancelled();
+            var intent = unusedIntent("CANCELLED");
+            finishing.emit(intent);
+            subscription.dispose();
+            assertSingleRetrievalCleanup(intent);
+            assertThat(output).isEmpty();
+            assertThat(errors).isEmpty();
+            assertThat(completed).hasValue(0);
+        } finally {
+            releaseError.countDown();
+            subscription.dispose();
+            sender.shutdownNow();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void retrievalFailureCleanupSurvivesCancellationDuringFinishOrSettlement(boolean finishConfirmed) {
+        var source = TestPublisher.<List<RetrievalClient.Citation>>create();
+        var finishing = TestPublisher.<SettlementIntent>create();
+        var settling = TestPublisher.<Void>create();
+        var finishSubscriptions = new AtomicInteger();
+        var settleSubscriptions = new AtomicInteger();
+        when(retrieval.retrieve(anyString(), anyString())).thenReturn(source.mono());
+        when(app.finish(any(), anyString(), anyLong(), anyBoolean(), any(), any()))
+                .thenReturn(finishing.mono().doOnSubscribe(ignored -> finishSubscriptions.incrementAndGet()));
+        when(settlement.settle(any()))
+                .thenReturn(settling.mono().doOnSubscribe(ignored -> settleSubscriptions.incrementAndGet()));
+        var service = service(true);
+        var state = service.prepare(9, "q", "r", 0, "token").block();
+        var output = new ArrayList<ServerSentEvent<Object>>();
+        var errors = new ArrayList<Throwable>();
+        var completed = new AtomicInteger();
+        var subscription = service.stream(state).subscribe(output::add, errors::add, completed::incrementAndGet);
+        try {
+            source.error(new RetrievalFailure(RetrievalFailure.Kind.TIMEOUT));
+            finishing.assertSubscribers(1);
+            verify(app).finish(key, "FAILED", 0, false, null, null);
+            var intent = unusedIntent("FAILED");
+            if (finishConfirmed) {
+                finishing.emit(intent);
+                settling.assertSubscribers(1);
+            }
+            subscription.dispose();
+            if (!finishConfirmed) {
+                finishing.assertSubscribers(1).assertWasNotCancelled();
+                finishing.emit(intent);
+            }
+            settling.assertSubscribers(1).assertWasNotCancelled();
+            verify(app, never()).acknowledge(any());
+            settling.complete();
+            subscription.dispose();
+            assertSingleRetrievalCleanup(intent);
+            assertThat(finishSubscriptions).hasValue(1);
+            assertThat(settleSubscriptions).hasValue(1);
+            assertThat(output).isEmpty();
+            assertThat(errors).isEmpty();
+            assertThat(completed).hasValue(0);
+        } finally {
+            subscription.dispose();
+        }
+    }
+
+    private SettlementIntent unusedIntent(String status) {
+        return new SettlementIntent(key.turnId(), 1, 10, UUID.fromString(lease.leaseId()),
+                UUID.fromString(lease.eventId()), 12000, "NOT_INVOKED", 0L, 0L, 0L, status, "digest", Instant.now());
+    }
+
+    private void assertSingleRetrievalCleanup(SettlementIntent intent) {
+        verify(retrieval).retrieve("q", "token");
+        verify(app).finish(any(), anyString(), anyLong(), anyBoolean(), any(), any());
+        verify(settlement).settle(intent);
+        verify(app).acknowledge(intent);
+        verify(app, never()).seal(any(), anyString(), any(), any(), anyString());
+        verify(app, never()).append(any(), anyLong(), anyString());
+        verify(app, never()).dispatch(any());
+        assertThat(subscriptions).hasValue(0);
+        assertThat(dispatched).isFalse();
+        assertThat(input).isNull();
+    }
+
+    private static void awaitErrorRelease(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new AssertionError("检索错误交付未被测试释放");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(interrupted);
+        }
+    }
+
+    @Test
+    void retrievalFailureCleanupTimesOutAndConfirmedFailedIsNotRewrittenBySettlementFailure() {
+        properties.setCleanupTimeoutMs(100);
+        when(retrieval.retrieve(anyString(), anyString())).thenReturn(Mono.error(new RetrievalFailure(RetrievalFailure.Kind.TIMEOUT)));
+        when(app.finish(any(), anyString(), anyLong(), anyBoolean(), any(), any())).thenReturn(Mono.never());
+        var service = service(true);
+        var state = service.prepare(9, "q", "r", 0, "token").block();
+        StepVerifier.withVirtualTime(() -> service.stream(state)).thenAwait(Duration.ofMillis(101))
+                .expectNextMatches(event -> "error".equals(event.event())).verifyComplete();
+        verify(settlement, never()).settle(any());
+        var other = new MultiTurnChatServiceTest();
+        when(other.retrieval.retrieve(anyString(), anyString())).thenReturn(Mono.error(new RetrievalFailure(RetrievalFailure.Kind.HTTP)));
+        when(other.settlement.settle(any())).thenReturn(Mono.error(new IllegalStateException("private")));
+        var next = other.service(true);
+        next.stream(next.prepare(9, "q", "r", 0, "token").block()).blockLast(Duration.ofSeconds(2));
+        assertThat(other.order).containsExactly("finish:FAILED");
+        verify(other.app, never()).acknowledge(any());
+    }
+
+    @Test
+    void failedReplayIsReadOnlyButNewRequestChecksCurrentSequenceAndRetrievesOnce() {
+        when(app.check(9, "q", "old", 0, "token"))
+                .thenReturn(Mono.just(new BeginResult(9, key.turnId(), 1, "FAILED", true, null)));
+        var service = service(true);
+        var replay = service.prepare(9, "q", "old", 0, "token").block();
+        assertThat(replay.result().status()).isEqualTo("FAILED");
+        verify(quota, never()).acquire(anyString(), anyInt());
+        verify(retrieval, never()).retrieve(anyString(), anyString());
+        when(retrieval.retrieve(anyString(), anyString())).thenReturn(Mono.error(new RetrievalFailure(RetrievalFailure.Kind.HTTP)));
+        var fresh = service.prepare(9, "q", "new", 1, "token").block();
+        service.stream(fresh).blockLast(Duration.ofSeconds(2));
+        verify(app).check(9, "q", "new", 1, "token");
+        verify(app).begin(9, "q", "new", 1, "token");
+        verify(quota).acquire("token", 1);
+        verify(retrieval).retrieve("q", "token");
     }
 
     @Test
@@ -217,4 +402,3 @@ class MultiTurnChatServiceTest {
         assertThat(order).contains("finish:FAILED").noneMatch(value -> value.startsWith("append:"));
     }
 }
-

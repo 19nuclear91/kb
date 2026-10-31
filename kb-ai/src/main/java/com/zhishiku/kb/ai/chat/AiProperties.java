@@ -111,8 +111,8 @@ public record AiProperties(
             throw new IllegalArgumentException("kb.ai.app-base-url 必须配置：AI 服务没有数据库连接，"
                     + "语料只能经由 kb-app 的授权检索接口获取");
         }
-        if (retrieveTopK <= 0) {
-            throw new IllegalArgumentException("kb.ai.retrieve-top-k 必须为正数");
+        if (retrieveTopK <= 0 || retrieveTopK > 200) {
+            throw new IllegalArgumentException("kb.ai.retrieve-top-k 必须在 1-200 之间");
         }
         if (maxQuestionChars <= 0 || maxQuestionChars > 100_000) {
             throw new IllegalArgumentException("kb.ai.max-question-chars 必须在 1-100000 之间");

@@ -6,8 +6,7 @@ POST /api/ai/chat 保留既有单轮与占位兼容。
 
 app 只提供当前可见且 COMPLETED 的完整历史及完整来源依赖。AI 默认最多 8 对历史，按序保留 user/assistant
 角色，不提炼摘要。查询组合最近最多两条合格原用户问题及本轮原问题，以换行分隔，限 8000 code
-point；如“任务租约”后问“它过期后怎么办”。组合只用于召回，存储与最后 user 消息仍是原问题。无历史只用当前问题，不再调用模型改写。召回拒绝、故障、无有效版本材料时使用固定
-NO_RESULTS，不用旧答案绕过检索。
+point；如“任务租约”后问“它过期后怎么办”。组合只用于召回，存储与最后 user 消息仍是原问题。无历史只用当前问题，不再调用模型改写。合法成功空列表使用固定 NO_RESULTS；召回拒绝、故障或非空但全部缺少有效版本材料时以 SEARCH_UNAVAILABLE 失败，不封存 NO_RESULTS，不用旧答案绕过检索。
 
 最终输入加输出上限必须落在模型窗口及本次 12000 token 预留内，默认输出上限 2048，另有 24000 code point 输入保护。生产 token
 上界必须由适配器证明，不能用字符数冒充真实 usage。预算优先整对移除最旧历史及其全部依赖，再按 Unicode code point
@@ -19,3 +18,4 @@ document/version/chunk 及裁剪标记，不把继承来源声明为逐句证据
 最终累计 usage 只取明确确认的最后值，不求和。模型调用意图先持久化；无可靠最终统计为 UNKNOWN，实际 token 字段
 null，chargedTokens 独立为预留。没有调用模型为 NOT_INVOKED、真实及计费均零；KNOWN 保留真实超预留统计，不截断隐藏费用。
 
+检索独立使用 `kb.ai.retrieval.timeout-ms=10000`、`max-response-bytes=4194304`；模型继续使用原 `kb.ai.upstream-timeout`。`retrieve-top-k` 必须为 1–200，出站候选数封顶 200。检索失败不调度 Chat 模型，多轮复用 FAILED 与 NOT_INVOKED/零 token 结算；不退还请求次数窗口，且不代表 Embedding/rerank 供应商未收费。FAILED 与结算 PENDING/REVIEW 是两个独立事实。

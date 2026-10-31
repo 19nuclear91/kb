@@ -40,7 +40,9 @@ class EmbeddingProfilesPropertiesTest {
     @Test
     void bindsProfilesAndBuildsRegistryWithoutStartingApplicationOrTransport() {
         var properties = bind(settings());
-        var registry = new EmbeddingProfilesConfiguration().embeddingClientRegistry(properties, RestClient.builder());
+        var registry = new EmbeddingProfilesConfiguration().embeddingClientRegistry(properties, RestClient.builder(),
+                org.mockito.Mockito.mock(com.zhishiku.kb.app.search.execution.SearchHttpTransport.class),
+                com.zhishiku.kb.app.search.config.SearchLimitsProperties.defaults());
         var profile = properties.profiles().getFirst().profile();
         var client = registry.find(profile.profileId(), profile.fingerprint()).orElseThrow();
         assertThat(client.role()).isEqualTo(EmbeddingRole.QUERY);

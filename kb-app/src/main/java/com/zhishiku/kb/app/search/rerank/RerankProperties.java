@@ -1,6 +1,7 @@
 package com.zhishiku.kb.app.search.rerank;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
  * 检索结果重排配置。
@@ -17,11 +18,13 @@ public record RerankProperties(
         String baseUrl,
         String apiKey,
         String model,
-        int timeoutSeconds) {
+        @DefaultValue("30") int timeoutSeconds) {
 
     public RerankProperties {
         provider = provider == null || provider.isBlank() ? "local" : provider;
         model = model == null || model.isBlank() ? "local-token-overlap-v1" : model;
-        if (timeoutSeconds <= 0) timeoutSeconds = 30;
+        if ((!provider.equals("local") && !provider.equals("remote")) || timeoutSeconds <= 0) {
+            throw new IllegalArgumentException("kb.search.rerank 配置无效");
+        }
     }
 }

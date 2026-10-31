@@ -53,6 +53,21 @@ class ConversationSettlementTest {
     }
 
     @Test
+    void failedBeforeDispatchUsesZeroTokenSettlementWithStableLeaseIdentity() {
+        var old = intent();
+        var usage = UsageSettlement.calculate(false, false, null, null, 12000);
+        var failed = new SettlementIntent(old.turnId(), 1, 10, old.leaseId(), old.eventId(), 12000,
+                usage.status(), usage.promptTokens(), usage.completionTokens(), usage.chargedTokens(), "FAILED",
+                UsageSettlement.digest(old.turnId().toString(), now.toString(), old.leaseId().toString(),
+                        old.eventId().toString(), 1, 10, 12000, "FAILED", usage), now);
+        when(redis.execute(any(), any(), any())).thenReturn(Flux.just(1L));
+        StepVerifier.create(service.settle(failed)).verifyComplete();
+        assertThat(failed.usageStatus()).isEqualTo("NOT_INVOKED");
+        assertThat(failed.chargedTokens()).isZero();
+        verify(redis).execute(eq(ConversationSettlementService.SETTLE), any(), any());
+    }
+
+    @Test
     void fixedIntentRetryReleasesAndAuditsUsingSameStableIdsAndRejectsConflicts() {
         var intent = intent();
         when(redis.execute(any(), any(), any())).thenReturn(Flux.just(1L));
@@ -102,4 +117,3 @@ class ConversationSettlementTest {
         StepVerifier.create(controller.settle(changed, headers)).expectError(ResponseStatusException.class).verify();
     }
 }
-
