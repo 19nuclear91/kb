@@ -7,7 +7,7 @@ import com.zhishiku.kb.app.document.metadata.model.MetadataCommandRow;
 import com.zhishiku.kb.app.document.metadata.model.MetadataViews;
 import com.zhishiku.kb.app.document.metadata.service.MetadataCommands;
 import com.zhishiku.kb.app.document.metadata.service.MetadataException;
-import com.zhishiku.kb.app.document.metadata.web.MetadataInput;
+import com.zhishiku.kb.app.document.metadata.support.MetadataInput;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;

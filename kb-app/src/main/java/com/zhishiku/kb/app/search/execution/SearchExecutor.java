@@ -6,6 +6,7 @@ import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -88,17 +89,22 @@ public class SearchExecutor implements AutoCloseable {
     }
 
     public <T> T execute(long userId, Function<Execution, T> action) {
+        return execute(userId, SearchMetrics.Operation.SEARCH, action);
+    }
+
+    public <T> T execute(long userId, SearchMetrics.Operation operation, Function<Execution, T> action) {
+        Objects.requireNonNull(operation);
         SearchMetrics.Outcome outcome = SearchMetrics.Outcome.FAILED;
         var current = new AtomicReference<Execution>();
         try {
-            T result = executeWork(userId, execution -> {
+            T result = executeWork(userId, operation, execution -> {
                 current.set(execution);
                 return action.apply(execution);
             });
             outcome = current.get().empty ? SearchMetrics.Outcome.EMPTY : SearchMetrics.Outcome.SUCCESS;
             return result;
         } catch (SearchFailure failure) {
-            metrics.rejected(failure.kind());
+            metrics.rejected(operation, failure.kind());
             outcome = switch (failure.kind()) {
                 case USER_LIMIT, CAPACITY -> SearchMetrics.Outcome.REJECTED;
                 case CANCELLED -> SearchMetrics.Outcome.CANCELLED;
@@ -106,16 +112,16 @@ public class SearchExecutor implements AutoCloseable {
             };
             throw failure;
         } finally {
-            metrics.request(outcome);
+            metrics.request(operation, outcome);
         }
     }
 
-    private <T> T executeWork(long userId, Function<Execution, T> action) {
+    private <T> T executeWork(long userId, SearchMetrics.Operation operation, Function<Execution, T> action) {
         var budget = new SearchBudget(properties, clock);
         if (closed.get()) {
             throw capacity();
         }
-        var execution = new Execution(budget, admission.acquire(userId));
+        var execution = new Execution(budget, admission.acquire(userId), operation);
         active.add(execution);
         Work<T> work = new Work<>(execution, budget.work(), () -> action.apply(execution));
         try {
@@ -139,7 +145,7 @@ public class SearchExecutor implements AutoCloseable {
 
     /** 在当前主线程执行必要阶段，独立阶段超时会结束整个搜索。 */
     public <T> T required(Execution execution, SearchBudget.Stage stage, Supplier<T> action) {
-        return measured(stage, () -> requiredWork(execution, stage, action));
+        return measured(execution.operation, stage, () -> requiredWork(execution, stage, action));
     }
 
     private <T> T requiredWork(Execution execution, SearchBudget.Stage stage, Supplier<T> action) {
@@ -175,7 +181,7 @@ public class SearchExecutor implements AutoCloseable {
 
     /** 可选阶段在独立有界线程运行；超时后其真实工作仍登记在原请求。 */
     public <T> T optional(Execution execution, SearchBudget.Stage stage, Supplier<T> action) {
-        return measured(stage, () -> optionalWork(execution, stage, action));
+        return measured(execution.operation, stage, () -> optionalWork(execution, stage, action));
     }
 
     private <T> T optionalWork(Execution execution, SearchBudget.Stage stage, Supplier<T> action) {
@@ -225,7 +231,7 @@ public class SearchExecutor implements AutoCloseable {
         }
     }
 
-    private <T> T measured(SearchBudget.Stage stage, Supplier<T> action) {
+    private <T> T measured(SearchMetrics.Operation operation, SearchBudget.Stage stage, Supplier<T> action) {
         long started = clock.getAsLong();
         Throwable failure = null;
         try {
@@ -234,7 +240,7 @@ public class SearchExecutor implements AutoCloseable {
             failure = error;
             throw error;
         } finally {
-            metrics.stage(stage, failure, clock.getAsLong() - started);
+            metrics.stage(operation, stage, failure, clock.getAsLong() - started);
         }
     }
 
@@ -270,6 +276,7 @@ public class SearchExecutor implements AutoCloseable {
     public final class Execution {
         private final SearchBudget budget;
         private final SearchAdmission.Ticket ticket;
+        private final SearchMetrics.Operation operation;
         private final Set<Work<?>> jobs = ConcurrentHashMap.newKeySet();
         private final AtomicBoolean responded = new AtomicBoolean();
         private final CompletableFuture<Void> exited = new CompletableFuture<>();
@@ -278,9 +285,10 @@ public class SearchExecutor implements AutoCloseable {
         private int references;
         private boolean released;
 
-        private Execution(SearchBudget budget, SearchAdmission.Ticket ticket) {
+        private Execution(SearchBudget budget, SearchAdmission.Ticket ticket, SearchMetrics.Operation operation) {
             this.budget = budget;
             this.ticket = ticket;
+            this.operation = operation;
         }
 
         public SearchBudget budget() {

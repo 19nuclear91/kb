@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.zhishiku.kb.app.auth.service.AuditScope;
 import com.zhishiku.kb.app.document.metadata.mapper.MetadataMapper;
 import com.zhishiku.kb.app.document.metadata.model.MetadataCommandRow;
-import com.zhishiku.kb.app.document.metadata.web.MetadataInput;
+import com.zhishiku.kb.app.document.metadata.support.MetadataInput;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;

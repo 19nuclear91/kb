@@ -61,7 +61,12 @@ public class SearchController {
         int topK = body.topK() == null ? candidates : body.topK();
         SearchInput.validate(body.query(), candidates, topK, limits.maxQueryCodepoints());
         long userId = StpUtil.getLoginIdAsLong();
-        return ResponseEntity.ok().header("Cache-Control", "no-store").contentType(MediaType.APPLICATION_JSON)
-                .body(searchService.searchResponse(userId, body.query(), null, candidates, topK));
+        var filters = body.filters();
+        byte[] result = filters.restricted()
+                ? searchService.searchResponse(userId, body.query(), null, candidates, topK, filters)
+                : searchService.searchResponse(userId, body.query(), null, candidates, topK);
+        return ResponseEntity.ok().header("Cache-Control", "no-store").header("X-Search-Filter-Version", "1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(result);
     }
 }

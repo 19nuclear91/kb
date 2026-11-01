@@ -23,6 +23,14 @@ public class SearchTransaction {
     }
 
     public <T> T execute(Supplier<T> action) {
+        return execute(action, false);
+    }
+
+    public <T> T executeSnapshot(Supplier<T> action) {
+        return execute(action, true);
+    }
+
+    private <T> T execute(Supplier<T> action, boolean snapshot) {
         var context = SearchContext.current();
         if (context == null) {
             throw new IllegalStateException("召回缺少搜索预算");
@@ -30,6 +38,10 @@ public class SearchTransaction {
         context.check();
         var transaction = new TransactionTemplate(manager);
         transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        if (snapshot) {
+            transaction.setReadOnly(true);
+            transaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        }
         transaction.setTimeout(context.window().queryTimeoutSeconds());
         return transaction.execute(status -> {
             context.check();

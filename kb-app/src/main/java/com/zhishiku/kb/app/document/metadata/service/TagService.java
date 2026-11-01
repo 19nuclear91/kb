@@ -6,7 +6,7 @@ import com.zhishiku.kb.app.document.metadata.mapper.TagMapper;
 import com.zhishiku.kb.app.document.metadata.model.MetadataInputs;
 import com.zhishiku.kb.app.document.metadata.model.MetadataViews;
 import com.zhishiku.kb.app.document.metadata.model.TagRow;
-import com.zhishiku.kb.app.document.metadata.web.MetadataInput;
+import com.zhishiku.kb.app.document.metadata.support.MetadataInput;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;

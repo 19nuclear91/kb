@@ -89,8 +89,8 @@ class SearchTextOnlyControllerTest {
                     {"query":"text","userId":99,"roleIds":[1],"roles":["admin"],
                      "clearanceLevel":9,"clearance":9,"queryVector":"[1,0]",
                      "profileId":"forged","profile":"forged"}
-                    """)).andExpect(status().isOk());
-            verify(service).searchResponse(7L, "text", null, 50, 50);
+                    """)).andExpect(status().isBadRequest());
+            verifyNoInteractions(service);
         }
     }
 

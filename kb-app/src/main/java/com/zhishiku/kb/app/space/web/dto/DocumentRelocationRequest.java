@@ -1,7 +1,7 @@
 package com.zhishiku.kb.app.space.web.dto;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.zhishiku.kb.app.document.metadata.web.MetadataInput;
+import com.zhishiku.kb.app.document.metadata.support.MetadataInput;
 import com.zhishiku.kb.common.security.IdentityException;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Positive;

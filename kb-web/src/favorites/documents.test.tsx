@@ -48,15 +48,16 @@ it('详情收藏核对确认不可访问后，版本标题与打开的预览被�
 
 it('同文档搜索分块只查一次收藏，操作后保持原排序和引用版本', async () => {
   const hits = [11, 12].map((chunk, index) => ({ docId: '1', versionId: '22', versionNo: 2, chunkId: String(chunk), docTitle: '引用资料', content: `片段${index}` }));
-  vi.mocked(context.session.post).mockImplementation(async path => path === '/api/search' ? hits : { items: [{ documentId: '1', favorited: false }] } as never);
-  vi.mocked(context.session.json).mockResolvedValue({ documentId: '1', favorited: true });
+  vi.mocked(context.session.post).mockResolvedValue({ items: [{ documentId: '1', favorited: false }] });
+  vi.mocked(context.session.send).mockImplementation(async path => json(path === '/api/search' ? hits : { items: [], hasMore: false, nextCursor: null }));
+  vi.mocked(context.session.json).mockImplementation(async path => (path === '/api/admin/spaces' ? [] : { documentId: '1', favorited: true }) as never);
   render(<MemoryRouter><SearchPage /></MemoryRouter>);
   fireEvent.change(screen.getByLabelText('搜索词'), { target: { value: '主题' } }); fireEvent.click(screen.getByRole('button', { name: /搜\s*索/ }));
   const buttons = await screen.findAllByRole('button', { name: '收藏文档' }); fireEvent.click(buttons[0]);
   await waitFor(() => expect(screen.getAllByRole('button', { name: '取消收藏' })).toHaveLength(2));
   expect(vi.mocked(context.session.post).mock.calls.filter(call => call[0].endsWith('/favorites/status'))).toHaveLength(1);
   expect(vi.mocked(context.session.post).mock.calls.find(call => call[0].endsWith('/favorites/status'))![1]).toEqual({ documentIds: [1n] });
-  expect([...document.querySelectorAll('.content-text')].map(item => item.textContent)).toEqual(['片段0', '片段1']);
+  expect([...document.querySelectorAll('.search-hit .content-text')].map(item => item.textContent)).toEqual(['片段0', '片段1']);
   fireEvent.click(screen.getAllByRole('button', { name: '引用资料' })[0]); expect(screen.getByTestId('citation').textContent).toBe('1/22/11');
 });
 
@@ -65,9 +66,9 @@ it.each(['批量省略', 'PUT 404'])('搜索%s后清理同文档全部旧内容�
   const hits = [11, 12].map(chunk => ({ docId: '1', versionId: '22', versionNo: 2, chunkId: String(chunk),
     docTitle: '被撤权资料', content: `旧片段${chunk}` }));
   hits.push({ docId: '2', versionId: '33', versionNo: 3, chunkId: '13', docTitle: '仍可查看资料', content: '保留片段' });
-  vi.mocked(context.session.post).mockImplementation(async path => (path === '/api/search' ? hits
-    : outcome === '批量省略' ? pending.promise : { items: [{ documentId: '1', favorited: false }, { documentId: '2', favorited: true }] }) as never);
-  vi.mocked(context.session.json).mockReturnValue(pending.promise);
+  vi.mocked(context.session.send).mockImplementation(async path => json(path === '/api/search' ? hits : { items: [], hasMore: false, nextCursor: null }));
+  vi.mocked(context.session.post).mockImplementation(async () => (outcome === '批量省略' ? pending.promise : { items: [{ documentId: '1', favorited: false }, { documentId: '2', favorited: true }] }) as never);
+  vi.mocked(context.session.json).mockImplementation(path => (path === '/api/admin/spaces' ? Promise.resolve([]) : pending.promise) as never);
   render(<MemoryRouter><SearchPage /></MemoryRouter>);
   fireEvent.change(screen.getByLabelText('搜索词'), { target: { value: '主题' } });
   fireEvent.click(screen.getByRole('button', { name: /搜\s*索/ }));
@@ -89,6 +90,6 @@ it.each(['批量省略', 'PUT 404'])('搜索%s后清理同文档全部旧内容�
   expect(screen.getByRole('button', { name: '仍可查看资料' })).toBeTruthy();
   expect(screen.getByText('保留片段')).toBeTruthy();
   expect(screen.getAllByRole('button', { name: '取消收藏' })).toHaveLength(1);
-  expect(context.session.json).toHaveBeenCalledTimes(outcome === 'PUT 404' ? 1 : 0);
+  expect(vi.mocked(context.session.json).mock.calls.filter(([path]) => path.endsWith('/favorite'))).toHaveLength(outcome === 'PUT 404' ? 1 : 0);
   expect(vi.mocked(context.session.post).mock.calls.filter(call => call[0].endsWith('/favorites/status'))).toHaveLength(1);
 });

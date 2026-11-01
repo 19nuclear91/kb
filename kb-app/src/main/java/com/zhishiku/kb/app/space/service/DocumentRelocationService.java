@@ -7,7 +7,7 @@ import com.zhishiku.kb.app.document.metadata.mapper.CategoryMapper;
 import com.zhishiku.kb.app.document.metadata.mapper.MetadataMapper;
 import com.zhishiku.kb.app.document.metadata.service.MetadataAccess;
 import com.zhishiku.kb.app.document.metadata.service.MetadataCommands;
-import com.zhishiku.kb.app.document.metadata.web.MetadataInput;
+import com.zhishiku.kb.app.document.metadata.support.MetadataInput;
 import com.zhishiku.kb.app.space.mapper.DocumentAclMapper;
 import com.zhishiku.kb.app.space.mapper.DocumentRelocationMapper;
 import com.zhishiku.kb.app.space.mapper.SpaceMapper;

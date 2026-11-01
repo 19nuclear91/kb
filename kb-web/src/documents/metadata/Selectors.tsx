@@ -3,8 +3,9 @@ import { Alert, Button } from 'antd';
 import { useSession } from '../../SessionProvider';
 import { isAbort, messageOf } from '../../api';
 import { metadataApi, type CategoryContext, type CategoryItem, type CategoryPage, type Tag } from './api';
+import { searchApi, searchOptionsMessage } from '../../search/api';
 
-export function CategoryBrowser(props: { context: CategoryContext; onSelect: (category: CategoryItem | null) => void; selected?: string | null;
+export function CategoryBrowser(props: { context: CategoryContext | { kind: 'search'; id: string }; onSelect: (category: CategoryItem | null) => void; selected?: string | null;
   onReady?: (page: CategoryPage | null) => void; actions?: (item: CategoryItem, page: CategoryPage) => ReactNode; nullLabel?: string; disabled?: boolean }) {
   return <CategoryBranch key={`${props.context.kind}:${props.context.id}`} {...props} />;
 }
@@ -17,12 +18,16 @@ function CategoryBranch({ context, onSelect, selected, onReady, actions, nullLab
   const current = state.key === key ? state : { key, page: null, loading: true };
   const load = (cursor: string | null, previous: CategoryPage | null) => {
     controller.current?.abort(); const request = new AbortController(); controller.current = request;
+    const epoch = session.getSnapshot().epoch;
+    const active = () => !request.signal.aborted && controller.current === request && session.getSnapshot().epoch === epoch;
     ready.current?.(null); setState({ key, page: previous, loading: true });
-    void metadataApi.categories(session, context, parent?.id ?? null, cursor, request.signal).then(page => {
-      if (request.signal.aborted) return;
+    const operation = context.kind === 'search' ? searchApi.categories(session, context.id, parent?.id ?? null, cursor, request.signal)
+      : metadataApi.categories(session, context, parent?.id ?? null, cursor, request.signal);
+    void operation.then(page => {
+      if (!active()) return;
       const combined = { ...page, items: [...(previous?.items ?? []), ...page.items] };
       setState({ key, page: combined, loading: false }); ready.current?.(combined);
-    }, error => { if (!request.signal.aborted && !isAbort(error)) { setState({ key, page: null, loading: false, error: messageOf(error) }); ready.current?.(null); } });
+    }, error => { if (active() && !isAbort(error)) { setState({ key, page: null, loading: false, error: context.kind === 'search' ? searchOptionsMessage(error) : messageOf(error) }); ready.current?.(null); } });
   };
   useEffect(() => { load(null, null); return () => { controller.current?.abort(); ready.current?.(null); }; }, [key, session]);
   const available = !disabled && !current.loading && !current.error && !!current.page;
@@ -39,10 +44,11 @@ function CategoryBranch({ context, onSelect, selected, onReady, actions, nullLab
       <Button size="small" disabled={!available} onClick={() => setParent(item)}>展开 {item.name}</Button>{actions?.(item, current.page!)}
     </li>)}</ul>
     {current.page?.hasMore && <Button disabled={current.loading} onClick={() => load(current.page!.nextCursor, current.page)}>继续读取分类</Button>}
+    {available && !!current.page?.items.length && !current.page.hasMore && <p className="muted">本层分类已全部读取</p>}
   </div>;
 }
 
-export function TagPicker({ kind, documentId = null, value, onChange, disabled = false }: { kind: 'edit' | 'filter'; documentId?: string | null; value: Tag[]; onChange: (tags: Tag[]) => void; disabled?: boolean }) {
+export function TagPicker({ kind, documentId = null, value, onChange, disabled = false }: { kind: 'edit' | 'filter' | 'search'; documentId?: string | null; value: Tag[]; onChange: (tags: Tag[]) => void; disabled?: boolean }) {
   const { session } = useSession();
   const [draft, setDraft] = useState(''), [search, setSearch] = useState(''), [revision, setRevision] = useState(0);
   const [state, setState] = useState<{ key: string; items: Tag[]; cursor: string | null; loading: boolean; error?: string }>({ key: '', items: [], cursor: null, loading: true });
@@ -50,19 +56,30 @@ export function TagPicker({ kind, documentId = null, value, onChange, disabled =
   const current = state.key === key ? state : { key, items: [], cursor: null, loading: true };
   const load = (cursor: string | null, items: Tag[]) => {
     active.current?.abort(); const request = new AbortController(); active.current = request;
+    const epoch = session.getSnapshot().epoch;
+    const valid = () => !request.signal.aborted && active.current === request && session.getSnapshot().epoch === epoch;
     setState({ key, items, cursor, loading: true });
-    void metadataApi.tags(session, kind, documentId, search, cursor, request.signal).then(page => {
-      if (!request.signal.aborted) setState({ key, items: [...items, ...page.items], cursor: page.nextCursor, loading: false });
-    }, error => { if (!request.signal.aborted && !isAbort(error)) setState({ key, items: [], cursor: null, loading: false, error: messageOf(error) }); });
+    const operation = kind === 'search' ? searchApi.tags(session, search, cursor, request.signal) : metadataApi.tags(session, kind, documentId, search, cursor, request.signal);
+    void operation.then(page => {
+      if (valid()) setState({ key, items: [...items, ...page.items], cursor: page.nextCursor, loading: false });
+    }, error => { if (valid() && !isAbort(error)) setState({ key, items: [], cursor: null, loading: false, error: kind === 'search' ? searchOptionsMessage(error) : messageOf(error) }); });
   };
   useEffect(() => { load(null, []); return () => active.current?.abort(); }, [key, session]);
-  return <div><p>{kind === 'filter' ? '多个标签全部匹配' : '最多选择 20 个已有标签；停用项可保留或移除'}</p>
+  const queryTags = () => { setSearch(draft); setRevision(value => value + 1); };
+  return <div><p>{kind !== 'edit' ? '多个标签全部匹配' : '最多选择 20 个已有标签；停用项可保留或移除'}</p>
     <ul>{value.map(tag => <li key={tag.id}>{tag.name}{!tag.enabled && '（停用）'} <Button size="small" disabled={disabled} onClick={() => onChange(value.filter(item => item.id !== tag.id))}>移除 {tag.name}</Button></li>)}</ul>
-    <label>查找标签<input aria-label="查找标签" value={draft} onChange={event => setDraft(event.target.value)} /></label>
-    <Button size="small" onClick={() => { setSearch(draft); setRevision(value => value + 1); }}>查询标签</Button>
+    <label>查找标签<input aria-label="查找标签" value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => {
+      if (event.key === 'Enter') {
+        event.preventDefault(); event.stopPropagation();
+        if (!event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) queryTags();
+      }
+    }} /></label>
+    <Button size="small" onClick={queryTags}>查询标签</Button>
+    <Button size="small" onClick={() => setRevision(value => value + 1)}>重新读取标签</Button>
     {current.loading && <p role="status">正在读取标签…</p>}{current.error && <Alert type="warning" title={current.error} />}
     <div>{current.items.filter(tag => !value.some(selected => selected.id === tag.id)).map(tag => <Button key={tag.id} size="small"
       disabled={disabled || current.loading || !!current.error || value.length >= 20 || (kind === 'edit' && !tag.enabled)} onClick={() => onChange([...value, tag])}>{tag.name}{!tag.enabled && '（停用）'}</Button>)}</div>
     {current.cursor && <Button size="small" disabled={current.loading} onClick={() => load(current.cursor, current.items)}>继续读取标签</Button>}
+    {!current.loading && !current.error && <p className="muted">{!current.items.length ? '暂无可选标签' : !current.cursor ? '标签候选已全部读取' : '仍有更多标签候选'}</p>}
   </div>;
 }

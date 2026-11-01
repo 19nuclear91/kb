@@ -63,12 +63,22 @@ public class SpaceQueryService {
      */
     @Transactional(readOnly = true, timeout = 5)
     public void requireManaged(PrincipalHandle handle, long spaceId) {
+        if (findManaged(handle, spaceId) == null) {
+            throw QueryException.missing();
+        }
+    }
+
+    /** 返回同一主体可管理的当前空间事实，供目录服务复用；无资格或不存在均为空。 */
+    @Transactional(readOnly = true, timeout = 5)
+    public SpaceRecord findManaged(PrincipalHandle handle, long spaceId) {
         handle.requireEnabled();
         boolean global = handle.functionalPermissions().contains(Permission.SPACE_MANAGE_ALL.code());
         List<Long> managed = global ? List.of()
                 : permissionService.resolve(handle, PermissionService.PERM_MANAGE).visibleSpaceIdList();
-        if ((!global && !managed.contains(spaceId))
-                || mapper.findById(spaceId, List.of(), managed, global) == null) throw QueryException.missing();
+        if (!global && !managed.contains(spaceId)) {
+            return null;
+        }
+        return mapper.findById(spaceId, List.of(), managed, global);
     }
 
     /**

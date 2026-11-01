@@ -45,6 +45,46 @@
         )
     </sql>
 
+    <!-- 召回和搜索候选共用当前发布及授权边界，c/d 为固定局部别名。 -->
+    <sql id="searchableChunkPredicate">
+        d.status = 'published'
+        AND d.current_version_id = c.version_id
+        AND c.space_id = d.space_id
+        AND d.security_level &lt;= #{clearance}
+        AND c.security_level &lt;= #{clearance}
+        AND <include refid="com.zhishiku.kb.app.search.mapper.SearchMapper.aclPredicate"/>
+    </sql>
+
+    <sql id="filtersPredicate">
+        <if test="filters.spaceId != null">AND d.space_id = #{filters.spaceId}</if>
+        <if test="filters.uncategorized">AND d.category_id IS NULL</if>
+        <if test="filters.categoryId != null">
+            AND EXISTS (SELECT 1 FROM category_scope selected
+                        WHERE selected.space_id = d.space_id AND selected.id = d.category_id)
+        </if>
+        <foreach collection="filters.tagIds" item="tag">
+            AND EXISTS (SELECT 1 FROM kb_document_tag_relation tag_relation
+                        WHERE tag_relation.document_id = d.id AND tag_relation.tag_id = #{tag})
+        </foreach>
+        <if test="filters.fileType != null">
+            AND (CASE
+            <foreach collection="fileTypeRules" item="rule">
+                WHEN lower(selected_version.file_name) LIKE #{rule.pattern}
+                    AND lower(selected_version.mime_type) = #{rule.mime} THEN #{rule.type}
+            </foreach>
+            ELSE 'OTHER' END) = #{filters.fileType}
+        </if>
+        <if test="filters.updatedFrom != null">AND d.updated_at &gt;= #{filters.updatedFrom}</if>
+        <if test="filters.updatedTo != null">AND d.updated_at &lt; #{filters.updatedTo}</if>
+    </sql>
+
+    <sql id="filterVersionJoin">
+        <if test="filters.fileType != null">
+            JOIN kb_document_version selected_version
+                ON selected_version.id = d.current_version_id AND selected_version.doc_id = d.id
+        </if>
+    </sql>
+
     <resultMap id="chunkHitMap" type="com.zhishiku.kb.app.search.model.ChunkHit">
         <constructor>
             <idArg column="chunk_id" javaType="java.lang.Long"/>
@@ -79,18 +119,27 @@
         · 索引访问方法 USING paradedb，bm25 为兼容别名
       部署前用 db/verify_paradedb.sql 对实际安装版本复验。
     -->
-    <select id="hybridSearch" resultMap="chunkHitMap">
-        WITH bm25 AS (
+    <select id="filteredSearch" resultMap="chunkHitMap">
+        WITH RECURSIVE
+        <if test="filters.categoryId != null">
+            category_scope AS (
+                SELECT id, space_id, 1 AS depth FROM kb_document_category WHERE id = #{filters.categoryId}
+                UNION ALL
+                SELECT child.id, child.space_id, parent.depth + 1
+                FROM kb_document_category child JOIN category_scope parent
+                    ON child.parent_id = parent.id AND child.space_id = parent.space_id
+                WHERE parent.depth &lt; 8
+            ),
+        </if>
+        bm25 AS (
         SELECT c.id,
         ROW_NUMBER() OVER (ORDER BY pdb.score(c.id) DESC) AS rk
         FROM kb_doc_chunk c
         JOIN kb_document d ON d.id = c.doc_id
+        <include refid="filterVersionJoin"/>
         WHERE c.content ||| #{queryText}
-        AND d.status = 'published'
-        AND d.current_version_id = c.version_id
-        <![CDATA[ AND c.security_level <= #{clearance} ]]>
-        AND
-        <include refid="aclPredicate"/>
+        AND <include refid="searchableChunkPredicate"/>
+        <include refid="filtersPredicate"/>
         ORDER BY pdb.score(c.id) DESC
         LIMIT #{candidates}
         )
@@ -100,13 +149,11 @@
             <![CDATA[ ROW_NUMBER() OVER (ORDER BY c.embedding <=> #{queryVector}::vector) AS rk ]]>
             FROM kb_doc_chunk c
             JOIN kb_document d ON d.id = c.doc_id
+            <include refid="filterVersionJoin"/>
             WHERE c.embedding IS NOT NULL
             AND c.embedding_profile_id = #{profileId}
-            AND d.status = 'published'
-            AND d.current_version_id = c.version_id
-            <![CDATA[ AND c.security_level <= #{clearance} ]]>
-            AND
-            <include refid="aclPredicate"/>
+            AND <include refid="searchableChunkPredicate"/>
+            <include refid="filtersPredicate"/>
             <![CDATA[ ORDER BY c.embedding <=> #{queryVector}::vector ]]>
             LIMIT #{candidates}
             )

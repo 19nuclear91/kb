@@ -5,11 +5,11 @@ import com.zhishiku.kb.app.search.model.SearchFailure;
 import com.zhishiku.kb.common.api.ApiException;
 import com.zhishiku.kb.common.api.R;
 import com.zhishiku.kb.common.security.IdentityException;
+import com.zhishiku.kb.common.security.SearchEndpoints;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
@@ -52,7 +52,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<R<Void>> handleIdentity(IdentityException e) {
         if (isSearchRequest()) {
             log.debug("搜索身份校验失败 stage=identity category={} status={}", e.errorCode(), e.httpStatus());
-            return ResponseEntity.status(e.httpStatus()).body(R.fail("搜索访问被拒绝"));
+            return response(e.httpStatus()).body(R.fail("搜索访问被拒绝"));
         }
         log.debug("身份/部门操作失败 code={} reason={}", e.errorCode(), e.getMessage());
         return ResponseEntity.status(e.httpStatus()).body(R.fail(e.getMessage()));
@@ -62,7 +62,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<R<Void>> handleApi(ApiException e) {
         if (isSearchRequest()) {
             log.warn("搜索处理失败 stage=api status={}", e.httpStatus());
-            return ResponseEntity.status(e.httpStatus()).body(R.fail("搜索请求处理失败"));
+            return response(e.httpStatus()).body(R.fail("搜索请求处理失败"));
         }
         return ResponseEntity.status(e.httpStatus()).body(R.fail(e.getMessage()));
     }
@@ -78,28 +78,28 @@ public class GlobalExceptionHandler {
             MissingServletRequestPartException.class})
     public ResponseEntity<R<Void>> handleInvalidRequest(Exception e) {
         // 不回显校验对象，密码或请求正文可能包含在异常消息里。
-        return ResponseEntity.badRequest().body(R.fail("请求参数或请求体无效"));
+        return response(400).body(R.fail("请求参数或请求体无效"));
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<R<Void>> handleUploadTooLarge(Exception e) {
-        return ResponseEntity.status(413).body(R.fail("文件超过上传大小限制"));
+        return response(413).body(R.fail(isSearchRequest() ? "搜索请求过大" : "文件超过上传大小限制"));
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<R<Void>> handleMethodNotAllowed(Exception e) {
-        return ResponseEntity.status(405).body(R.fail("不支持该请求方法"));
+        return response(405).body(R.fail("不支持该请求方法"));
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<R<Void>> handleUnsupportedMediaType(Exception e) {
-        return ResponseEntity.status(415).body(R.fail("不支持该媒体类型"));
+        return response(415).body(R.fail("不支持该媒体类型"));
     }
 
     @ExceptionHandler({NoResourceFoundException.class,
             NoHandlerFoundException.class})
     public ResponseEntity<R<Void>> handleNotFound(Exception e) {
-        return ResponseEntity.status(404).body(R.fail("请求的资源不存在"));
+        return response(404).body(R.fail("请求的资源不存在"));
     }
 
     @ExceptionHandler(SaTokenException.class)
@@ -112,7 +112,7 @@ public class GlobalExceptionHandler {
         // 未认证是 401（会话缺失或失效），不是 500：500 会把一次可预期的拒绝
         // 报成服务端故障。403 留给已认证但无资格（IdentityException.forbidden），
         // 未认证与无资格的区分在网关与各服务间保持一致（设计 D11）。
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+        return response(401)
                 .body(R.fail("登录状态无效或已过期"));
     }
 
@@ -130,7 +130,7 @@ public class GlobalExceptionHandler {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
             HttpServletRequest request = attributes.getRequest();
             String path = request.getRequestURI();
-            return "/api/search".equals(path) || path.startsWith("/api/conversations")
+            return SearchEndpoints.matches(path) || path.startsWith("/api/conversations")
                     || path.startsWith("/internal/conversations");
         }
         return false;
@@ -139,11 +139,19 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<R<Void>> handleStatus(ResponseStatusException error) {
         return ResponseEntity.status(error.getStatusCode()).header("Cache-Control", "no-store")
-                .body(R.fail("会话请求未被接受"));
+                .body(R.fail(isSearchRequest() ? "搜索请求未被接受" : "会话请求未被接受"));
     }
 
     private static ResponseEntity<R<Void>> failure(String message) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+        return response(500)
                 .body(R.fail(message));
+    }
+
+    private static ResponseEntity.BodyBuilder response(int status) {
+        var builder = ResponseEntity.status(status);
+        if (isSearchRequest()) {
+            builder.header("Cache-Control", "no-store");
+        }
+        return builder;
     }
 }

@@ -29,6 +29,33 @@ import static org.mockito.Mockito.when;
 
 class SearchTransactionTest {
     @Test
+    void candidateSnapshotUsesReadOnlyRepeatableReadOnTheSameMockConnection() throws Exception {
+        var source = mock(DataSource.class);
+        var connection = mock(Connection.class);
+        var settings = mock(PreparedStatement.class);
+        when(source.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(true);
+        when(connection.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_READ_COMMITTED);
+        when(connection.prepareStatement(anyString())).thenReturn(settings);
+        var context = mock(SearchContext.class);
+        when(context.window()).thenReturn(new SearchBudget(SearchExecutionProperties.defaults(), System::nanoTime).work());
+        try (var current = mockStatic(SearchContext.class)) {
+            current.when(SearchContext::current).thenReturn(context);
+            var transaction = new SearchTransaction(new DataSourceTransactionManager(source), source);
+            assertThat(transaction.executeSnapshot(() -> {
+                assertThat(TransactionSynchronizationManager.isCurrentTransactionReadOnly()).isTrue();
+                assertThat(TransactionSynchronizationManager.getCurrentTransactionIsolationLevel()).isEqualTo(Connection.TRANSACTION_REPEATABLE_READ);
+                assertThat(DataSourceUtils.getConnection(source)).isSameAs(connection);
+                return "page";
+            })).isEqualTo("page");
+        }
+        verify(connection).setReadOnly(true);
+        verify(connection).setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+        verify(connection).commit();
+        verify(connection).close();
+    }
+
+    @Test
     void refusedConnectionUsesTheTransactionFailureContractWithoutStartingRecall() throws Exception {
         var source = mock(DataSource.class);
         when(source.getConnection()).thenThrow(new SQLException("controlled refusal"));

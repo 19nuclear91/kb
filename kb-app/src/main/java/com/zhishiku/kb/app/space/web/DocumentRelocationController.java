@@ -5,7 +5,8 @@ import com.zhishiku.kb.app.space.web.dto.DocumentRelocationRequest;
 import com.zhishiku.kb.common.api.R;
 import com.zhishiku.kb.common.security.DocumentRelocationResult;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.zhishiku.kb.app.document.metadata.web.MetadataInput;
+import com.zhishiku.kb.app.document.metadata.support.MetadataInput;
+import com.zhishiku.kb.app.document.metadata.web.MetadataBody;
 import com.zhishiku.kb.app.document.metadata.service.MetadataException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
@@ -81,7 +82,7 @@ public class DocumentRelocationController {
             @PathVariable @Positive long documentId,
             HttpServletRequest raw,
             @RequestHeader(value = "X-Request-Id", required = false) String header) {
-        DocumentRelocationRequest request = DocumentRelocationRequest.parse(MetadataInput.body(raw, MetadataInput.WRITE_LIMIT), header);
+        DocumentRelocationRequest request = DocumentRelocationRequest.parse(MetadataBody.read(raw, MetadataInput.WRITE_LIMIT), header);
         return R.ok(relocations.relocate(documentId, request.fromSpaceId(), request.toSpaceId(),
                 request.securityLevel(), null, request.requestId(), request.targetCategoryId(), request.expectedMetadataVersion()));
     }

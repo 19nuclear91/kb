@@ -1,4 +1,4 @@
-package com.zhishiku.kb.app.document.metadata.web;
+package com.zhishiku.kb.app.document.metadata.support;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zhishiku.kb.app.document.metadata.model.MetadataInputs;
 import com.zhishiku.kb.app.document.metadata.service.MetadataException;
-import jakarta.servlet.http.HttpServletRequest;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,7 +24,7 @@ import java.util.Set;
 import static com.zhishiku.kb.app.document.metadata.service.MetadataException.Reason.INVALID_INPUT;
 import static com.zhishiku.kb.app.document.metadata.service.MetadataException.Reason.PAYLOAD_TOO_LARGE;
 
-/** 仅供资料与目录端点使用，不改变其他接口的解码策略。 */
+/** 资料、目录输入与游标共用的有界值解码，不依赖 HTTP 请求。 */
 public final class MetadataInput {
     public static final int WRITE_LIMIT = 65536;
     public static final int QUERY_LIMIT = 16384;
@@ -34,17 +33,6 @@ public final class MetadataInput {
             .build()).enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
     private MetadataInput() {
-    }
-
-    public static ObjectNode body(HttpServletRequest request, int limit) {
-        if (request.getQueryString() != null) {
-            throw invalid();
-        }
-        try {
-            return body(request.getInputStream(), limit);
-        } catch (IOException ignored) {
-            throw invalid();
-        }
     }
 
     public static ObjectNode body(InputStream input, int limit) {

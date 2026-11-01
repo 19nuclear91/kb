@@ -43,29 +43,54 @@ class SearchRouteTest {
             }
             var binder = Binder.get(env);
             var definitions = binder.bind("spring.cloud.gateway", GatewayProperties.class).get().getRoutes();
-            var search = MockServerWebExchange.from(MockServerHttpRequest.post("/api/search"));
-            int matches = 0;
-            for (var definition : definitions) {
-                var path = definition.getPredicates().stream().filter(p -> p.getName().equals("Path")).findFirst().orElseThrow();
-                var predicate = new PathRoutePredicateFactory().apply(new PathRoutePredicateFactory.Config()
-                        .setPatterns(new ArrayList<>(path.getArgs().values())));
-                var route = Route.async().id(definition.getId()).uri(definition.getUri())
-                        .metadata(definition.getMetadata()).predicate(predicate).build();
-                if (Boolean.TRUE.equals(Mono.from(route.getPredicate().apply(search)).block())) {
-                    matches++;
-                    assertThat(route.getId()).isEqualTo("kb-search");
-                    assertThat(route.getMetadata().get("response-timeout").toString()).isEqualTo("10000");
+            for (String searchPath : new String[]{"/api/search", "/api/search/categories", "/api/search/tags"}) {
+                var search = MockServerWebExchange.from(MockServerHttpRequest.post(searchPath));
+                int matches = 0;
+                for (var definition : definitions) {
+                    var path = definition.getPredicates().stream().filter(p -> p.getName().equals("Path")).findFirst().orElseThrow();
+                    var predicate = new PathRoutePredicateFactory().apply(new PathRoutePredicateFactory.Config()
+                            .setPatterns(new ArrayList<>(path.getArgs().values())));
+                    var route = Route.async().id(definition.getId()).uri(definition.getUri())
+                            .metadata(definition.getMetadata()).predicate(predicate).build();
+                    if (Boolean.TRUE.equals(Mono.from(route.getPredicate().apply(search)).block())) {
+                        matches++;
+                        assertThat(route.getId()).isEqualTo("kb-search");
+                        assertThat(route.getMetadata().get("response-timeout").toString()).isEqualTo("10000");
+                    }
+                    if (route.getId().equals("kb-ai-stream")) {
+                        assertThat(Mono.from(route.getPredicate().apply(MockServerWebExchange.from(MockServerHttpRequest.post("/api/ai/chat")))).block()).isTrue();
+                        assertThat(route.getMetadata().get("response-timeout").toString()).isEqualTo("-1");
+                    }
                 }
-                if (route.getId().equals("kb-ai-stream")) {
-                    assertThat(Mono.from(route.getPredicate().apply(MockServerWebExchange.from(MockServerHttpRequest.post("/api/ai/chat")))).block()).isTrue();
-                    assertThat(route.getMetadata().get("response-timeout").toString()).isEqualTo("-1");
-                }
+                assertThat(matches).isOne();
             }
-            assertThat(matches).isOne();
             var cors = binder.bind("spring.cloud.gateway.globalcors", GlobalCorsProperties.class).get().getCorsConfigurations().get("/**");
             var exchange = MockServerWebExchange.from(MockServerHttpRequest.post("http://gateway/api/search").header("Origin", "https://kb.example.com"));
             assertThat(new DefaultCorsProcessor().process(cors, exchange)).isTrue();
-            assertThat(exchange.getResponse().getHeaders().getAccessControlExposeHeaders()).contains("Retry-After", "X-Turn-Id");
+            assertThat(exchange.getResponse().getHeaders().getAccessControlExposeHeaders()).contains("Retry-After", "X-Turn-Id", "X-Search-Filter-Version");
+        }
+    }
+
+    @Test
+    void candidateDenialsAreUncacheableAndVersionHeaderIsOnlyPassedThrough() {
+        for (String path : new String[]{"/api/search", "/api/search/categories", "/api/search/tags"}) {
+            for (var status : new HttpStatus[]{HttpStatus.OK, HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN}) {
+                for (String version : new String[]{"", "1", "2"}) {
+                    var exchange = MockServerWebExchange.from(MockServerHttpRequest.post(path));
+                    new SearchResponsePolicy().filter(exchange, current -> {
+                        current.getResponse().setStatusCode(status);
+                        if (!version.isEmpty()) {
+                            current.getResponse().getHeaders().set("X-Search-Filter-Version", version);
+                        }
+                        current.getResponse().getHeaders().setCacheControl("public");
+                        return current.getResponse().setComplete();
+                    }).block();
+                    assertThat(exchange.getResponse().getStatusCode()).isEqualTo(status);
+                    assertThat(exchange.getResponse().getHeaders().getCacheControl()).isEqualTo("no-store");
+                    assertThat(exchange.getResponse().getHeaders().getFirst("X-Search-Filter-Version"))
+                            .isEqualTo(version.isEmpty() ? null : version);
+                }
+            }
         }
     }
 

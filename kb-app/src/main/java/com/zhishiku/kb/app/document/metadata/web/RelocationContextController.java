@@ -1,5 +1,7 @@
 package com.zhishiku.kb.app.document.metadata.web;
 
+import com.zhishiku.kb.app.document.metadata.support.MetadataInput;
+
 import com.zhishiku.kb.app.document.metadata.service.MetadataException;
 import com.zhishiku.kb.app.document.metadata.service.RelocationContextService;
 import com.zhishiku.kb.common.api.R;

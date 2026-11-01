@@ -10,6 +10,10 @@ import java.util.concurrent.TimeUnit;
 /** 只允许固定枚举标签，不接受用户、请求或供应商字符串。 */
 @Component
 public class SearchMetrics {
+    public enum Operation {
+        SEARCH, CATEGORIES, TAGS
+    }
+
     public enum Outcome {
         SUCCESS, EMPTY, FAILED, REJECTED, CANCELLED
     }
@@ -28,18 +32,38 @@ public class SearchMetrics {
     }
 
     public void request(Outcome outcome) {
+        request(Operation.SEARCH, outcome);
+    }
+
+    public void request(Operation operation, Outcome outcome) {
         if (registry != null) {
-            registry.counter("kb.search.requests", "outcome", outcome.name()).increment();
+            if (operation == Operation.SEARCH) {
+                registry.counter("kb.search.requests", "outcome", outcome.name()).increment();
+            } else {
+                registry.counter("kb.search.options.requests", "operation", operation.name(), "outcome", outcome.name()).increment();
+            }
         }
     }
 
     public void rejected(SearchFailure.Kind reason) {
+        rejected(Operation.SEARCH, reason);
+    }
+
+    public void rejected(Operation operation, SearchFailure.Kind reason) {
         if (registry != null && (reason == SearchFailure.Kind.USER_LIMIT || reason == SearchFailure.Kind.CAPACITY)) {
-            registry.counter("kb.search.rejections", "reason", reason.name()).increment();
+            if (operation == Operation.SEARCH) {
+                registry.counter("kb.search.rejections", "reason", reason.name()).increment();
+            } else {
+                registry.counter("kb.search.options.rejections", "operation", operation.name(), "reason", reason.name()).increment();
+            }
         }
     }
 
     public void stage(SearchBudget.Stage stage, Throwable failure, long nanos) {
+        stage(Operation.SEARCH, stage, failure, nanos);
+    }
+
+    public void stage(SearchMetrics.Operation operation, SearchBudget.Stage stage, Throwable failure, long nanos) {
         String outcome = "SUCCESS";
         if (failure instanceof SearchStageFailure known) {
             outcome = known.reason().name();
@@ -51,8 +75,13 @@ public class SearchMetrics {
             outcome = "FAILED";
         }
         if (registry != null) {
-            registry.timer("kb.search.stage.duration", "stage", stage.name(), "outcome", outcome)
-                    .record(Math.max(0, nanos), TimeUnit.NANOSECONDS);
+            if (operation == Operation.SEARCH) {
+                registry.timer("kb.search.stage.duration", "stage", stage.name(), "outcome", outcome)
+                        .record(Math.max(0, nanos), TimeUnit.NANOSECONDS);
+            } else {
+                registry.timer("kb.search.options.stage.duration", "operation", operation.name(), "stage", stage.name(), "outcome", outcome)
+                        .record(Math.max(0, nanos), TimeUnit.NANOSECONDS);
+            }
         }
     }
 

@@ -1,6 +1,8 @@
 package com.zhishiku.kb.app.search.mapper;
 
 import com.zhishiku.kb.app.search.model.ChunkHit;
+import com.zhishiku.kb.app.search.model.SearchFilters;
+import com.zhishiku.kb.app.document.metadata.model.DocumentFileTypes;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -40,11 +42,19 @@ public interface SearchMapper {
      * @param clearance     用户可见的最高密级
      * @param candidates    每路召回的候选数
      */
-    List<ChunkHit> hybridSearch(@Param("queryText") String queryText,
+    default List<ChunkHit> hybridSearch(String queryText, String queryVector, List<Long> spaceIds,
+                                       List<String> principalKeys, short clearance, int candidates, String profileId) {
+        return filteredSearch(queryText, queryVector, spaceIds, principalKeys, clearance, candidates, profileId,
+                SearchFilters.empty(), List.of());
+    }
+
+    List<ChunkHit> filteredSearch(@Param("queryText") String queryText,
                                 @Param("queryVector") String queryVector,
                                 @Param("spaceIds") List<Long> spaceIds,
                                 @Param("principalKeys") List<String> principalKeys,
                                 @Param("clearance") short clearance,
                                 @Param("candidates") int candidates,
-                                @Param("profileId") String profileId);
+                                @Param("profileId") String profileId,
+                                @Param("filters") SearchFilters filters,
+                                @Param("fileTypeRules") List<DocumentFileTypes.Rule> fileTypeRules);
 }

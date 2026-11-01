@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ApiError } from './api';
-import { me, turn } from './test/fixtures';
+import { json, me, turn } from './test/fixtures';
 import type { Session } from './session';
 const context = vi.hoisted(() => ({ session: {} as Session, state: { phase: 'ready', me: null as typeof me | null, epoch: 1 } }));
 vi.mock('./SessionProvider', () => ({ useSession: () => context }));
@@ -50,17 +50,19 @@ it('片段不可用仍保留服务器提供的原版本入口', async () => {
 });
 it('搜索仅 POST 支持字段，结果有序；503 不伪装成功空结果', async () => {
   let searches = 0;
-  vi.mocked(context.session.post).mockImplementation(async path => {
+  vi.mocked(context.session.json).mockResolvedValue([]);
+  vi.mocked(context.session.post).mockResolvedValue({ items: [{ documentId: '1', favorited: false }] });
+  vi.mocked(context.session.send).mockImplementation(async path => {
     if (path === '/api/search') {
       if (searches++) throw new ApiError(503);
-      return [{ docId: '1', versionId: '2', chunkId: '3', content: '第一片段' }, { docId: '1', versionId: '2', chunkId: '4', content: '第二片段' }] as never;
+      return json([{ docId: '1', versionId: '2', chunkId: '3', content: '第一片段' }, { docId: '1', versionId: '2', chunkId: '4', content: '第二片段' }]);
     }
-    return { items: [{ documentId: '1', favorited: false }] } as never;
+    return json({ items: [], hasMore: false, nextCursor: null });
   });
   render(<SearchPage />); fireEvent.change(screen.getByLabelText('搜索词'), { target: { value: '秘密搜索词' } }); fireEvent.click(screen.getByRole('button', { name: /^搜\s*索$/ }));
-  await screen.findByText('第一片段'); expect(context.session.post).toHaveBeenCalledWith('/api/search', { query: '秘密搜索词', candidates: 50, topK: 20 }, true, expect.any(AbortSignal));
-  expect(screen.getAllByText(/第[一二]片段/).map(node => node.textContent)).toEqual(['第一片段', '第二片段']); expect(context.session.json).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: /^搜\s*索$/ })); await screen.findByText('服务暂不可用，请稍后重试。'); expect(screen.queryByText('未找到可用结果')).toBeNull(); expect(screen.queryByText('第一片段')).toBeNull();
+  await screen.findByText('第一片段'); expect(context.session.send).toHaveBeenCalledWith('/api/search', expect.objectContaining({ method: 'POST', body: '{"query":"秘密搜索词","candidates":50,"topK":20}', signal: expect.any(AbortSignal) }));
+  expect(screen.getAllByText(/第[一二]片段/).map(node => node.textContent)).toEqual(['第一片段', '第二片段']);
+  fireEvent.click(screen.getByRole('button', { name: /^搜\s*索$/ })); await screen.findByText('检索暂不可用，请稍后重试。'); expect(screen.queryByText('当前条件下未找到可用结果')).toBeNull(); expect(screen.queryByText('第一片段')).toBeNull();
 });
 it('本地登录凭据失败使用统一提示', async () => {
   context.state.phase = 'anonymous'; vi.mocked(context.session.login).mockRejectedValue(new ApiError(401));

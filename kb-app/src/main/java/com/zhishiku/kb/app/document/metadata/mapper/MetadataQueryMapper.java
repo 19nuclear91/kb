@@ -2,7 +2,7 @@ package com.zhishiku.kb.app.document.metadata.mapper;
 
 import com.zhishiku.kb.app.document.metadata.model.MetadataInputs;
 import com.zhishiku.kb.app.document.metadata.model.MetadataSummary;
-import com.zhishiku.kb.app.document.metadata.service.DocumentFileTypes;
+import com.zhishiku.kb.app.document.metadata.model.DocumentFileTypes;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;

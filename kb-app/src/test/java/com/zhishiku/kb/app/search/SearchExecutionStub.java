@@ -24,6 +24,10 @@ final class SearchExecutionStub {
             Function<SearchExecutor.Execution, Object> action = call.getArgument(1);
             return action.apply(execution);
         });
+        when(executor.execute(anyLong(), any(), any())).thenAnswer(call -> {
+            Function<SearchExecutor.Execution, Object> action = call.getArgument(2);
+            return action.apply(execution);
+        });
         when(executor.required(any(), any(), any())).thenAnswer(call -> {
             Supplier<Object> action = call.getArgument(2);
             return action.get();

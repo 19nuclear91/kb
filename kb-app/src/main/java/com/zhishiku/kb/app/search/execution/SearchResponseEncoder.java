@@ -23,6 +23,10 @@ public class SearchResponseEncoder {
     }
 
     public byte[] encode(List<ChunkHit> hits) {
+        return encodeValue(hits);
+    }
+
+    public byte[] encodeValue(Object value) {
         var output = new ByteArrayOutputStream() {
             private void check(int size) {
                 var context = SearchContext.current();
@@ -47,7 +51,7 @@ public class SearchResponseEncoder {
             }
         };
         try {
-            json.writeValue(output, R.ok(hits));
+            json.writeValue(output, R.ok(value));
             return output.toByteArray();
         } catch (IOException failure) {
             Throwable cause = failure;

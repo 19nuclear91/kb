@@ -2,7 +2,7 @@ package com.zhishiku.kb.app.document.metadata;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zhishiku.kb.app.document.metadata.service.MetadataException;
-import com.zhishiku.kb.app.document.metadata.web.MetadataInput;
+import com.zhishiku.kb.app.document.metadata.support.MetadataInput;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;

@@ -8,11 +8,13 @@ import com.zhishiku.kb.app.space.mapper.SpaceMapper;
 import com.zhishiku.kb.app.space.model.SpaceRecord;
 import com.zhishiku.kb.common.security.IdentityException;
 import com.zhishiku.kb.common.security.ResolvedPrincipal;
+import com.zhishiku.kb.common.security.PermissionScope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -23,6 +25,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -30,6 +33,31 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class SpaceQueryServiceTest {
+    @Test
+    void sharedManagedReadUsesCurrentManagementScopeAndKeepsArchivedFacts() {
+        var permissions = mock(PermissionService.class);
+        var actor = mock(PermissionService.PrincipalHandle.class);
+        var spaces = mock(SpaceMapper.class);
+        var queries = new SpaceQueryService(spaces, permissions, mock(SpaceAuthorizer.class));
+        when(actor.functionalPermissions()).thenReturn(Set.of());
+        when(permissions.resolve(actor, PermissionService.PERM_MANAGE)).thenReturn(PermissionScope.denyAll(USER));
+        assertThat(queries.findManaged(actor, 2)).isNull();
+        verifyNoInteractions(spaces);
+
+        when(permissions.resolve(actor, PermissionService.PERM_MANAGE))
+                .thenReturn(PermissionScope.of(USER, (short) 1, List.of(2L), List.of()));
+        var archived = space(2L, true, false, true);
+        when(spaces.findById(2, List.of(), List.of(2L), false)).thenReturn(archived);
+        assertThat(queries.findManaged(actor, 2)).isSameAs(archived);
+        verify(actor, times(2)).requireEnabled();
+
+        clearInvocations(permissions);
+        when(actor.functionalPermissions()).thenReturn(Set.of(Permission.SPACE_MANAGE_ALL.code()));
+        when(spaces.findById(2, List.of(), List.of(), true)).thenReturn(archived);
+        assertThat(queries.findManaged(actor, 2)).isSameAs(archived);
+        verifyNoInteractions(permissions);
+    }
+
 
     private static final long USER = 7L;
 

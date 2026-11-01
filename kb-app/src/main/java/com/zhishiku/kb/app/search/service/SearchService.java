@@ -12,6 +12,7 @@ import com.zhishiku.kb.app.search.execution.SearchResponseEncoder;
 import com.zhishiku.kb.app.search.execution.SearchStageFailure;
 import com.zhishiku.kb.app.search.model.ChunkHit;
 import com.zhishiku.kb.app.search.model.SearchFailure;
+import com.zhishiku.kb.app.search.model.SearchFilters;
 import com.zhishiku.kb.app.search.model.SearchInput;
 import com.zhishiku.kb.app.search.rerank.RerankClient;
 import com.zhishiku.kb.common.embedding.EmbeddingClientRegistry;
@@ -96,23 +97,39 @@ public class SearchService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public List<ChunkHit> search(long userId, String queryText, String queryVector,
-                                  int candidates, int topK) {
-        return execute(userId, queryText, queryVector, candidates, topK).hits();
+                                   int candidates, int topK) {
+        return search(userId, queryText, queryVector, candidates, topK, SearchFilters.empty());
+    }
+
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public List<ChunkHit> search(long userId, String queryText, String queryVector,
+                                 int candidates, int topK, SearchFilters filters) {
+        return execute(userId, queryText, queryVector, candidates, topK, filters).hits();
     }
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public byte[] searchResponse(long userId, String queryText, String queryVector, int candidates, int topK) {
-        return execute(userId, queryText, queryVector, candidates, topK).json();
+        return searchResponse(userId, queryText, queryVector, candidates, topK, SearchFilters.empty());
     }
 
-    private Result execute(long userId, String queryText, String queryVector, int candidates, int topK) {
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public byte[] searchResponse(long userId, String queryText, String queryVector, int candidates, int topK,
+                                 SearchFilters filters) {
+        return execute(userId, queryText, queryVector, candidates, topK, filters).json();
+    }
+
+    private Result execute(long userId, String queryText, String queryVector, int candidates, int topK,
+                           SearchFilters filters) {
+        if (filters == null) {
+            throw new SearchFailure(SearchFailure.Kind.INVALID_INPUT);
+        }
         if (queryVector != null) {
             throw new IllegalArgumentException("bare query vectors are not supported");
         }
         SearchInput.validate(queryText, candidates, topK, limits.maxQueryCodepoints());
         return executor.execute(userId, execution -> {
             try {
-                List<ChunkHit> hits = List.copyOf(retrieve(execution, userId, queryText, candidates, topK));
+                List<ChunkHit> hits = List.copyOf(retrieve(execution, userId, queryText, candidates, topK, filters));
                 execution.resultCount(hits.size());
                 byte[] bytes = executor.required(execution, SearchBudget.Stage.RESPONSE, () -> encoder.encode(hits));
                 return new Result(hits, bytes);
@@ -122,7 +139,7 @@ public class SearchService {
         });
     }
 
-    private static RuntimeException databaseFailure(RuntimeException failure) {
+    static RuntimeException databaseFailure(RuntimeException failure) {
         boolean sqlFailure = false;
         boolean timeout = false;
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
@@ -144,7 +161,7 @@ public class SearchService {
     }
 
     private List<ChunkHit> retrieve(SearchExecutor.Execution execution, long userId, String queryText,
-                                   int candidates, int topK) {
+                                   int candidates, int topK, SearchFilters filters) {
         PermissionScope scope = executor.required(execution, SearchBudget.Stage.AUTHORIZATION,
                 () -> permissionService.resolve(userId, PermissionService.PERM_VIEW));
 
@@ -194,7 +211,8 @@ public class SearchService {
 
         PreparedEmbeddingQuery prepared = query;
         List<ChunkHit> hits = executor.required(execution, SearchBudget.Stage.RETRIEVAL,
-                () -> retrieval.retrieve(queryText, prepared, scope, candidates));
+                () -> filters.restricted() ? retrieval.retrieve(queryText, prepared, scope, candidates, filters)
+                        : retrieval.retrieve(queryText, prepared, scope, candidates));
 
         List<ChunkHit> ranked = hits;
         if (rerankClient != null && !hits.isEmpty()) {

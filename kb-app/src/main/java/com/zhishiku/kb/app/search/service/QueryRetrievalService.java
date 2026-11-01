@@ -1,12 +1,14 @@
 package com.zhishiku.kb.app.search.service;
 
 import com.zhishiku.kb.app.embedding.service.EmbeddingControlService;
+import com.zhishiku.kb.app.document.metadata.model.DocumentFileTypes;
 import com.zhishiku.kb.app.search.execution.SearchBudget;
 import com.zhishiku.kb.app.search.execution.SearchMetrics;
 import com.zhishiku.kb.app.search.execution.SearchStageFailure;
 import com.zhishiku.kb.app.search.execution.SearchTransaction;
 import com.zhishiku.kb.app.search.mapper.SearchMapper;
 import com.zhishiku.kb.app.search.model.ChunkHit;
+import com.zhishiku.kb.app.search.model.SearchFilters;
 import com.zhishiku.kb.common.embedding.EmbeddingMath;
 import com.zhishiku.kb.common.embedding.PreparedEmbeddingQuery;
 import com.zhishiku.kb.common.security.PermissionScope;
@@ -30,16 +32,24 @@ public class QueryRetrievalService {
     }
 
     public List<ChunkHit> retrieve(String text, PreparedEmbeddingQuery query, PermissionScope scope, int candidates) {
+        return retrieve(text, query, scope, candidates, SearchFilters.empty());
+    }
+
+    public List<ChunkHit> retrieve(String text, PreparedEmbeddingQuery query, PermissionScope scope, int candidates,
+                                    SearchFilters filters) {
         return transaction.execute(() -> {
             var current = control.lockShared();
             boolean useVector = query != null && query.matches(current);
             if (query != null && !useVector) {
                 metrics.degradation(SearchBudget.Stage.RETRIEVAL, SearchStageFailure.Reason.PROFILE_UNAVAILABLE);
             }
-            return List.copyOf(mapper.hybridSearch(text,
-                    useVector ? EmbeddingMath.toPgVector(query.result().vector(0)) : null,
-                    scope.visibleSpaceIdList(), List.of(scope.principalKeys()), scope.clearanceLevel(), candidates,
-                    useVector ? query.result().profileId() : null));
+            String vector = useVector ? EmbeddingMath.toPgVector(query.result().vector(0)) : null;
+            String profileId = useVector ? query.result().profileId() : null;
+            return List.copyOf(filters.restricted()
+                    ? mapper.filteredSearch(text, vector, scope.visibleSpaceIdList(), List.of(scope.principalKeys()),
+                            scope.clearanceLevel(), candidates, profileId, filters, DocumentFileTypes.RULES)
+                    : mapper.hybridSearch(text, vector, scope.visibleSpaceIdList(), List.of(scope.principalKeys()),
+                            scope.clearanceLevel(), candidates, profileId));
         });
     }
 }

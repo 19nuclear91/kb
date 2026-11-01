@@ -6,7 +6,8 @@ import com.zhishiku.kb.app.document.mapper.DocumentMapper;
 import com.zhishiku.kb.app.document.metadata.service.MetadataAccess;
 import com.zhishiku.kb.app.document.metadata.service.MetadataException;
 import com.zhishiku.kb.app.document.model.DocumentSummary;
-import com.zhishiku.kb.app.space.mapper.SpaceMapper;
+import com.zhishiku.kb.app.space.service.SpaceQueryService;
+import com.zhishiku.kb.app.space.model.SpaceRecord;
 import com.zhishiku.kb.common.security.PermissionScope;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
@@ -17,15 +18,38 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.inOrder;
 
 class MetadataAccessTest {
+    @Test
+    void categoryManagerReadsThroughSpaceServiceAndKeepsUniformMissingResult() {
+        var current = mock(AdminQueryAccess.class);
+        var actor = mock(PermissionService.PrincipalHandle.class);
+        var spaces = mock(SpaceQueryService.class);
+        var sessions = mock(SqlSessionTemplate.class);
+        var access = new MetadataAccess(current, mock(PermissionService.class), mock(DocumentMapper.class), spaces, sessions);
+        when(current.current()).thenReturn(actor);
+        when(actor.userId()).thenReturn(7L);
+        var archived = new SpaceRecord();
+        archived.setId(2L);
+        archived.setArchived(true);
+        when(spaces.findManaged(actor, 2)).thenReturn(archived, null);
+        assertThat(access.manager(2)).isEqualTo(new MetadataAccess.Managed(7, archived));
+        var order = inOrder(sessions, current, spaces);
+        order.verify(sessions).clearCache();
+        order.verify(current).current();
+        order.verify(spaces).findManaged(actor, 2);
+        assertThatThrownBy(() -> access.manager(2)).isInstanceOfSatisfying(MetadataException.class,
+                error -> assertThat(error.reason()).isEqualTo(MetadataException.Reason.NOT_FOUND));
+    }
+
     @Test
     void documentExceptionEditRequiresIndependentViewAndEdit() {
         var current = mock(AdminQueryAccess.class);
         var actor = mock(PermissionService.PrincipalHandle.class);
         var permissions = mock(PermissionService.class);
         var documents = mock(DocumentMapper.class);
-        var access = new MetadataAccess(current, permissions, documents, mock(SpaceMapper.class), mock(SqlSessionTemplate.class));
+        var access = new MetadataAccess(current, permissions, documents, mock(SpaceQueryService.class), mock(SqlSessionTemplate.class));
         var scope = PermissionScope.of(7, (short) 1, List.of(), List.of("1:7"));
         when(current.current()).thenReturn(actor);
         when(actor.userId()).thenReturn(7L);

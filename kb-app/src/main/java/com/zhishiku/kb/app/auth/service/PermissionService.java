@@ -120,7 +120,7 @@ public class PermissionService {
                         "resolvePrincipal 返回 null；契约要求返回主体或抛出 IdentityException");
                 return PrincipalHandle.enabled(userId, principal, rolePermissionMapper);
             } catch (IdentityException e) {
-                log.warn("主体解析失败，句柄进入失败态: userId={} reason={}", userId, e.getMessage());
+                log.warn("主体解析失败 stage=identity category={} status={}", e.errorCode(), e.httpStatus());
                 return PrincipalHandle.failed(userId, e);
             }
         }
@@ -128,7 +128,7 @@ public class PermissionService {
         if (clearance == null) {
             // 用户不存在或已停用：进入失败态，resolve 会降级为"看不到任何东西"，
             // 而不是抛异常后被上层吞掉当成放行
-            log.warn("权限解析失败，用户不存在或已停用: userId={}", userId);
+            log.warn("主体解析失败 stage=identity category=DISABLED status=403");
             return PrincipalHandle.failed(userId, IdentityException.disabled("用户不存在或已停用"));
         }
         return PrincipalHandle.enabled(userId, clearance, mapper.findRoleIds(userId),

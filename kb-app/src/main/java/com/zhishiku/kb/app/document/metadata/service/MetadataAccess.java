@@ -5,7 +5,7 @@ import com.zhishiku.kb.app.auth.service.AdminQueryAccess;
 import com.zhishiku.kb.app.auth.service.PermissionService;
 import com.zhishiku.kb.app.document.mapper.DocumentMapper;
 import com.zhishiku.kb.app.document.model.DocumentSummary;
-import com.zhishiku.kb.app.space.mapper.SpaceMapper;
+import com.zhishiku.kb.app.space.service.SpaceQueryService;
 import com.zhishiku.kb.app.space.model.SpaceRecord;
 import com.zhishiku.kb.common.security.PermissionScope;
 import org.mybatis.spring.SqlSessionTemplate;
@@ -21,11 +21,11 @@ public class MetadataAccess {
     private final AdminQueryAccess access;
     private final PermissionService permissions;
     private final DocumentMapper documents;
-    private final SpaceMapper spaces;
+    private final SpaceQueryService spaces;
     private final SqlSessionTemplate sessions;
 
     public MetadataAccess(AdminQueryAccess access, PermissionService permissions, DocumentMapper documents,
-                          SpaceMapper spaces, SqlSessionTemplate sessions) {
+                          SpaceQueryService spaces, SqlSessionTemplate sessions) {
         this.access = access;
         this.permissions = permissions;
         this.documents = documents;
@@ -46,11 +46,7 @@ public class MetadataAccess {
 
     public Managed manager(long spaceId) {
         var actor = current();
-        if (!actor.functionalPermissions().contains(Permission.SPACE_MANAGE_ALL.code())
-                && !permissions.resolve(actor, PermissionService.PERM_MANAGE).visibleSpaceIdList().contains(spaceId)) {
-            throw new MetadataException(NOT_FOUND);
-        }
-        SpaceRecord space = spaces.findRawById(spaceId);
+        SpaceRecord space = spaces.findManaged(actor, spaceId);
         if (space == null) {
             throw new MetadataException(NOT_FOUND);
         }

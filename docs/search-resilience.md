@@ -6,6 +6,8 @@
 
 candidates 和 topK 各为 1–200。candidates 默认 50，topK 默认等于 candidates。topK 大于 candidates 合法，结果数量仍不超过实际候选数。身份、权限范围和向量配置由服务端决定。成功 JSON 继续使用 `R<List<ChunkHit>>`；来源仍绑定原文档、版本和分块。
 
+组合筛选的字段和兼容变化见[知识搜索组合筛选](search-filtering-api.md)。空间、分类及后代、标签、当前发布文件类型和更新时间在每路候选截取前共同生效；分类关系和标签计算计入原召回阶段预算，不额外重置截止。Embedding/profile 降级保留同一筛选，rerank 回退使用本次已筛选候选，不以删除条件填满结果。
+
 | HTTP 状态 | 含义 |
 | --- | --- |
 | 400 | 查询字符、数量或请求格式无效 |
@@ -102,6 +104,8 @@ prod/dev 的 `kb-search` 路由单独匹配 `/api/search`，默认等待 10000 �
 | `kb.search.rejections` | `reason=USER_LIMIT/CAPACITY`，区分两层拒绝 |
 | `kb.search.inflight` | 尚未完全退出的已准入请求 |
 | `kb.search.lingering` | 响应已结束但仍有主工作、子工作或取消动作未退出的请求 |
+
+搜索分类/标签候选共用 inflight 与 lingering，使用相同准入和阶段预算。其请求、拒绝和阶段耗时分别记录到 `kb.search.options.requests`、`kb.search.options.rejections`、`kb.search.options.stage.duration`，额外固定标签 `operation=CATEGORIES/TAGS`，不会把目录条数计为正文搜索命中。候选输入上限为 16 KiB，结果上限沿用 `kb.search.limits.max-response-bytes`。
 
 HTTP 正文/输入校验在门面前完成；这一层的拒绝不计入门面请求计数。阶段耗时与实际资源占用是不同口径：可选阶段超时可先完成等待计时，实际工作仍体现在 inflight/lingering。重复取消、退出、关闭不增加请求计数或重复释放。指标没有用户、query、requestId、凭据或任意 profile 标签；日志只记录固定阶段、类别和状态，不附原始异常。
 

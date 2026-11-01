@@ -82,7 +82,7 @@ spring:
             allowedOrigins: ${KB_CORS_ALLOWED_ORIGINS:}
             allowedMethods: [ GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS ]
             allowedHeaders: "*"
-            exposedHeaders: [ X-Conversation-Id, X-Turn-Id, Retry-After ]
+            exposedHeaders: [ X-Conversation-Id, X-Turn-Id, Retry-After, X-Search-Filter-Version ]
             allowCredentials: true
 
 logging:

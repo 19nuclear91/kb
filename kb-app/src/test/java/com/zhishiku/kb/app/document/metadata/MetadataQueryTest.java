@@ -6,7 +6,7 @@ import com.zhishiku.kb.app.document.metadata.model.MetadataInputs;
 import com.zhishiku.kb.app.document.metadata.model.MetadataSummary;
 import com.zhishiku.kb.app.document.metadata.model.DocumentTagRow;
 import com.zhishiku.kb.app.document.metadata.service.CategoryService;
-import com.zhishiku.kb.app.document.metadata.service.DocumentFileTypes;
+import com.zhishiku.kb.app.document.metadata.model.DocumentFileTypes;
 import com.zhishiku.kb.app.document.metadata.service.MetadataAccess;
 import com.zhishiku.kb.app.document.metadata.service.MetadataQueryService;
 import com.zhishiku.kb.common.security.PermissionScope;

@@ -1,4 +1,4 @@
-package com.zhishiku.kb.app.document.metadata.service;
+package com.zhishiku.kb.app.document.metadata.model;
 
 import com.zhishiku.kb.app.document.metadata.model.MetadataInputs.FileType;
 

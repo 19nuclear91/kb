@@ -4,6 +4,7 @@ import com.zhishiku.kb.app.document.metadata.model.MetadataViews;
 import com.zhishiku.kb.app.document.metadata.service.MetadataException;
 import com.zhishiku.kb.app.document.metadata.service.MetadataReadService;
 import com.zhishiku.kb.app.document.metadata.service.MetadataWriteService;
+import com.zhishiku.kb.app.document.metadata.support.MetadataInput;
 import com.zhishiku.kb.common.api.R;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,6 +34,6 @@ public class MetadataController {
     @PutMapping("/api/documents/{id}/metadata")
     public R<MetadataViews.Receipt> update(@PathVariable String id, HttpServletRequest request,
                                           @RequestHeader("X-Request-Id") String requestId) {
-        return R.ok(writes.update(MetadataInput.id(id), MetadataInput.update(MetadataInput.body(request, MetadataInput.WRITE_LIMIT)), requestId));
+        return R.ok(writes.update(MetadataInput.id(id), MetadataInput.update(MetadataBody.read(request, MetadataInput.WRITE_LIMIT)), requestId));
     }
 }

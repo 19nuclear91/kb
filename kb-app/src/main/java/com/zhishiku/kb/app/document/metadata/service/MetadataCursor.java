@@ -1,7 +1,7 @@
 package com.zhishiku.kb.app.document.metadata.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.zhishiku.kb.app.document.metadata.web.MetadataInput;
+import com.zhishiku.kb.app.document.metadata.support.MetadataInput;
 
 import java.io.ByteArrayInputStream;
 import java.util.Base64;

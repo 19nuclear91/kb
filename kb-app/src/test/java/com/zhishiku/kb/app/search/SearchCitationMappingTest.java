@@ -3,6 +3,7 @@ package com.zhishiku.kb.app.search;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zhishiku.kb.app.search.model.ChunkHit;
+import com.zhishiku.kb.app.search.model.SearchFilters;
 import com.zhishiku.kb.app.support.MapperRowStub;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SearchCitationMappingTest {
     private static final String STATEMENT =
-            "com.zhishiku.kb.app.search.mapper.SearchMapper.hybridSearch";
+            "com.zhishiku.kb.app.search.mapper.SearchMapper.filteredSearch";
 
     @Test
     void mapsVersionIdentityAndEverySourceFieldFromTheSameRow() throws Exception {
@@ -74,7 +75,7 @@ class SearchCitationMappingTest {
 
     private static ChunkHit read(Map<String, Object> row) throws Exception {
         return MapperRowStub.readOne(MapperRowStub.configuration("/mapper/SearchMapper.xml"),
-                STATEMENT, Map.of("spaceIds", List.of(), "principalKeys", List.of()), row, ChunkHit.class);
+                STATEMENT, Map.of("spaceIds", List.of(), "principalKeys", List.of(), "filters", SearchFilters.empty()), row, ChunkHit.class);
     }
 
     private static Map<String, Object> row() {
