@@ -1,7 +1,8 @@
 import { ApiError, positiveId } from '../api';
 import type { Space } from '../types';
-import { exactVersion, level, numericId, searchText, type WriteIntent } from './api';
+import { adminWrite, AdminError, exactVersion, level, numericId, searchText, type WriteIntent } from './api';
 import type { Version } from './types';
+import type { Session } from '../session';
 
 export interface AdminSpace extends Space { code: string; description: string | null; version: Version }
 export type PrincipalType = 'USER' | 'ROLE' | 'DEPT';
@@ -13,7 +14,27 @@ export interface GrantResult { acl: Acl; alreadyGranted: boolean; clearanceBlock
 export interface ManagedDocument { documentId: string; spaceId: string; spaceArchived: boolean }
 export interface SecurityState { documentId: string; securityLevel: number; securityVersion: Version }
 export interface SecurityResult extends SecurityState { previousSecurityLevel: number; previousSecurityVersion: Version; requestId: string; changedAt: string; replayed: boolean }
-export interface RelocationResult { documentId: string; fromSpaceId: string; toSpaceId: string; clearedExceptionCount: number; clearedExceptions: string[]; clearedExceptionsTruncated: boolean; clearanceBlockedPrincipalCount: number | bigint; replayed: boolean }
+export interface RelocationResult { documentId: string; fromSpaceId: string; toSpaceId: string; clearedExceptionCount: number; clearedExceptions: string[]; clearedExceptionsTruncated: boolean; clearanceBlockedPrincipalCount: number | bigint; replayed: boolean; targetCategoryId: string | null; metadataVersion: Version }
+export interface RelocationContext { documentId: string; fromSpaceId: string; metadataVersion: Version }
+export async function relocationContext(session: Session, id: string, signal?: AbortSignal): Promise<RelocationContext> {
+  const value = await session.json<RelocationContext>(`${base}/documents/${positiveId(id)}/relocation-context`, { signal });
+  try { if (value.documentId !== id) throw new Error(); positiveId(value.fromSpaceId); exactVersion(value.metadataVersion); }
+  catch { throw new ApiError(503); }
+  return value;
+}
+export async function relocationWrite<T>(session: Session, intent: WriteIntent, requestId: string, signal?: AbortSignal): Promise<T> {
+  try {
+    const result = await adminWrite<RelocationResult>(session, intent, requestId, signal);
+    try {
+      if (result.documentId !== intent.path.split('/')[4] || typeof result.replayed !== 'boolean' || !Object.hasOwn(result, 'targetCategoryId')) throw new Error();
+      positiveId(result.fromSpaceId); positiveId(result.toSpaceId);
+      if (result.targetCategoryId !== null) positiveId(result.targetCategoryId);
+      exactVersion(result.metadataVersion);
+    }
+    catch { throw new ApiError(503); }
+    return result as T;
+  } catch (error) { if (error instanceof AdminError && error.reason === 'INVALID_PARENT') error.message = '目标分类不可选，请重新读取并选择。'; throw error; }
+}
 const base = '/api/admin';
 const resource = (kind: ResourceKind, id: string) => `${base}/${kind}/${positiveId(id)}`;
 export const spacePaths = {
@@ -57,9 +78,10 @@ export const spaceWrites = {
   delete: (id: string): WriteIntent => ({ method: 'DELETE', path: spacePaths.space(id) }),
   grant: (kind: ResourceKind, id: string, principal: Principal, permission: AclPermission): WriteIntent => ({ method: 'POST', path: spacePaths.acl(kind, id), body: aclBody(kind, principal, permission) }),
   revoke: (kind: ResourceKind, id: string, principal: Principal, permission: AclPermission): WriteIntent => ({ method: 'DELETE', path: spacePaths.acl(kind, id), body: aclBody(kind, principal, permission) }),
-  relocate: (id: string, from: string, to: string): WriteIntent => {
+  relocate: (id: string, from: string, to: string, targetCategoryId: string | null, expectedMetadataVersion: Version): WriteIntent => {
     if (positiveId(from) === positiveId(to)) throw new ApiError(400);
-    return { method: 'PATCH', path: `${resource('documents', id)}/space`, body: { fromSpaceId: numericId(from), toSpaceId: numericId(to) } };
+    return { method: 'PATCH', path: `${resource('documents', id)}/space`, body: { fromSpaceId: numericId(from), toSpaceId: numericId(to),
+      targetCategoryId: targetCategoryId === null ? null : numericId(targetCategoryId), expectedMetadataVersion: exactVersion(expectedMetadataVersion) } };
   },
   security: (id: string, value: number, version: Version, reason: string): WriteIntent => {
     const normalized = reason.trim();

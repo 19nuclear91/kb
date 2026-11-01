@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.document.metadata.mapper.TagMapper">
+    <select id="forDocuments" resultType="com.zhishiku.kb.app.document.metadata.model.DocumentTagRow">
+        SELECT r.document_id, t.id, t.name, t.enabled
+        FROM kb_document_tag_relation r JOIN kb_document_tag t ON t.id = r.tag_id
+        WHERE r.document_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY r.document_id, t.id
+    </select>
+    <sql id="columns">t.id, t.name, t.normalized_name, t.enabled, t.version, t.created_at, t.updated_at</sql>
+    <sql id="position">
+        <if test="pattern != null">AND t.name ILIKE #{pattern} ESCAPE '\'</if>
+        <if test="afterId != null">AND t.id &gt; #{afterId}</if>
+    </sql>
+    <select id="list" resultType="com.zhishiku.kb.app.document.metadata.model.TagRow">
+        SELECT <include refid="columns"/> FROM kb_document_tag t WHERE TRUE
+        <if test="enabled != null">AND t.enabled = #{enabled}</if>
+        <include refid="position"/>
+        ORDER BY t.id LIMIT #{limit}
+    </select>
+    <select id="visible" resultType="com.zhishiku.kb.app.document.metadata.model.TagRow">
+        <bind name="aclPermission" value="'view'"/>
+        SELECT <include refid="columns"/> FROM kb_document_tag t WHERE EXISTS (
+            SELECT 1 FROM kb_document_tag_relation r JOIN kb_document d ON d.id = r.document_id
+            WHERE r.tag_id = t.id AND d.status NOT IN ('deleted', 'archived') AND d.security_level &lt;= #{clearance}
+            AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+            AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.parentVersionVisibility"/>
+        )
+        <include refid="position"/>
+        ORDER BY t.id LIMIT #{limit}
+    </select>
+    <select id="share" resultType="com.zhishiku.kb.app.document.metadata.model.TagRow" flushCache="true" useCache="false">
+        SELECT <include refid="columns"/> FROM kb_document_tag t WHERE
+        <choose>
+            <when test="ids != null and ids.size() > 0">t.id IN
+                <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+        ORDER BY t.id FOR SHARE
+    </select>
+</mapper>

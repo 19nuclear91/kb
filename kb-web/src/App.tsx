@@ -23,6 +23,7 @@ import { ParseDeadLettersPage } from './admin/ParseDeadLettersPage';
 import { AuditsPage } from './admin/AuditsPage';
 import { AiUsagePage, AiAuditsPage } from './admin/AiUsagePages';
 import { OperationsReportsPage } from './admin/OperationsReportsPage';
+import { DocumentTagsPage } from './admin/DocumentTaxonomy';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { SsoResultPage } from './pages/SsoResultPage';
 import { browserStorage, RESULT_PATH } from './sso/storage';
@@ -67,6 +68,7 @@ export function AppRoutes() {
       <Route path="/admin/embedding" element={<AdminGuard code={perm.embeddingRead} title="向量重建"><EmbeddingPage /></AdminGuard>} />
       <Route path="/admin/parse/dead-letters" element={<AdminGuard code={perm.deadLetterRead} title="解析死信"><ParseDeadLettersPage /></AdminGuard>} />
       <Route path="/admin/audits" element={<AdminGuard code={perm.auditRead} title="审计查询"><AuditsPage /></AdminGuard>} />
+      <Route path="/admin/document-tags" element={<AdminGuard code={perm.tagRead} title="全局标签"><DocumentTagsPage /></AdminGuard>} />
       <Route path="/admin/ai/usage" element={<AdminGuard code={perm.aiUsageRead} title="AI 用量"><AiUsagePage /></AdminGuard>} />
       <Route path="/admin/reports/operations" element={<AdminGuard code={perm.operationsReportsRead} title="运营概览"><OperationsReportsPage /></AdminGuard>} />
       <Route path="/admin/ai/audits" element={<AdminGuard code={perm.aiAuditRead} title="AI 调用审计"><AiAuditsPage /></AdminGuard>} />

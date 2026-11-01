@@ -50,5 +50,13 @@ public record DocumentRelocationResult(
                 example = "1")
         long clearanceBlockedPrincipalCount,
         @Schema(description = "是否为同一请求标识的重放", example = "false")
-        boolean replayed) {
+        boolean replayed,
+        @Schema(description = "目标分类，null 表示未分类") Long targetCategoryId,
+        @Schema(description = "搬迁后的资料版本") long metadataVersion) {
+    public DocumentRelocationResult(long documentId, long fromSpaceId, long toSpaceId, int clearedExceptionCount,
+                                    List<String> clearedExceptions, boolean clearedExceptionsTruncated,
+                                    long clearanceBlockedPrincipalCount, boolean replayed) {
+        this(documentId, fromSpaceId, toSpaceId, clearedExceptionCount, clearedExceptions,
+                clearedExceptionsTruncated, clearanceBlockedPrincipalCount, replayed, null, 0);
+    }
 }

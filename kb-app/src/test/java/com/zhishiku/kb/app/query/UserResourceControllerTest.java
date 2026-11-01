@@ -35,15 +35,15 @@ class UserResourceControllerTest {
         var spaces = mock(UploadSpaceQueryService.class);
         var docs = mock(DocumentCapabilitiesService.class);
         when(spaces.list(any())).thenReturn(new QueryPage<>(List.of(new UploadSpaceCandidate(3, "空间")), false, null));
-        when(docs.get(anyString(), any())).thenReturn(new DocumentCapabilities(9, true, false, false, false));
+        when(docs.get(anyString(), any())).thenReturn(new DocumentCapabilities(9, true, false, false, false, false));
         var mvc = MockMvcBuilders.standaloneSetup(new UploadSpaceController(spaces), new DocumentCapabilitiesController(docs))
                 .setControllerAdvice(new AdminQueryAdvice()).build();
         mvc.perform(get("/api/auth/upload-spaces").param("limit", "1", "2")).andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store")).andExpect(jsonPath("$.data.items[0].length()").value(2));
         verify(spaces).list(Map.of("limit", List.of("1", "2")));
         mvc.perform(get("/api/documents/9/capabilities")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(5)).andExpect(jsonPath("$.data.canDownload").value(true))
-                .andExpect(jsonPath("$.data.canDelete").value(false));
+                .andExpect(jsonPath("$.data.length()").value(6)).andExpect(jsonPath("$.data.canDownload").value(true))
+                .andExpect(jsonPath("$.data.canDelete").value(false)).andExpect(jsonPath("$.data.canEditMetadata").value(false));
     }
 
     @ParameterizedTest @ValueSource(ints = {400, 401, 403, 404, 503})

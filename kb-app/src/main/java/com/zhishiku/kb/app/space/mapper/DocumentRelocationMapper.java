@@ -4,6 +4,7 @@ import com.zhishiku.kb.app.space.model.DocumentAclEntry;
 import com.zhishiku.kb.app.space.model.SpaceViewPrincipal;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
@@ -45,7 +46,17 @@ public interface DocumentRelocationMapper {
              WHERE d.id = #{documentId} AND d.status <> 'deleted'
              FOR UPDATE
             """)
+    @Options(useCache = false, flushCache = Options.FlushCachePolicy.TRUE)
     Long findOwningSpaceIdForUpdate(@Param("documentId") long documentId);
+
+    @Update("""
+            UPDATE kb_document SET space_id = #{spaceId}, category_id = #{categoryId},
+                metadata_version = metadata_version + 1, updated_at = clock_timestamp()
+            WHERE id = #{documentId} AND status <> 'deleted' AND metadata_version = #{version}
+                AND metadata_version < 9223372036854775807
+            """)
+    int updateDocumentPlacement(@Param("documentId") long documentId, @Param("spaceId") long spaceId,
+                                @Param("categoryId") Long categoryId, @Param("version") long version);
 
     /**
      * 列出该文档的全部例外授权，仅取回执摘要需要的两列。
@@ -70,17 +81,6 @@ public interface DocumentRelocationMapper {
      */
     @Delete("DELETE FROM kb_document_acl WHERE doc_id = #{documentId}")
     int clearAcl(@Param("documentId") long documentId);
-
-    /**
-     * 推进权威归属。{@code status} 条件挡住与软删除并发的搬迁。
-     */
-    @Update("""
-            UPDATE kb_document
-               SET space_id = #{spaceId}, updated_at = now()
-             WHERE id = #{documentId} AND status <> 'deleted'
-            """)
-    int updateDocumentSpace(@Param("documentId") long documentId,
-                            @Param("spaceId") long spaceId);
 
     /**
      * 同步检索用的冗余归属副本。

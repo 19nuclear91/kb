@@ -4,6 +4,16 @@ import com.zhishiku.kb.app.auth.model.IdentityAuditRecord;
 import com.zhishiku.kb.app.auth.service.AuditScope;
 import com.zhishiku.kb.app.auth.service.IdentityAuditService;
 import com.zhishiku.kb.app.document.service.ReviewCancellationService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhishiku.kb.app.document.metadata.mapper.CategoryMapper;
+import com.zhishiku.kb.app.document.metadata.mapper.MetadataMapper;
+import com.zhishiku.kb.app.document.metadata.model.MetadataCommandRow;
+import com.zhishiku.kb.app.document.metadata.model.CategoryRow;
+import com.zhishiku.kb.app.document.metadata.service.MetadataCommands;
+import com.zhishiku.kb.app.document.metadata.service.MetadataAccess;
+import com.zhishiku.kb.app.document.model.DocumentEntity;
+import com.zhishiku.kb.app.auth.service.PermissionService;
+import java.util.concurrent.atomic.AtomicReference;
 import com.zhishiku.kb.app.space.mapper.DocumentAclMapper;
 import com.zhishiku.kb.app.space.mapper.DocumentRelocationMapper;
 import com.zhishiku.kb.app.space.mapper.SpaceMapper;
@@ -40,6 +50,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.clearInvocations;
 
 /**
  * 文档搬迁的行为契约。
@@ -72,6 +83,10 @@ class DocumentRelocationServiceTest {
     private IdentityAuditService audit;
     private DocumentRelocationService service;
     private ReviewCancellationService cancellation;
+    private MetadataMapper metadata;
+    private CategoryMapper categories;
+    private DocumentEntity document;
+    private final AtomicReference<MetadataCommandRow> receipt = new AtomicReference<>();
 
     @BeforeEach
     void setUp() {
@@ -81,10 +96,25 @@ class DocumentRelocationServiceTest {
         authorizer = mock(SpaceAuthorizer.class);
         audit = mock(IdentityAuditService.class);
         cancellation = mock(ReviewCancellationService.class);
-        service = new DocumentRelocationService(mapper, acls, spaces, authorizer, audit, cancellation);
+        metadata = mock(MetadataMapper.class);
+        categories = mock(CategoryMapper.class);
+        var access = mock(MetadataAccess.class);
+        var actor = mock(PermissionService.PrincipalHandle.class);
+        when(access.current()).thenReturn(actor);
+        when(actor.userId()).thenReturn(ADMIN);
+        document = DocumentEntity.builder().id(DOC).spaceId(SOURCE).metadataVersion(0L).build();
+        when(metadata.document(DOC)).thenAnswer(call -> document);
+        when(categories.shareTree(anyLong())).thenReturn(0L);
+        when(metadata.command("DOCUMENT_RELOCATE", "req-1")).thenAnswer(call -> receipt.get());
+        when(metadata.insertCommand(any())).thenAnswer(call -> {
+            receipt.set(call.getArgument(0));
+            return 1;
+        });
+        service = new DocumentRelocationService(mapper, acls, spaces, authorizer, audit, cancellation,
+                categories, metadata, new MetadataCommands(metadata, new ObjectMapper().findAndRegisterModules()), access);
 
         when(mapper.findOwningSpaceIdForUpdate(DOC)).thenReturn(SOURCE);
-        when(mapper.updateDocumentSpace(DOC, TARGET)).thenReturn(1);
+        when(mapper.updateDocumentPlacement(DOC, TARGET, null, 0)).thenReturn(1);
         when(authorizer.requireSpaceManager(anyLong())).thenReturn(ADMIN);
         when(spaces.findRawById(TARGET)).thenReturn(space(TARGET, false));
     }
@@ -93,7 +123,46 @@ class DocumentRelocationServiceTest {
      * 默认的"一切就绪"调用：声明归属与实际一致，目标空间存在且未归档。
      */
     private DocumentRelocationResult relocate() {
-        return service.relocate(DOC, SOURCE, TARGET, null, null, "req-1");
+        return service.relocate(DOC, SOURCE, TARGET, null, null, "req-1", null, 0);
+    }
+
+    @Test
+    void metadataVersionAndTargetCategoryAreCheckedBeforeAnyMutation() {
+        document.setMetadataVersion(1L);
+        assertThatThrownBy(this::relocate).isInstanceOfSatisfying(IdentityException.class,
+                e -> assertThat(e.errorCode()).isEqualTo(IdentityErrorCode.INVALID_VERSION));
+        document.setMetadataVersion(0L);
+        assertThatThrownBy(() -> service.relocate(DOC, SOURCE, TARGET, null, null, "category", 8L, 0))
+                .isInstanceOfSatisfying(IdentityException.class, e -> assertThat(e.errorCode()).isEqualTo(IdentityErrorCode.INVALID_PARENT));
+        verify(mapper, never()).clearAcl(DOC);
+    }
+
+    @Test
+    void placementUpdatesCategoryAndVersionPreservingGlobalTagsAndLockOrder() {
+        when(metadata.category(TARGET, 8)).thenReturn(new CategoryRow(8, TARGET, null, "目录", "目录", 0, null, null));
+        when(mapper.updateDocumentPlacement(DOC, TARGET, 8L, 0)).thenReturn(1);
+        var result = service.relocate(DOC, SOURCE, TARGET, null, null, "category", 8L, 0);
+        assertThat(result.targetCategoryId()).isEqualTo(8);
+        assertThat(result.metadataVersion()).isEqualTo(1);
+        verify(metadata, never()).clearTags(anyLong());
+        var order = inOrder(categories, mapper);
+        order.verify(categories).shareTree(SOURCE);
+        order.verify(categories).shareTree(TARGET);
+        order.verify(mapper).findOwningSpaceIdForUpdate(DOC);
+    }
+
+    @Test
+    void legacyAuditIdentityCannotBeReusedUnderNewProtocol() {
+        when(audit.existing(AuditScope.DOCUMENT_RELOCATE, "req-1")).thenReturn(new IdentityAuditRecord());
+        assertThatThrownBy(this::relocate).isInstanceOfSatisfying(IdentityException.class,
+                e -> assertThat(e.httpStatus()).isEqualTo(409));
+        verify(mapper, never()).clearAcl(DOC);
+    }
+
+    @Test
+    void strictAuditFailurePropagatesWithoutAcknowledgement() {
+        doThrow(new IllegalStateException("审计不可用")).when(audit).appendSuccess(any(), any(), anyLong(), anyLong(), any(), any(), any());
+        assertThatThrownBy(this::relocate).isInstanceOf(IllegalStateException.class);
     }
 
     private static SpaceRecord space(long id, boolean archived) {
@@ -105,7 +174,7 @@ class DocumentRelocationServiceTest {
     }
 
     private void verifyNothingWasRelocated() {
-        verify(mapper, never()).updateDocumentSpace(anyLong(), anyLong());
+        verify(mapper, never()).updateDocumentPlacement(anyLong(), anyLong(), any(), anyLong());
         verify(mapper, never()).syncChunkSpace(anyLong(), anyLong());
         verify(mapper, never()).clearAcl(anyLong());
         verify(audit, never()).success(any(), anyString(), any(), any(), anyString(), anyString(), anyString());
@@ -129,7 +198,7 @@ class DocumentRelocationServiceTest {
         order.verify(mapper).findOwningSpaceIdForUpdate(DOC);
         order.verify(cancellation).cancelDocument(DOC, ADMIN);
         order.verify(mapper).clearAcl(DOC);
-        order.verify(mapper).updateDocumentSpace(DOC, TARGET);
+        order.verify(mapper).updateDocumentPlacement(DOC, TARGET, null, 0);
         order.verify(mapper).syncChunkSpace(DOC, TARGET);
     }
 
@@ -143,7 +212,7 @@ class DocumentRelocationServiceTest {
     @Test
     @DisplayName("更新归属失败保持通用冲突，不继续同步或审计")
     void concurrentDocumentChangeRemainsGenericConflict() {
-        when(mapper.updateDocumentSpace(DOC, TARGET)).thenReturn(0);
+        when(mapper.updateDocumentPlacement(DOC, TARGET, null, 0)).thenReturn(0);
         assertThatThrownBy(this::relocate)
                 .isInstanceOf(IdentityException.class)
                 .satisfies(ex -> assertConflict(ex, null));
@@ -165,7 +234,7 @@ class DocumentRelocationServiceTest {
             assertThat(result.fromSpaceId()).isEqualTo(SOURCE);
             assertThat(result.toSpaceId()).isEqualTo(TARGET);
             assertThat(result.replayed()).isFalse();
-            verify(mapper).updateDocumentSpace(DOC, TARGET);
+            verify(mapper).updateDocumentPlacement(DOC, TARGET, null, 0);
             verify(authorizer).requireSpaceManager(SOURCE);
             verify(authorizer).requireSpaceManager(TARGET);
         }
@@ -220,7 +289,7 @@ class DocumentRelocationServiceTest {
         void managerCheckTargetsActualOwnerNotDeclaredOne() {
             long declaredButWrong = 99L;
 
-            assertThatThrownBy(() -> service.relocate(DOC, declaredButWrong, TARGET, null, null, "req-1"))
+            assertThatThrownBy(() -> service.relocate(DOC, declaredButWrong, TARGET, null, null, "req-1", null, 0))
                     .isInstanceOf(IdentityException.class);
 
             verify(authorizer).requireSpaceManager(SOURCE);
@@ -239,14 +308,16 @@ class DocumentRelocationServiceTest {
          * 首次搬迁已把文档搬到目标空间，重投时服务端读到的实际归属就是目标空间。
          */
         private void simulateAlreadyRelocated() {
+            when(mapper.listAclEntries(DOC)).thenReturn(List.of(new DocumentAclEntry("3:5", "view")));
+            when(mapper.clearAcl(DOC)).thenReturn(1);
+            when(mapper.listViewPrincipals(TARGET)).thenReturn(List.of(new SpaceViewPrincipal((short) 1, 5L)));
+            when(acls.findUserClearance(5)).thenReturn((short) 1);
+            when(acls.countDocumentAboveClearance(DOC, (short) 1)).thenReturn(1L);
+            relocate();
+            clearInvocations(mapper, audit, authorizer);
             when(mapper.findOwningSpaceIdForUpdate(DOC)).thenReturn(TARGET);
-            IdentityAuditRecord first = new IdentityAuditRecord();
-            first.setTargetId(DOC);
-            first.setBeforeState("{\"spaceId\":1,\"clearedExceptions\":[\"3:5:view\"],"
-                    + "\"clearedExceptionsTruncated\":false}");
-            first.setAfterState("{\"spaceId\":2,\"clearedExceptionCount\":1,"
-                    + "\"clearanceBlockedPrincipalCount\":1}");
-            when(audit.existing(AuditScope.DOCUMENT_RELOCATE, "req-1")).thenReturn(first);
+            document.setSpaceId(TARGET);
+            document.setMetadataVersion(1L);
         }
 
         @Test
@@ -262,7 +333,7 @@ class DocumentRelocationServiceTest {
             assertThat(result.clearedExceptionCount()).isEqualTo(1);
             assertThat(result.clearedExceptions()).containsExactly("3:5:view");
             assertThat(result.clearanceBlockedPrincipalCount()).isEqualTo(1);
-            verify(mapper, never()).updateDocumentSpace(anyLong(), anyLong());
+            verify(mapper, never()).updateDocumentPlacement(anyLong(), anyLong(), any(), anyLong());
         }
 
         /**
@@ -287,7 +358,7 @@ class DocumentRelocationServiceTest {
         @Test
         @DisplayName("缺少请求标识：请求错误，一次库都不碰")
         void missingRequestIdIsBadRequest() {
-            assertThatThrownBy(() -> service.relocate(DOC, SOURCE, TARGET, null, null, "  "))
+            assertThatThrownBy(() -> service.relocate(DOC, SOURCE, TARGET, null, null, "  ", null, 0))
                     .isInstanceOf(IdentityException.class)
                     .hasMessageContaining("requestId");
 
@@ -365,7 +436,7 @@ class DocumentRelocationServiceTest {
         @Test
         @DisplayName("请求自身就把源与目标写成同一个：请求错误，不读库")
         void sameSourceAndTargetInTheRequestIsBadRequest() {
-            assertThatThrownBy(() -> service.relocate(DOC, TARGET, TARGET, null, null, "req-1"))
+            assertThatThrownBy(() -> service.relocate(DOC, TARGET, TARGET, null, null, "req-1", null, 0))
                     .isInstanceOf(IdentityException.class)
                     .hasMessageContaining("相同");
 
@@ -398,7 +469,7 @@ class DocumentRelocationServiceTest {
             DocumentRelocationResult result = relocate();
 
             assertThat(result.toSpaceId()).isEqualTo(TARGET);
-            verify(mapper).updateDocumentSpace(DOC, TARGET);
+            verify(mapper).updateDocumentPlacement(DOC, TARGET, null, 0);
             verify(spaces, never()).findRawById(SOURCE);
         }
     }
@@ -469,7 +540,7 @@ class DocumentRelocationServiceTest {
 
             relocate();
 
-            verify(mapper).updateDocumentSpace(DOC, TARGET);
+            verify(mapper).updateDocumentPlacement(DOC, TARGET, null, 0);
             verify(mapper).clearAcl(DOC);
         }
 
@@ -504,7 +575,7 @@ class DocumentRelocationServiceTest {
         @Test
         @DisplayName("请求夹带密级变更：拒绝并说明密级调整需要独立操作，什么都不动")
         void requestCarryingASecurityLevelIsRejected() {
-            assertThatThrownBy(() -> service.relocate(DOC, SOURCE, TARGET, (short) 3, null, "req-1"))
+            assertThatThrownBy(() -> service.relocate(DOC, SOURCE, TARGET, (short) 3, null, "req-1", null, 0))
                     .isInstanceOf(IdentityException.class)
                     .hasMessageContaining("密级")
                     .hasMessageContaining("独立");
@@ -567,11 +638,11 @@ class DocumentRelocationServiceTest {
             relocate();
 
             InOrder ordered = inOrder(mapper);
-            ordered.verify(mapper).updateDocumentSpace(DOC, TARGET);
+            ordered.verify(mapper).updateDocumentPlacement(DOC, TARGET, null, 0);
             ordered.verify(mapper).syncChunkSpace(DOC, TARGET);
 
             Method relocate = DocumentRelocationService.class.getMethod("relocate",
-                    long.class, long.class, long.class, Short.class, Long.class, String.class);
+                    long.class, long.class, long.class, Short.class, Long.class, String.class, Long.class, long.class);
             assertThat(relocate.isAnnotationPresent(Transactional.class))
                     .as("半完成的搬迁就是一次越权，所以四步必须共享一个事务边界")
                     .isTrue();
@@ -592,9 +663,9 @@ class DocumentRelocationServiceTest {
 
             relocate();
 
-            verify(audit).success(eq(AuditScope.DOCUMENT_RELOCATE), eq("req-1"), eq(ADMIN), eq(DOC),
+            verify(audit).appendSuccess(eq(AuditScope.DOCUMENT_RELOCATE), eq("req-1"), eq(ADMIN), eq(DOC),
                     eq("relocate"), contains("\"spaceId\":" + SOURCE), contains("\"spaceId\":" + TARGET));
-            verify(audit).success(eq(AuditScope.DOCUMENT_RELOCATE), anyString(), anyLong(), anyLong(),
+            verify(audit).appendSuccess(eq(AuditScope.DOCUMENT_RELOCATE), anyString(), anyLong(), anyLong(),
                     anyString(), contains("\"clearedExceptions\":[\"3:5:view\"]"),
                     contains("\"clearedExceptionCount\":1"));
         }
@@ -631,14 +702,11 @@ class DocumentRelocationServiceTest {
         @Test
         @DisplayName("重放不产生第二条记录")
         void replayWritesNoSecondRecord() {
+            relocate();
+            clearInvocations(mapper, audit);
             when(mapper.findOwningSpaceIdForUpdate(DOC)).thenReturn(TARGET);
-            IdentityAuditRecord first = new IdentityAuditRecord();
-            first.setTargetId(DOC);
-            first.setBeforeState("{\"spaceId\":1,\"clearedExceptions\":[],"
-                    + "\"clearedExceptionsTruncated\":false}");
-            first.setAfterState("{\"spaceId\":2,\"clearedExceptionCount\":0,"
-                    + "\"clearanceBlockedPrincipalCount\":0}");
-            when(audit.existing(AuditScope.DOCUMENT_RELOCATE, "req-1")).thenReturn(first);
+            document.setSpaceId(TARGET);
+            document.setMetadataVersion(1L);
 
             relocate();
 

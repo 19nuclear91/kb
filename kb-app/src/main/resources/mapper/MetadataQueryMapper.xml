@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.document.metadata.mapper.MetadataQueryMapper">
+    <sql id="fileType">
+        CASE WHEN d.current_version_id IS NULL THEN 'UNPUBLISHED'
+        <foreach collection="rules" item="rule">
+            WHEN lower(v.file_name) LIKE #{rule.pattern} AND lower(v.mime_type) = #{rule.mime} THEN #{rule.type}
+        </foreach>
+        ELSE 'OTHER' END
+    </sql>
+    <sql id="fromAndConditions">
+        FROM kb_document d LEFT JOIN kb_document_version v ON v.id = d.current_version_id
+        WHERE d.status NOT IN ('deleted', 'archived') AND d.security_level &lt;= #{clearance}
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.parentVersionVisibility"/>
+        <if test="query.titleQuery != null">AND d.title ILIKE #{titlePattern} ESCAPE '\'</if>
+        <if test="query.spaceId != null">AND d.space_id = #{query.spaceId}</if>
+        <if test="query.uncategorized">AND d.category_id IS NULL</if>
+        <if test="query.categoryId != null">
+            AND d.category_id IN (
+                WITH RECURSIVE descendants AS (
+                    SELECT id FROM kb_document_category WHERE id = #{query.categoryId} AND space_id = d.space_id
+                    UNION
+                    SELECT c.id FROM kb_document_category c JOIN descendants p ON c.parent_id = p.id
+                    WHERE c.space_id = d.space_id
+                ) SELECT id FROM descendants
+            )
+        </if>
+        <foreach collection="query.tagIds" item="tag">
+            AND EXISTS (SELECT 1 FROM kb_document_tag_relation r WHERE r.document_id = d.id AND r.tag_id = #{tag})
+        </foreach>
+        <if test="query.fileType != null">AND (<include refid="fileType"/>) = #{query.fileType}</if>
+        <if test="query.updatedFrom != null">AND d.updated_at &gt;= #{query.updatedFrom}</if>
+        <if test="query.updatedTo != null">AND d.updated_at &lt; #{query.updatedTo}</if>
+    </sql>
+    <select id="count" resultType="long" timeout="5">
+        <bind name="aclPermission" value="'view'"/>
+        SELECT count(*) <include refid="fromAndConditions"/>
+    </select>
+    <select id="list" resultType="com.zhishiku.kb.app.document.metadata.model.MetadataSummary" timeout="5">
+        <bind name="aclPermission" value="'view'"/>
+        SELECT <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.summaryColumns"/>,
+            d.category_id, d.metadata_version
+        <include refid="fromAndConditions"/>
+        ORDER BY d.updated_at DESC, d.id DESC LIMIT #{query.size} OFFSET #{query.offset}
+    </select>
+</mapper>

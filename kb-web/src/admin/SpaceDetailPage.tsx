@@ -10,6 +10,7 @@ import { useAdminResource, useCursorList } from './hooks';
 import { spacePaths, spaceWrites, type AdminSpace, type ManagedDocument } from './spaceApi';
 import { fieldValue, ResourceStatus, ResourceWriteDialog, TextField, validTarget } from './spaceUi';
 import { PublicationPolicyPanel } from '../reviews/PolicyPanel';
+import { CategoryManager } from './DocumentTaxonomy';
 export function SpaceDetailPage() {
   const { spaceId = '' } = useParams(), { state } = useSession();
   return validTarget(spaceId) ? <SpaceDetail key={`${state.epoch}:${spaceId}`} id={spaceId} /> : <Alert type="info" title="目标不可访问" />;
@@ -27,6 +28,7 @@ function SpaceDetail({ id }: { id: string }) {
     {allowed && query.data && <><section className="panel"><p>编码：{query.data.code}（创建后只读）</p><p>{query.data.description}</p><Tag>{query.data.archived ? '已归档' : '未归档'}</Tag>
       <Space><Button onClick={() => setDialog('edit')}>修改空间</Button><Button onClick={() => setDialog('archive')}>{query.data.archived ? '取消归档' : '归档空间'}</Button><Button danger onClick={() => setDialog('delete')}>删除空间</Button></Space></section>
       <PublicationPolicyPanel spaceId={id} onChanged={changed} />
+      <CategoryManager spaceId={id} archived={query.data.archived} />
       <AclPanel key={id} kind="spaces" resourceId={id} onChanged={changed} />
       <ManagedDocuments id={id} />
       {dialog === 'edit' && <ResourceWriteDialog title="修改空间" scope={`space:${id}:metadata`} onClose={() => setDialog(null)} onRefresh={refresh} onDone={() => { setDialog(null); changed(); }}

@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { readJson } from '../api';
 import { json, deferred } from '../test/fixtures';
 import { safeReturnPath } from '../navigation';
-import { AdminAccessContext, emptyAdminAccess, canOpenSpaces, perm, type AdminAccess } from './access';
+import { AdminAccessContext, AdminAccessProvider, AdminGuard, emptyAdminAccess, canOpenSpaces, perm, type AdminAccess } from './access';
 import { SpacesPage } from './SpacesPage';
 import { SpaceDetailPage, ManagedDocuments } from './SpaceDetailPage';
 import { DocumentPanelPage, RelocationBox, SecurityBox } from './DocumentPanelPage';
@@ -17,7 +17,7 @@ import type { ReactNode } from 'react';
 import type { AdminSpace, Acl } from './spaceApi';
 
 const f = vi.hoisted(() => ({ json: vi.fn(), send: vi.fn(), epoch: 0, ceiling: 2 }));
-const unitSession = { json: f.json, send: f.send, getSnapshot: () => ({ epoch: f.epoch }) };
+const unitSession = { json: f.json, send: f.send, getSnapshot: () => ({ epoch: f.epoch, phase: 'ready' }), refresh: vi.fn(), subscribe: () => () => {} };
 vi.mock('../SessionProvider', () => ({ useSession: () => ({ session: unitSession, state: { phase: 'ready', epoch: f.epoch, me: { user: { clearanceLevel: f.ceiling, userId: '1' } } } }) }));
 const space: AdminSpace = { spaceId: '7', code: 's', name: '工程空间', description: '说明', archived: false, manageable: true, viewable: false, version: 9007199254740993n };
 const target = { ...space, spaceId: '8', name: '目标空间' };
@@ -34,6 +34,8 @@ beforeEach(() => {
     ['/api/admin/documents?spaceId=7&limit=1', page([])],
     ['/api/admin/documents?documentId=9', page([{ documentId: '9', spaceId: '7', spaceArchived: false }])],
     ['/api/admin/documents/9/acl', [acl]], ['/api/documents/9', { id: '9', title: '文档标题', spaceId: '7' }],
+    ['/api/admin/documents/9/relocation-context', { documentId: '9', fromSpaceId: '7', metadataVersion: 9007199254740993n }],
+    ['/api/admin/spaces/8/categories', { items: [], hasMore: false, nextCursor: null, treeVersion: 0 }],
     ['/api/admin/documents/9/security-level', { documentId: '9', securityLevel: 1, securityVersion: 9007199254740993n }],
     ['/api/auth/security-levels', [0, 1, 2, 3]],
   ]);
@@ -45,7 +47,7 @@ beforeEach(() => {
   f.json.mockImplementation(async (path: string, init: RequestInit = {}) => readJson(await f.send(path, init)));
 });
 function access(overrides: Partial<AdminAccess> = {}): AdminAccess {
-  return { ...emptyAdminAccess, status: 'ready', spaceStatus: 'ready', spaces: [space, target], canManageSpace: id => id === '7', has: () => false, check, ...overrides };
+  return { ...emptyAdminAccess, status: 'ready', spaceStatus: 'ready', spaces: [space, target], canManageSpace: id => ['7', '8'].includes(id), has: () => false, check, ...overrides };
 }
 function show(node: ReactNode, value = access(), path = '/admin/spaces/7') {
   return render(<AdminAccessContext value={value}><MemoryRouter initialEntries={[path]}><Routes>
@@ -57,6 +59,13 @@ const writes = () => f.send.mock.calls.filter(([, init]) => init?.method && init
 const submit = () => fireEvent.click(screen.getByRole('button', { name: '确认提交' }));
 const confirmation = () => screen.getByRole('button', { name: '确认提交' }) as HTMLButtonElement;
 const fill = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
+async function selectRelocation(target = '8', category = '未分类') {
+  await waitFor(() => expect((screen.getByRole('button', { name: '搬迁文档' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: '搬迁文档' })); fill('目标空间', target);
+  const choice = await screen.findByRole('button', { name: category });
+  await waitFor(() => expect((choice as HTMLButtonElement).disabled).toBe(false)); fireEvent.click(choice);
+  await waitFor(() => expect(confirmation().disabled).toBe(false));
+}
 
 describe('入口、路由与精确目标', () => {
   it('知识空间谓词不把密级权限、角色名或 view 当成空间管理资格', () => {
@@ -284,18 +293,95 @@ describe('文档面板、搬迁与密级', () => {
     expect(screen.getByText('没有可迁入的空间')).toBeTruthy(); expect((screen.getByRole('button', { name: '搬迁文档' }) as HTMLButtonElement).disabled).toBe(true);
   });
   it('搬迁声明来源、不夹带密级，截断及受阻非零仍为成功', async () => {
-    answers.set('PATCH /api/admin/documents/9/space', { clearedExceptionCount: 3, clearedExceptionsTruncated: true, clearanceBlockedPrincipalCount: 2 });
+    answers.set('/api/documents/9', new Response(null, { status: 404 }));
+    answers.set('PATCH /api/admin/documents/9/space', { documentId: '9', fromSpaceId: '7', toSpaceId: '8', replayed: false,
+      targetCategoryId: null, metadataVersion: 9007199254740994n, clearedExceptionCount: 3, clearedExceptionsTruncated: true, clearanceBlockedPrincipalCount: 2 });
     show(<DocumentPanelPage />, access(), '/admin/documents/9');
     await waitFor(() => expect((screen.getByRole('button', { name: '搬迁文档' }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: '搬迁文档' })); fill('目标空间', '8');
-    expect(screen.getByText(/将清除 1 条文档例外授权且不可恢复/)).toBeTruthy(); submit();
+    expect(screen.getByText(/将清除 1 条文档例外授权且不可恢复/)).toBeTruthy();
+    await waitFor(() => expect((screen.getByRole('button', { name: '未分类' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: '未分类' })); submit();
     await screen.findByText(/搬迁已完成；清除例外 3 条（明细未完整列出）/);
-    expect(writes()[0][1].body).toBe('{"fromSpaceId":7,"toSpaceId":8}'); expect(check).toHaveBeenCalledWith(true);
+    expect(writes()[0][1].body).toBe('{"fromSpaceId":7,"toSpaceId":8,"targetCategoryId":null,"expectedMetadataVersion":9007199254740993}'); expect(check).toHaveBeenCalledWith(true);
   });
-  it.each(['SOURCE_MISMATCH', 'TARGET_ARCHIVED', 'ALREADY_IN_TARGET'])('搬迁 %s 后重读但不自动重交', async reason => {
+  it.each(['SOURCE_MISMATCH', 'TARGET_ARCHIVED', 'ALREADY_IN_TARGET', 'INVALID_VERSION', 'INVALID_PARENT'])('搬迁 %s 后重读但不自动重交', async reason => {
     answers.set('PATCH /api/admin/documents/9/space', failure(reason)); show(<RelocationBox id="9" source="7" acl={[]} refresh={check} done={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: '搬迁文档' })); fill('目标空间', '8'); submit();
+    fireEvent.click(screen.getByRole('button', { name: '搬迁文档' })); fill('目标空间', '8');
+    await waitFor(() => expect((screen.getByRole('button', { name: '未分类' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: '未分类' })); submit();
     await waitFor(() => expect(check).toHaveBeenCalled()); expect(writes()).toHaveLength(1);
+  });
+  it.each([null, '9223372036854775806'])('搬迁响应丢失后读取新归属，仍按原分类 %s 和版本匹配重试', async categoryId => {
+    const category = { id: '9223372036854775806', name: '选定分类', parentId: null, sortOrder: 0,
+      path: [{ id: '9223372036854775806', name: '选定分类' }] };
+    answers.set('/api/admin/spaces/8/categories', { ...page([category]), treeVersion: 0 });
+    answers.set('/api/documents/9', new Response(null, { status: 404 }));
+    answers.set('PATCH /api/admin/documents/9/space', () => { throw new TypeError('offline'); });
+    show(<DocumentPanelPage />, access(), '/admin/documents/9');
+    await screen.findByRole('heading', { name: '文档搬迁' }); await selectRelocation('8', categoryId === null ? '未分类' : '选定分类'); submit();
+    await screen.findByRole('button', { name: '按原内容重试' });
+    const original = writes()[0][1], current = deferred<Response>();
+    answers.set('/api/admin/documents/9/relocation-context', () => current.promise);
+    // 草稿目标与分类清空不能改变已经发出的意图，也不能阻止取得首次回执。
+    fill('目标空间', ''); fireEvent.click(screen.getByRole('button', { name: '重新读取核对' }));
+    const retry = () => screen.getByRole('button', { name: '按原内容重试' }) as HTMLButtonElement;
+    expect(retry().disabled).toBe(true);
+    await act(async () => current.resolve(json({ documentId: '9', fromSpaceId: '8', metadataVersion: 9007199254740994n })));
+    await waitFor(() => expect(retry().disabled).toBe(false)); expect(confirmation().disabled).toBe(true); expect(writes()).toHaveLength(1);
+    answers.set('PATCH /api/admin/documents/9/space', { documentId: '9', fromSpaceId: '7', toSpaceId: '8', targetCategoryId: categoryId,
+      metadataVersion: 9007199254740994n, replayed: true, clearedExceptionCount: 1, clearedExceptionsTruncated: false, clearanceBlockedPrincipalCount: 0 });
+    fireEvent.click(retry()); await screen.findByText(/搬迁已完成；清除例外 1 条/);
+    expect(writes()).toHaveLength(2); expect(writes()[1][1].body).toBe(original.body);
+    expect(new Headers(writes()[1][1].headers).get('X-Request-Id')).toBe(new Headers(original.headers).get('X-Request-Id'));
+    expect(original.body).toContain('"expectedMetadataVersion":9007199254740993');
+    expect(original.body).toContain(`"targetCategoryId":${categoryId ?? 'null'}`);
+  });
+  it.each(['7', '8', '11'])('搬迁匹配重试重新核对原源、原目标及当前空间资格：撤销 %s 后禁止发送', async revoked => {
+    const value = access({ spaces: [space, target, { ...target, spaceId: '11' }], canManageSpace: () => true });
+    const box = (current: AdminAccess) => <AdminAccessContext value={current}><MemoryRouter><RelocationBox id="9" source="7" acl={[]} refresh={check} done={vi.fn()} /></MemoryRouter></AdminAccessContext>;
+    answers.set('PATCH /api/admin/documents/9/space', () => { throw new TypeError('offline'); });
+    const view = render(box(value)); await selectRelocation(); submit();
+    await screen.findByRole('button', { name: '重新读取核对' });
+    answers.set('/api/admin/documents/9/relocation-context', { documentId: '9', fromSpaceId: '11', metadataVersion: 9007199254740995n });
+    fireEvent.click(screen.getByRole('button', { name: '重新读取核对' }));
+    const retry = () => screen.getByRole('button', { name: '按原内容重试' }) as HTMLButtonElement;
+    await waitFor(() => expect(retry().disabled).toBe(false));
+    view.rerender(box({ ...value, canManageSpace: id => id !== revoked }));
+    expect(retry().disabled).toBe(true); fireEvent.click(retry()); expect(writes()).toHaveLength(1);
+    view.rerender(box(value)); expect(retry().disabled).toBe(false);
+    answers.set('/api/admin/documents/9/relocation-context', new Response(null, { status: 404 }));
+    fireEvent.click(screen.getByRole('button', { name: '重新读取核对' }));
+    await screen.findByText('目标不存在或当前不可访问。'); expect(retry().disabled).toBe(true); expect(writes()).toHaveLength(1);
+  });
+  it.each([
+    ['SOURCE_MISMATCH', '文档归属已变化，请重新读取后确认。'],
+    ['TARGET_ARCHIVED', '目标空间已归档，请重新选择。'],
+    ['ALREADY_IN_TARGET', '文档已在目标空间，请重新读取后确认。'],
+    ['INVALID_VERSION', '数据已被其他操作更新，请重新读取后确认新的版本。'],
+    ['INVALID_PARENT', '目标分类不可选，请重新读取并选择。'],
+  ])('完整管理页面在 %s 的归属刷新和资格重核后保留具体提示', async (reason, message) => {
+    answers.set('/api/auth/permissions', []); answers.set('/api/admin/spaces', [space, target]);
+    answers.set('PATCH /api/admin/documents/9/space', failure(reason));
+    const view = render(<MemoryRouter initialEntries={['/admin/documents/9']}><AdminAccessProvider><Routes>
+      <Route path="/admin/documents/:documentId" element={<AdminGuard title="文档管理"><DocumentPanelPage /></AdminGuard>} />
+    </Routes></AdminAccessProvider></MemoryRouter>);
+    await screen.findByRole('heading', { name: '文档搬迁' }); await selectRelocation();
+    const permissions = deferred<Response>(), spaces = deferred<Response>();
+    answers.set('/api/auth/permissions', () => permissions.promise); answers.set('/api/admin/spaces', () => spaces.promise);
+    const nextSource = reason === 'SOURCE_MISMATCH' ? '11' : '7';
+    answers.set('/api/admin/documents?documentId=9', page([{ documentId: '9', spaceId: nextSource, spaceArchived: false }]));
+    answers.set('/api/admin/documents/9/relocation-context', { documentId: '9', fromSpaceId: nextSource, metadataVersion: 9007199254740994n });
+    submit(); await screen.findByText('正在确认管理权限…'); expect(screen.queryByRole('dialog')).toBeNull();
+    await act(async () => { permissions.resolve(json([])); spaces.resolve(json([space, target, { ...target, spaceId: '11' }])); });
+    await screen.findByText(message); await screen.findByText(`当前空间 ${nextSource} · 未归档`);
+    expect(screen.queryByRole('dialog')).toBeNull(); expect(writes()).toHaveLength(1);
+    expect(screen.queryByText('敏感原文')).toBeNull();
+    view.unmount();
+    const other = show(<DocumentPanelPage />, access(), '/admin/documents/10');
+    expect(screen.queryByText(message)).toBeNull(); other.unmount();
+    f.epoch++; show(<DocumentPanelPage />, access(), '/admin/documents/9');
+    await screen.findByRole('heading', { name: '文档搬迁' }); expect(screen.queryByText(message)).toBeNull();
   });
   it('密级只给 0/2，原因与精确版本提交，成功重读并展示前后值', async () => {
     answers.set('PATCH /api/admin/documents/9/security-level', { previousSecurityLevel: 1, securityLevel: 2 });

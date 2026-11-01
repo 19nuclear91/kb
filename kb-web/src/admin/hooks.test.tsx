@@ -37,7 +37,7 @@ describe('共用写操作状态与请求绑定', () => {
   it('空间搬迁复用状态机，原意图重试且目标变化后生成新标识', async () => {
     const h = harness(), { result } = renderHook(() => useAdminWrite('document-space:7'), { wrapper: h.wrapper });
     await h.ready();
-    const first = start(() => result.current, spaceWrites.relocate('7', '2', '3'));
+    const first = start(() => result.current, spaceWrites.relocate('7', '2', '3', null, 0));
     const original = idOf(h.calls[0]);
     await act(async () => { offline(h.calls[0]); await first; });
     expect(h.calls).toHaveLength(1);
@@ -45,7 +45,7 @@ describe('共用写操作状态与请求绑定', () => {
     act(() => { retry = result.current.retry(); });
     expect(idOf(h.calls[1])).toBe(original); expect(h.calls[1].init.body).toBe(h.calls[0].init.body);
     await act(async () => { offline(h.calls[1]); await retry; });
-    const changed = start(() => result.current, spaceWrites.relocate('7', '2', '4'));
+    const changed = start(() => result.current, spaceWrites.relocate('7', '2', '4', null, 0));
     expect(idOf(h.calls[2])).not.toBe(original);
     await act(async () => { h.calls[2].reply.resolve(json(null)); await changed; });
   });

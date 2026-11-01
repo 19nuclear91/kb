@@ -42,7 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class DocumentRelocationControllerTest {
 
-    private static final String BODY = "{\"fromSpaceId\":1,\"toSpaceId\":2}";
+    private static final String BODY = "{\"fromSpaceId\":1,\"toSpaceId\":2,\"targetCategoryId\":null,\"expectedMetadataVersion\":0}";
 
     private final DocumentRelocationService relocations = mock(DocumentRelocationService.class);
 
@@ -57,9 +57,20 @@ class DocumentRelocationControllerTest {
     }
 
     @Test
+    void oldMissingFieldsDuplicatesAndNonIntegerVersionsAreRejected() throws Exception {
+        for (String body : List.of("{\"fromSpaceId\":1,\"toSpaceId\":2}",
+                BODY.replace("\"targetCategoryId\":null,", ""), BODY.replace("\"expectedMetadataVersion\":0", "\"expectedMetadataVersion\":1.5"),
+                BODY.replace("\"targetCategoryId\":null", "\"targetCategoryId\":null,\"targetCategoryId\":1"))) {
+            mvc().perform(patch("/api/admin/documents/10/space").header("X-Request-Id", "id")
+                    .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+        }
+        verify(relocations, never()).relocate(anyLong(), anyLong(), anyLong(), any(), any(), any(), any(), anyLong());
+    }
+
+    @Test
     @DisplayName("搬迁成功：回执带原归属、新归属、清除条数与密级受阻数")
     void successfulRelocationReturnsTheReceipt() throws Exception {
-        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq(null), any(), eq("hdr-1")))
+        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq(null), any(), eq("hdr-1"), eq(null), eq(0L)))
                 .thenReturn(new DocumentRelocationResult(10L, 1L, 2L, 2,
                         List.of("3:5:view", "1:8:download"), false, 1L, false));
 
@@ -80,7 +91,7 @@ class DocumentRelocationControllerTest {
     @Test
     @DisplayName("请求标识可以只来自请求头")
     void requestIdMayComeFromHeader() throws Exception {
-        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq(null), any(), eq("hdr-9")))
+        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq(null), any(), eq("hdr-9"), eq(null), eq(0L)))
                 .thenReturn(new DocumentRelocationResult(10L, 1L, 2L, 0, List.of(), false, 0L, false));
 
         mvc().perform(patch("/api/admin/documents/10/space")
@@ -91,18 +102,13 @@ class DocumentRelocationControllerTest {
     }
 
     @Test
-    @DisplayName("请求体里的 requestId 优先于请求头")
-    void bodyRequestIdWinsOverHeader() throws Exception {
-        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq(null), any(), eq("body-1")))
-                .thenReturn(new DocumentRelocationResult(10L, 1L, 2L, 0, List.of(), false, 0L, false));
-
+    @DisplayName("头体请求标识不一致时拒绝")
+    void bodyRequestIdMustMatchHeader() throws Exception {
         mvc().perform(patch("/api/admin/documents/10/space")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Request-Id", "hdr-1")
-                        .content("{\"fromSpaceId\":1,\"toSpaceId\":2,\"requestId\":\"body-1\"}"))
-                .andExpect(status().isOk());
-
-        verify(relocations).relocate(10L, 1L, 2L, null, null, "body-1");
+                        .content(BODY.replace("}", ",\"requestId\":\"body-1\"}")))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -113,13 +119,13 @@ class DocumentRelocationControllerTest {
                         .content(BODY))
                 .andExpect(status().isBadRequest());
 
-        verify(relocations, never()).relocate(anyLong(), anyLong(), anyLong(), any(), any(), anyString());
+        verify(relocations, never()).relocate(anyLong(), anyLong(), anyLong(), any(), any(), anyString(), any(), anyLong());
     }
 
     @Test
     @DisplayName("缺少某一侧 manage 资格：403，错误消息说明搬迁需要管理资格")
     void missingManageOnEitherSideIsForbidden() throws Exception {
-        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq(null), any(), eq("req-403")))
+        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq(null), any(), eq("req-403"), eq(null), eq(0L)))
                 .thenThrow(IdentityException.forbidden(
                         "搬迁文档需要目标空间（2）的 manage 管理资格；edit 不足以把文档推送给另一个空间的全部受众"));
 
@@ -135,7 +141,7 @@ class DocumentRelocationControllerTest {
     @Test
     @DisplayName("目标空间不存在：404")
     void missingTargetSpaceIsNotFound() throws Exception {
-        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq(null), any(), eq("req-404")))
+        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq(null), any(), eq("req-404"), eq(null), eq(0L)))
                 .thenThrow(IdentityException.notFound("目标空间不存在或已删除"));
 
         mvc().perform(patch("/api/admin/documents/10/space")
@@ -148,7 +154,7 @@ class DocumentRelocationControllerTest {
     @Test
     @DisplayName("声明的当前所属空间与实际不符：409，不塌成 400 或 403")
     void declaredSourceMismatchIsConflict() throws Exception {
-        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq(null), any(), eq("req-409")))
+        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq(null), any(), eq("req-409"), eq(null), eq(0L)))
                 .thenThrow(IdentityException.conflict(IdentityErrorCode.CONFLICT,
                         "文档当前不在声明的源空间 1 内，可能已被他人搬走；请重新读取归属后再决定是否搬迁"));
 
@@ -164,7 +170,7 @@ class DocumentRelocationControllerTest {
     @Test
     @DisplayName("请求夹带密级：400，并说明密级调整是独立操作")
     void requestCarryingSecurityLevelIsBadRequest() throws Exception {
-        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq((short) 3), any(), eq("req-400")))
+        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq((short) 3), any(), eq("req-400"), eq(null), eq(0L)))
                 .thenThrow(IdentityException.badRequest(
                         "搬迁不修改文档密级；密级调整是独立的、受全局管理员保护的操作，不能夹带在搬迁请求里"));
 
@@ -192,13 +198,13 @@ class DocumentRelocationControllerTest {
                 .header("X-Request-Id", "req-1")
                 .content("{\"fromSpaceId\":0,\"toSpaceId\":2}"));
 
-        verify(relocations, never()).relocate(anyLong(), anyLong(), anyLong(), any(), any(), anyString());
+        verify(relocations, never()).relocate(anyLong(), anyLong(), anyLong(), any(), any(), anyString(), any(), anyLong());
     }
 
     @Test
     @DisplayName("重放回执把 replayed 置位，状态仍是 200")
     void replayedRelocationIsStillOk() throws Exception {
-        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq(null), any(), eq("req-replay")))
+        when(relocations.relocate(eq(10L), eq(1L), eq(2L), eq(null), any(), eq("req-replay"), eq(null), eq(0L)))
                 .thenReturn(new DocumentRelocationResult(10L, 1L, 2L, 2,
                         List.of("3:5:view"), false, 0L, true));
 

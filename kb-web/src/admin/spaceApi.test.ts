@@ -25,12 +25,12 @@ describe('空间与文档管理契约', () => {
   });
   it('十一类写入的形状、精确数值和请求头绑定', () => {
     const person = { principalType: 'USER' as const, principalId: '9007199254740993', label: '甲' };
-    const writes = [spaceWrites.create('s', '空间', ''), spaceWrites.update('7', '空间', '', 9007199254740995n), spaceWrites.archive('7', true, 1), spaceWrites.archive('7', false, 2), spaceWrites.delete('7'), spaceWrites.grant('spaces', '7', person, 'manage'), spaceWrites.revoke('spaces', '7', person, 'view'), spaceWrites.grant('documents', '8', person, 'edit'), spaceWrites.revoke('documents', '8', person, 'download'), spaceWrites.relocate('8', '7', '9'), spaceWrites.security('8', 2, 9007199254740995n, '  原因  ')];
+    const writes = [spaceWrites.create('s', '空间', ''), spaceWrites.update('7', '空间', '', 9007199254740995n), spaceWrites.archive('7', true, 1), spaceWrites.archive('7', false, 2), spaceWrites.delete('7'), spaceWrites.grant('spaces', '7', person, 'manage'), spaceWrites.revoke('spaces', '7', person, 'view'), spaceWrites.grant('documents', '8', person, 'edit'), spaceWrites.revoke('documents', '8', person, 'download'), spaceWrites.relocate('8', '7', '9', null, 9007199254740995n), spaceWrites.security('8', 2, 9007199254740995n, '  原因  ')];
     expect(writes).toHaveLength(11); expect(writes[4].body).toBeUndefined();
     for (const write of writes) expect(write.body ?? {}).not.toHaveProperty('requestId');
     expect(encodeJson(writes[1].body)).toContain('"version":9007199254740995');
     expect(encodeJson(writes[5].body)).toContain('"principalId":9007199254740993');
-    expect(writes[9].body).toEqual({ fromSpaceId: 7n, toSpaceId: 9n });
+    expect(writes[9].body).toEqual({ fromSpaceId: 7n, toSpaceId: 9n, targetCategoryId: null, expectedMetadataVersion: 9007199254740995n });
     expect(decodeJson(encodeJson(writes[10].body))).toMatchObject({ securityVersion: 9007199254740995n, reason: '原因' });
     expect(() => spaceWrites.grant('documents', '8', person, 'manage')).toThrow();
     // comment 在空间与文档例外均可授予；review 只属于空间，文档例外不接受。
@@ -42,6 +42,6 @@ describe('空间与文档管理契约', () => {
     expect(() => spaceWrites.security('8', 2, 0, '😀'.repeat(500))).not.toThrow();
     expect(() => spaceWrites.security('8', 2, 0, '😀'.repeat(501))).toThrow();
     expect(() => spaceWrites.create('', '空间', '')).toThrow(); expect(() => spaceWrites.create('x'.repeat(65), '空间', '')).toThrow();
-    expect(() => spaceWrites.relocate('8', '7', '7')).toThrow();
+    expect(() => spaceWrites.relocate('8', '7', '7', null, 0)).toThrow();
   });
 });

@@ -98,6 +98,12 @@ public enum AuditScope {
     DOC_ACL_REVOKE("doc-acl"),
 
     DOCUMENT_RELOCATE("document"),
+    DOCUMENT_METADATA_UPDATE("document"),
+    DOCUMENT_CATEGORY_CREATE("document-category"),
+    DOCUMENT_CATEGORY_UPDATE("document-category"),
+    DOCUMENT_CATEGORY_DELETE("document-category"),
+    DOCUMENT_TAG_CREATE("document-tag"),
+    DOCUMENT_TAG_UPDATE("document-tag"),
     DOCUMENT_SECURITY_LEVEL_CHANGE("document"),
 
     PARSE_DEAD_LETTER_QUERY("PARSE_DEAD_LETTER"),

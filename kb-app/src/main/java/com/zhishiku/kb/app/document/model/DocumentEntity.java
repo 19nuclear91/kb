@@ -35,6 +35,15 @@ public class DocumentEntity {
     @Schema(description = "文档标题", example = "架构说明")
     private String title;
 
+    @Schema(description = "文档级人工摘要")
+    private String summary;
+
+    @Schema(description = "本空间分类 ID，null 表示未分类")
+    private Long categoryId;
+
+    @Schema(description = "独立资料版本")
+    private Long metadataVersion;
+
     @Schema(description = "文档密级：0 公开，1 内部，2 保密，3 机密", example = "1")
     private Short securityLevel;
 

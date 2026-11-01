@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.document.metadata.mapper.CategoryMapper">
+    <select id="visibleChildren" resultType="com.zhishiku.kb.app.document.metadata.model.CategoryRow">
+        <bind name="aclPermission" value="'view'"/>
+        WITH RECURSIVE visible_nodes AS (
+            SELECT c.id, c.parent_id FROM kb_document_category c
+            WHERE c.space_id = #{spaceId} AND EXISTS (
+                SELECT 1 FROM kb_document d WHERE d.space_id = c.space_id AND d.category_id = c.id
+                AND d.status NOT IN ('deleted', 'archived') AND d.security_level &lt;= #{clearance}
+                AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+                AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.parentVersionVisibility"/>
+            )
+            UNION
+            SELECT p.id, p.parent_id FROM kb_document_category p JOIN visible_nodes n ON p.id = n.parent_id
+            WHERE p.space_id = #{spaceId}
+        )
+        SELECT c.id, c.space_id, c.parent_id, c.name, c.normalized_name, c.sort_order, c.created_at, c.updated_at
+        FROM kb_document_category c WHERE c.space_id = #{spaceId} AND c.id IN (SELECT id FROM visible_nodes)
+        <choose>
+            <when test="parentId != null">AND c.parent_id = #{parentId}</when>
+            <otherwise>AND c.parent_id IS NULL</otherwise>
+        </choose>
+        <if test="afterId != null">AND (c.sort_order, c.id) &gt; (#{afterOrder}, #{afterId})</if>
+        ORDER BY c.sort_order, c.id LIMIT #{limit}
+    </select>
+    <select id="children" resultType="com.zhishiku.kb.app.document.metadata.model.CategoryRow">
+        SELECT id, space_id, parent_id, name, normalized_name, sort_order, created_at, updated_at
+        FROM kb_document_category WHERE space_id = #{spaceId}
+        <choose>
+            <when test="parentId != null">AND parent_id = #{parentId}</when>
+            <otherwise>AND parent_id IS NULL</otherwise>
+        </choose>
+        <if test="afterId != null">AND (sort_order, id) &gt; (#{afterOrder}, #{afterId})</if>
+        ORDER BY sort_order, id LIMIT #{limit}
+    </select>
+</mapper>

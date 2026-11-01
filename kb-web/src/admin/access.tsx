@@ -82,6 +82,7 @@ export const perm = {
   auditRead: 'audit:read',
   aiUsageRead: 'ai:usage:read', aiAuditRead: 'ai:audit:read',
   operationsReportsRead: 'operations:reports:read',
+  tagRead: 'document:tag:read', tagWrite: 'document:tag:write',
 } as const;
 export const canOpenSpaces = (access: AdminAccess) => (access.spaceStatus === 'ready' && access.spaces.length > 0) || access.has(perm.spaceCreate) || access.has(perm.spaceManageAll);
 export const adminNavigation = [
@@ -95,6 +96,7 @@ export const adminNavigation = [
   { path: '/admin/ai/usage', label: 'AI 用量', mark: 'A8', visible: (access: AdminAccess) => access.has(perm.aiUsageRead) },
   { path: '/admin/ai/audits', label: 'AI 调用审计', mark: 'A9', visible: (access: AdminAccess) => access.has(perm.aiAuditRead) },
   { path: '/admin/reports/operations', label: '运营概览', mark: 'A10', visible: (access: AdminAccess) => access.has(perm.operationsReportsRead) },
+  { path: '/admin/document-tags', label: '全局标签', mark: 'A11', visible: (access: AdminAccess) => access.has(perm.tagRead) },
 ] as const;
 export function AdminNavigation() {
   const access = useAdminAccess();

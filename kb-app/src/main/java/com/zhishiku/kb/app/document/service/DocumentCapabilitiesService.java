@@ -52,7 +52,7 @@ public class DocumentCapabilitiesService {
                     PermissionService.PERM_DOWNLOAD);
             boolean edit = matches(documentId, permissions.resolve(handle, PermissionService.PERM_EDIT),
                     PermissionService.PERM_EDIT);
-            return new DocumentCapabilities(documentId, download, edit, edit, edit);
+            return new DocumentCapabilities(documentId, download, edit, edit, edit, edit);
         } catch (ApiException | QueryException expected) {
             throw expected;
         } catch (RuntimeException unavailable) {

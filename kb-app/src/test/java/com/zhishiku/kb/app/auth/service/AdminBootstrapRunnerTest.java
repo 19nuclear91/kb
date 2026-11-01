@@ -179,6 +179,8 @@ class AdminBootstrapRunnerTest {
         verify(rolePermissions).grantPermission(11L, "embedding:read");
         verify(rolePermissions).grantPermission(11L, "embedding:rebuild");
         verify(rolePermissions).grantPermission(11L, "operations:reports:read");
+        verify(rolePermissions).grantPermission(11L, "document:tag:read");
+        verify(rolePermissions).grantPermission(11L, "document:tag:write");
 
         ArgumentCaptor<String> requestIds = ArgumentCaptor.forClass(String.class);
         verify(audit, times(Permission.codes().size() + 4)).success(any(), requestIds.capture(), isNull(), any(),
@@ -275,7 +277,7 @@ class AdminBootstrapRunnerTest {
                         .filter(code -> !code.equals("document:security-level:write")
                                 && !code.startsWith("embedding:") && !code.equals("audit:read")
                                 && !code.equals("identity:external:read") && !code.startsWith("ai:")
-                                && !code.equals("operations:reports:read")).toList());
+                                && !code.equals("operations:reports:read") && !code.startsWith("document:tag:")).toList());
         when(mapper.findIdentityByUsername(USERNAME)).thenReturn(credential(31L));
         when(mapper.findIdentity(31L)).thenReturn(new IdentityRecord(31L, USERNAME, "系统管理员",
                 21L, (short) 1, true, 0L, null, null));

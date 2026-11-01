@@ -97,8 +97,8 @@ function AuditDrawer({ query }: { query: AuditQuery }) {
     ]} />
       {!data.summaryAvailable ? <Alert type="info" title="该事件的摘要不可用，以上为已记录的安全元数据。" /> : data.changes.length === 0 ? <p>无可展示变更。</p>
         : <Table<AuditChange & { key: number }> rowKey="key" pagination={false} size="small" dataSource={data.changes.map((change, key) => ({ ...change, key }))} columns={[
-          { title: '字段', dataIndex: 'field' }, { title: '变更前', render: (_, change) => <span className="content-text">{auditValue(change.before)}</span> },
-          { title: '变更后', render: (_, change) => <span className="content-text">{auditValue(change.after)}</span> },
+          { title: '字段', dataIndex: 'field' }, { title: '变更前', render: (_, change) => <span className="content-text">{auditValue(change.before, change.field)}</span> },
+          { title: '变更后', render: (_, change) => <span className="content-text">{auditValue(change.after, change.field)}</span> },
         ]} />}
     </>}
   </Drawer>;

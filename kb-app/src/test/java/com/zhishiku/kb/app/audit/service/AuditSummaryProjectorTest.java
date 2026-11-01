@@ -53,6 +53,12 @@ class AuditSummaryProjectorTest {
                 case DOCUMENT_SECURITY_LEVEL_CHANGE ->
                         "{\"securityLevel\":4,\"securityVersion\":1,\"expectedSecurityVersion\":0," +
                                 "\"title\":\"private-title\"}";
+                case DOCUMENT_METADATA_UPDATE ->
+                        "{\"categoryId\":null,\"tagIds\":[1,2],\"metadataVersion\":1,\"changedFields\":[\"title\"],\"title\":\"private-title\"}";
+                case DOCUMENT_CATEGORY_CREATE, DOCUMENT_CATEGORY_UPDATE, DOCUMENT_CATEGORY_DELETE ->
+                        "{\"categoryId\":1,\"spaceId\":2,\"parentId\":null,\"sortOrder\":0,\"treeVersion\":1,\"nameChanged\":true,\"name\":\"private-name\"}";
+                case DOCUMENT_TAG_CREATE, DOCUMENT_TAG_UPDATE ->
+                        "{\"tagId\":1,\"version\":0,\"enabled\":true,\"nameChanged\":true,\"name\":\"private-name\"}";
                 case PARSE_DEAD_LETTER_QUERY, PARSE_DEAD_LETTER_REPLAY ->
                         "{\"status\":\"REPLAYED\",\"reason\":\"private-reason\"}";
             };
@@ -106,6 +112,38 @@ class AuditSummaryProjectorTest {
     private static IdentityAuditRecord row(String scope, String before, String after) {
         return new IdentityAuditRecord(1L, UUID.randomUUID(), scope, "request", null, "user", null,
                 "operation", "SUCCESS", before, after, "private-reason", Instant.EPOCH);
+    }
+
+    @Test
+    void metadataCollectionsAreBoundedExactAndDoNotExposeContent() throws Exception {
+        var projector = new AuditSummaryProjector();
+        var detail = projector.detail(row("DOCUMENT_METADATA_UPDATE",
+                "{\"tagIds\":[9223372036854775807],\"categoryId\":null,\"metadataVersion\":0}",
+                "{\"tagIds\":[],\"categoryId\":null,\"metadataVersion\":1,\"changedFields\":[\"title\",\"tagIds\"],\"summary\":\"private-content\"}"));
+        assertThat(detail.summaryAvailable()).isTrue();
+        assertThat(detail.changes()).anySatisfy(change -> {
+            assertThat(change.field()).isEqualTo("tagIds");
+            assertThat(change.before()).isEqualTo(List.of(Long.MAX_VALUE));
+            assertThat(change.after()).isEqualTo(List.of());
+        });
+        assertThat(new ObjectMapper().findAndRegisterModules().writeValueAsString(detail)).doesNotContain("private-content");
+        for (String bad : List.of("{\"tagIds\":[1,1]}", "{\"tagIds\":[null]}", "{\"tagIds\":[{}]}",
+                "{\"tagIds\":[\"name\"]}", "{\"changedFields\":[\"spaceId\"]}", "{\"changedFields\":[\"title\",\"title\"]}")) {
+            assertThat(projector.detail(row("DOCUMENT_METADATA_UPDATE", "{}", bad)).summaryAvailable()).isFalse();
+        }
+    }
+
+    @Test
+    void historicalMissingCategoryDoesNotBecomeExplicitUncategorized() {
+        var projector = new AuditSummaryProjector();
+        assertThat(projector.detail(row("DOCUMENT_RELOCATE", "{\"spaceId\":1}", "{\"spaceId\":2}")).changes())
+                .noneMatch(change -> change.field().equals("categoryId") || change.field().equals("metadataVersion"));
+        assertThat(projector.detail(row("DOCUMENT_RELOCATE", "{\"categoryId\":null}", "{\"categoryId\":null}")).changes())
+                .anySatisfy(change -> {
+                    assertThat(change.field()).isEqualTo("categoryId");
+                    assertThat(change.before()).isNull();
+                    assertThat(change.after()).isNull();
+                });
     }
 
     @Test

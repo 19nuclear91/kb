@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { Session } from '../session';
 import type { Citation } from '../types';
-import { deferred } from '../test/fixtures';
+import { deferred, json } from '../test/fixtures';
 import { ApiError } from '../api';
 const context = vi.hoisted(() => ({ session: {} as Session, state: { phase: 'ready', epoch: 1 } }));
 vi.mock('../SessionProvider', () => ({ useSession: () => context }));
@@ -12,7 +12,9 @@ vi.mock('../CitationDrawer', () => ({ CitationDrawer: ({ citation }: { citation:
 vi.mock('../FileAccess', () => ({ FilePreview: ({ path }: { path: string | null }) => <div data-testid="preview">{path ?? 'closed'}</div>, DownloadButton: () => <button>下载原件</button> }));
 import { DocumentsPage, DocumentDetailPage } from '../pages/Documents';
 import { SearchPage } from '../pages/Search';
-beforeEach(() => { context.session = { post: vi.fn(), json: vi.fn() } as unknown as Session; });
+beforeEach(() => { context.session = { post: vi.fn(), json: vi.fn(), getSnapshot: () => context.state, subscribe: () => () => {},
+  send: vi.fn().mockImplementation(async (path: string) => path === '/api/documents/query' ? json({ page: 1, size: 20, items: [doc], total: 1 })
+    : path.endsWith('/metadata') ? new Response(null, { status: 503 }) : json({ items: [], nextCursor: null, hasMore: false })) } as unknown as Session; });
 const doc = { id: '1', spaceId: '9', title: '受保护标题', securityLevel: 1, currentVersionId: '11', currentVersionNo: 1,
   versions: [{ id: '11', versionNo: 1, current: true, indexStatus: 'indexed', fileName: 'v1.pdf' }] };
 
@@ -40,8 +42,8 @@ it('详情收藏核对确认不可访问后，版本标题与打开的预览被�
   render(<MemoryRouter initialEntries={['/documents/1']}><Routes><Route path="/documents/:documentId" element={<DocumentDetailPage />} /></Routes></MemoryRouter>);
   await screen.findByText(doc.title); await waitFor(() => expect((screen.getByRole('button', { name: '预览选中版本' }) as HTMLButtonElement).disabled).toBe(false)); fireEvent.click(screen.getByRole('button', { name: '预览选中版本' }));
   expect(screen.getByTestId('preview').textContent).toContain('/versions/11/preview');
-  await act(async () => pending.resolve({ items: [] })); await screen.findByText('文档当前不可查看');
-  expect(screen.queryByText(doc.title)).toBeNull(); expect(screen.queryByText('v1.pdf')).toBeNull(); expect(screen.getByTestId('preview').textContent).toBe('closed');
+  await act(async () => pending.resolve({ items: [] })); await screen.findByText('文档当前不可访问。');
+  expect(screen.queryByText(doc.title)).toBeNull(); expect(screen.queryByText('v1.pdf')).toBeNull(); expect(screen.queryByTestId('preview')).toBeNull();
 });
 
 it('同文档搜索分块只查一次收藏，操作后保持原排序和引用版本', async () => {

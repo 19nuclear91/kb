@@ -50,6 +50,25 @@ public class IdentityAuditService {
                 IdentityWriteSupport.requestId(requestId));
     }
 
+    /** 调用方已串行化并核对请求绑定，任何写入失败直接传播。 */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public IdentityAuditRecord appendSuccess(AuditScope scope, String requestId, long actorUserId,
+                                              long targetId, String operation, String beforeState, String afterState) {
+        AuditScope normalizedScope = requireScope(scope);
+        String request = IdentityWriteSupport.requestId(requestId);
+        String action = IdentityWriteSupport.required(operation, "operation");
+        String before = safeJson(beforeState);
+        String after = safeJson(afterState);
+        UUID eventId = UUID.randomUUID();
+        Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+        if (mapper.insert(eventId, normalizedScope.name(), request, actorUserId, normalizedScope.targetType(),
+                targetId, action, "SUCCESS", before, after, null, now) != 1) {
+            throw new IllegalStateException("审计事件写入失败");
+        }
+        return new IdentityAuditRecord(null, eventId, normalizedScope.name(), request, actorUserId,
+                normalizedScope.targetType(), targetId, action, "SUCCESS", before, after, null, now);
+    }
+
     /**
      * 带原因的严格追加入口：调用者须在同一事务内串行化请求并完成精确重放判断。
      * 唯一键或其他写入错误直接向外传播，由业务事务整体回滚。

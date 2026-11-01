@@ -1,7 +1,12 @@
 package com.zhishiku.kb.app.space.web.dto;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.zhishiku.kb.app.document.metadata.web.MetadataInput;
+import com.zhishiku.kb.common.security.IdentityException;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Positive;
+
+import java.util.Set;
 
 /**
  * 文档搬迁请求。
@@ -31,5 +36,22 @@ public record DocumentRelocationRequest(
         String requestId,
         @Schema(description = "不接受：搬迁不修改密级，密级调整是独立的受保护操作。"
                 + "本字段只为把夹带密级的请求显式拒掉而存在")
-        Short securityLevel) {
+        Short securityLevel,
+        @Schema(description = "目标分类，必须显式存在；null 表示未分类") Long targetCategoryId,
+        @Schema(description = "预期文档资料版本") long expectedMetadataVersion) {
+
+    public static DocumentRelocationRequest parse(ObjectNode body, String header) {
+        MetadataInput.fields(body, Set.of("fromSpaceId", "toSpaceId", "targetCategoryId", "expectedMetadataVersion", "requestId"),
+                Set.of("fromSpaceId", "toSpaceId", "targetCategoryId", "expectedMetadataVersion"));
+        String bodyId = body.has("requestId") ? MetadataInput.requestId(MetadataInput.rawText(body.get("requestId"))) : null;
+        String headerId = header == null ? null : MetadataInput.requestId(header);
+        if (bodyId != null && headerId != null && !bodyId.equals(headerId)) {
+            throw IdentityException.badRequest("头体请求标识不一致");
+        }
+        String requestId = MetadataInput.requestId(bodyId == null ? headerId : bodyId);
+        return new DocumentRelocationRequest(MetadataInput.number(body.get("fromSpaceId"), 1, Long.MAX_VALUE),
+                MetadataInput.number(body.get("toSpaceId"), 1, Long.MAX_VALUE), requestId, null,
+                MetadataInput.nullableId(body.get("targetCategoryId")),
+                MetadataInput.number(body.get("expectedMetadataVersion"), 0, Long.MAX_VALUE));
+    }
 }

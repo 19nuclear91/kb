@@ -56,6 +56,9 @@ class ReviewResponsePolicyTest {
                 "/api/documents/7/versions/8/review", "/api/documents/7/versions/8/reviews/bad/approve",
                 "/api/documents/7/progress", "/api/admin/spaces/7/publication-policy",
                 "/api/documents/7/versions/8/comments", "/api/documents/x/versions/y/comments/bad/replies",
-                "/api/documents/7/versions/8/comments/00000000-0000-0000-0000-000000000001");
+                "/api/documents/7/versions/8/comments/00000000-0000-0000-0000-000000000001",
+                "/api/documents/query", "/api/documents/query/categories", "/api/documents/7/metadata",
+                "/api/admin/document-tags/query", "/api/admin/spaces/7/categories/8",
+                "/api/admin/documents/7/relocation-context");
     }
 }

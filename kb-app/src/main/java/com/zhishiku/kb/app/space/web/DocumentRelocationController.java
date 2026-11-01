@@ -4,16 +4,19 @@ import com.zhishiku.kb.app.space.service.DocumentRelocationService;
 import com.zhishiku.kb.app.space.web.dto.DocumentRelocationRequest;
 import com.zhishiku.kb.common.api.R;
 import com.zhishiku.kb.common.security.DocumentRelocationResult;
-import com.zhishiku.kb.common.security.IdentityException;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.zhishiku.kb.app.document.metadata.web.MetadataInput;
+import com.zhishiku.kb.app.document.metadata.service.MetadataException;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -47,7 +50,7 @@ public class DocumentRelocationController {
      * 例外授权不可恢复"这类必须被调用方看见的后果就讲不全了。
      *
      * @param documentId 文档内部 ID；鉴权按服务端解析出的实际归属判定
-     * @param request    声明的当前归属、目标空间与请求幂等标识
+     * @param raw        严格解码的空间、分类、资料版本与请求标识
      * @param header     请求头 {@code X-Request-Id}；当请求体未提供标识时作为回退值
      * @return 搬迁回执：原归属、新归属、被清除的例外条数与摘要、目标空间中因密级
      * 当前看不到该文档的主体数
@@ -62,7 +65,8 @@ public class DocumentRelocationController {
                     + "搬迁不修改文档密级，请求夹带密级即返回 400。"
                     + "回执中的 clearanceBlockedPrincipalCount 不为 0 不代表搬迁失败，"
                     + "它只说明目标空间里有主体的密级低于该文档密级。"
-                    + "请求必须声明 fromSpaceId 与 X-Request-Id（或请求体 requestId）；"
+                     + "请求必须声明 fromSpaceId、targetCategoryId（可显式 null）、expectedMetadataVersion"
+                     + "与 X-Request-Id（或请求体 requestId，头体同时提供须一致）；"
                     + "重复提交返回首次结果，不会再次清除例外")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "搬迁成功，或命中同一请求标识的重放"),
@@ -75,23 +79,28 @@ public class DocumentRelocationController {
     })
     public R<DocumentRelocationResult> relocate(
             @PathVariable @Positive long documentId,
-            @Valid @RequestBody DocumentRelocationRequest request,
+            HttpServletRequest raw,
             @RequestHeader(value = "X-Request-Id", required = false) String header) {
+        DocumentRelocationRequest request = DocumentRelocationRequest.parse(MetadataInput.body(raw, MetadataInput.WRITE_LIMIT), header);
         return R.ok(relocations.relocate(documentId, request.fromSpaceId(), request.toSpaceId(),
-                request.securityLevel(), null, requestId(request.requestId(), header)));
+                request.securityLevel(), null, request.requestId(), request.targetCategoryId(), request.expectedMetadataVersion()));
     }
 
-    /**
-     * 请求体优先，请求头回退；两处都没有就是 400。
-     *
-     * <p>搬迁缺幂等标识的代价比别处重：一次超时重投会第二次清空例外，把目标空间管理员
-     * 刚授出的授权一并清掉。所以这里不给默认值，也不生成一个服务端标识。
-     */
-    private static String requestId(String body, String header) {
-        String value = body == null || body.isBlank() ? header : body;
-        if (value == null || value.isBlank()) {
-            throw IdentityException.badRequest("缺少请求标识 requestId");
-        }
-        return value;
+    @ExceptionHandler(MetadataException.class)
+    public ResponseEntity<ProtocolFailure> metadataFailure(MetadataException error) {
+        String reason = switch (error.reason()) {
+            case METADATA_VERSION_CONFLICT -> "INVALID_VERSION";
+            case CATEGORY_UNAVAILABLE -> "INVALID_PARENT";
+            case REQUEST_MISMATCH -> "CONFLICT";
+            case INVALID_INPUT -> "INVALID_REQUEST";
+            default -> error.reason().name();
+        };
+        return ResponseEntity.status(error.reason().status()).header("Cache-Control", "no-store")
+                .body(new ProtocolFailure(R.FAILURE, error.getMessage(), null, reason));
     }
+
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    public record ProtocolFailure(int code, String message, Object data, String reasonCode) {
+    }
+
 }

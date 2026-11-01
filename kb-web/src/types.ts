@@ -6,7 +6,7 @@ export interface LoginResult extends Credential { mustChangePassword: boolean; u
 export interface QueryPage<T> { items: T[]; hasMore?: boolean; nextCursor: string | null }
 export interface Space { spaceId: Id; name: string; archived: boolean; viewable: boolean; manageable: boolean }
 export interface UploadSpace { spaceId: Id; name: string }
-export interface Capabilities { documentId: Id; canDownload: boolean; canUploadVersion: boolean; canRetry: boolean; canDelete?: boolean }
+export interface Capabilities { documentId: Id; canDownload: boolean; canUploadVersion: boolean; canRetry: boolean; canDelete?: boolean; canEditMetadata?: boolean }
 export interface Progress {
   versionId: Id; versionNo: number; indexStatus: string; taskStatus?: string; waitingReason?: string;
   publicationPolicy?: 'AUTO' | 'REVIEW_REQUIRED'; publicationEvidence?: 'NONE' | 'PUBLISHED' | 'OBSERVED_CURRENT';

@@ -2,11 +2,12 @@ import { ApiError, positiveId, readJson } from '../api';
 import type { Session } from '../session';
 
 export type AuditScalar = string | boolean | number | bigint | null;
+export type AuditValue = AuditScalar | string[];
 export interface AuditMetadata {
   id: string; eventId: string; operationScope: string; requestId: string; actorUserId: string | null;
   targetType: string; targetId: string | null; operation: string; status: string; createdAt: string; attemptedUsername: string | null;
 }
-export interface AuditChange { field: string; before: AuditScalar; after: AuditScalar }
+export interface AuditChange { field: string; before: AuditValue; after: AuditValue }
 export interface AuditDetail { metadata: AuditMetadata; changes: AuditChange[]; summaryAvailable: boolean }
 export interface AuditWindow { from: string; to: string }
 export interface AuditPage extends AuditWindow { items: AuditMetadata[]; hasMore: boolean; nextCursor: string | null }
@@ -100,6 +101,20 @@ function scalar(value: unknown): AuditScalar {
   if (typeof value === 'bigint' && value >= -maxLong - 1n && value <= maxLong) return value;
   throw broken();
 }
+function changeValue(field: string, value: unknown): AuditValue {
+  if (!Array.isArray(value)) return scalar(value);
+  if (!['tagIds', 'changedFields'].includes(field) || value.length > (field === 'tagIds' ? 20 : 4)) throw broken();
+  const items = value.map(item => {
+    if (field === 'changedFields') {
+      if (typeof item !== 'string' || !['title', 'summary', 'categoryId', 'tagIds'].includes(item)) throw broken();
+      return item;
+    }
+    if (typeof item !== 'bigint' && !(typeof item === 'number' && Number.isSafeInteger(item))) throw broken();
+    try { return positiveId(String(item)); } catch { throw broken(); }
+  });
+  if (new Set(items).size !== items.length) throw broken();
+  return items;
+}
 /** 403 先交付页面清理，身份核对由页面在清理后触发；保持其他 Session 请求的默认行为。 */
 async function auditJson(session: Session, path: string, signal: AbortSignal): Promise<unknown> {
   const epoch = session.getSnapshot().epoch;
@@ -127,10 +142,11 @@ export async function auditDetail(session: Session, eventId: string, signal: Abo
   const row = object(await auditJson(session, `${base}/${eventId}`, signal)), meta = metadata(row.metadata);
   if (meta.eventId !== eventId.toLowerCase() || typeof row.summaryAvailable !== 'boolean' || !Array.isArray(row.changes)) throw broken();
   const changes = row.summaryAvailable ? row.changes.map(value => {
-    const change = object(value); return { field: text(change.field), before: scalar(change.before), after: scalar(change.after) };
+    const change = object(value), field = text(change.field); return { field, before: changeValue(field, change.before), after: changeValue(field, change.after) };
   }) : [];
   return { metadata: meta, changes, summaryAvailable: row.summaryAvailable };
 }
-export function auditValue(value: AuditScalar): string {
-  return value === null ? '空值' : value === '' ? '空字符串' : String(value);
+export function auditValue(value: AuditValue, field?: string): string {
+  if (Array.isArray(value)) return value.length ? value.join('、') : '空集合';
+  return value === null ? field === 'categoryId' ? '未分类' : '空值' : value === '' ? '空字符串' : String(value);
 }

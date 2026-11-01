@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 
 /**
  * 空间生命周期写操作。
@@ -78,6 +79,7 @@ public class SpaceWriteService {
         if (mapper.insertSpace(space) != 1) {
             throw IdentityException.conflict(IdentityErrorCode.CONFLICT, "空间创建失败");
         }
+        mapper.createCategoryTree(id);
         // 与空间同生共死：创建者立即成为该空间的管理员，无需再调授权接口
         mapper.grantAcl(id, (short) PrincipalType.USER.code(), effectiveActor,
                 PermissionService.PERM_MANAGE);
@@ -112,12 +114,12 @@ public class SpaceWriteService {
         return after;
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public SpaceSummary archive(long spaceId, long version, Long actorUserId, String requestId) {
         return setArchived(spaceId, true, version, actorUserId, requestId);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public SpaceSummary unarchive(long spaceId, long version, Long actorUserId, String requestId) {
         return setArchived(spaceId, false, version, actorUserId, requestId);
     }
@@ -131,7 +133,10 @@ public class SpaceWriteService {
         if (previous != null) return previous;
 
         requireVersion(version);
+        mapper.lockCategoryTree(spaceId);
+        authorizer.requireSpaceManager(spaceId);
         SpaceRecord before = requireSpaceForUpdate(spaceId);
+        authorizer.requireSpaceManager(spaceId);
         if (versionOf(before) != version) throw versionConflict("空间已被其他操作更新");
         if (Boolean.valueOf(archived).equals(before.getArchived())) {
             // 已是目标状态：不写乐观锁、不重复计入版本，但仍留审计以便重试可查
@@ -159,17 +164,20 @@ public class SpaceWriteService {
      * <p>空空间允许真删除，其 ACL 行由 {@code kb_space_acl} 的
      * {@code ON DELETE CASCADE} 一并移除，不留悬挂授权。
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void delete(long spaceId, Long actorUserId, String requestId) {
         long actor = authorizer.requireSpaceManager(spaceId);
         Long effectiveActor = actorUserId == null ? actor : actorUserId;
         if (replayOrNull(AuditScope.SPACE_DELETE, requestId) != null) return;
 
+        mapper.lockCategoryTree(spaceId);
+        authorizer.requireSpaceManager(spaceId);
         SpaceRecord before = requireSpaceForUpdate(spaceId);
-        long documents = mapper.countLiveDocuments(spaceId);
+        authorizer.requireSpaceManager(spaceId);
+        long documents = mapper.countReferencedDocuments(spaceId);
         if (documents > 0) {
             throw IdentityException.conflict(IdentityConflictReason.SPACE_NOT_EMPTY,
-                    "空间仍有 " + documents + " 篇文档，不能删除，请改用归档");
+                    "空间仍有文档引用，不能删除，请改用归档");
         }
         if (mapper.deleteSpace(spaceId) != 1) {
             throw IdentityException.notFound("空间不存在或已被删除");

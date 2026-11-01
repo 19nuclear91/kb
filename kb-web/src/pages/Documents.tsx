@@ -5,6 +5,9 @@ import { useSession } from '../SessionProvider';
 import { DocumentOperationContext, useDocumentOperations } from '../documents/OperationContext';
 import { DocumentOperations, operationFailure } from '../documents/operations';
 import { canDelete } from '../documents/capabilities';
+import { MetadataPanel } from '../documents/metadata/MetadataPanel';
+import { MetadataFilters } from '../documents/metadata/Filters';
+import { metadataApi, type Filters } from '../documents/metadata/api';
 import { deletionTransport, DocumentDeletion } from '../documents/deletion';
 import { DeleteConfirmation, DeletionFeedback } from '../documents/DeleteControls';
 import { consumeDocumentDeleted, rememberDocumentDeleted } from '../documents/notice';
@@ -138,6 +141,10 @@ export function UploadDialog({ open, documentId, onClose, onUploaded }: { open: 
 }
 
 export function DocumentsPage() {
+  const scope = useReviewScope();
+  return scope.active ? <DocumentsContent key={scope.key} /> : <Alert type="info" title="请先完成登录与身份确认" />;
+}
+function DocumentsContent() {
   const { session, state: identity } = useSession();
   const [deletionNotice, setDeletionNotice] = useState<number | null>(null);
   useEffect(() => {
@@ -145,17 +152,15 @@ export function DocumentsPage() {
     const timer = setTimeout(() => setDeletionNotice(null), 5000);
     return () => clearTimeout(timer);
   }, [session, identity.epoch]);
-  const [page, setPage] = useState(1), [spaceId, setSpaceId] = useState<string | undefined>();
+  const [page, setPage] = useState(1), [filters, setFilters] = useState<Filters>({});
   const [upload, setUpload] = useState(false), [submitted, setSubmitted] = useState<UploadResult | null>(null);
-  const query = useResource(signal => session.json<DocumentPage>(`/api/documents?page=${page}&size=20${spaceId ? `&spaceId=${spaceId}` : ''}`, { signal }), `${page}/${spaceId}`);
+  const query = useResource(signal => metadataApi.query(session, filters, page, signal), `${page}/${JSON.stringify(filters)}`);
   const spaces = useResource(signal => session.json<KnowledgeSpace[]>('/api/admin/spaces', { signal }), 'spaces');
   const favorites = useFavorites(query.data?.items.map(item => item.id) ?? [], query.data);
   return <><PageHeader title="文档中心" description="整理团队知识，在权限范围内发现可靠资料" extra={<Button type="primary" size="large" onClick={() => setUpload(true)}>上传文档</Button>} />
     {deletionNotice === identity.epoch && <Alert type="success" title="文档已删除" />}
     {submitted && !favorites.unavailable(submitted.documentId) && <ProgressCard key={submitted.versionId} documentId={submitted.documentId} versionId={submitted.versionId} submitted />}
-    <section className="panel"><div className="toolbar"><Select aria-label="知识空间" allowClear placeholder="全部文档" style={{ minWidth: 220 }} value={spaceId}
-      options={(spaces.data ?? []).filter(space => !space.archived && space.viewable).map(space => ({ value: space.spaceId, label: space.name }))}
-      onChange={value => { setSpaceId(value); setPage(1); }} /><span className="muted">只展示当前可查看文档</span></div>
+    <section className="panel"><MetadataFilters spaces={spaces.data ?? []} onSubmit={value => { setFilters(value); setPage(1); }} />
       {spaces.error && <Alert type="warning" title="空间目录暂不可用，仍可查看全部文档。" style={{ marginBottom: 16 }} />}
       <Feedback {...query} retry={query.reload} />{query.data && <><Table<DocumentSummary> rowKey="id" pagination={false} dataSource={query.data.items.filter(item => !favorites.unavailable(item.id))} columns={[
         { title: '文档', dataIndex: 'title', render: (title, row) => <Link to={`/documents/${row.id}`}>{title}</Link> },
@@ -210,6 +215,7 @@ function DocumentDetail({ documentId, onDelete, onInvalidate }: { documentId: st
   const detail = blocked ? undefined : query.data;
   const [selected, setSelected] = useState<string | null>(null), [revision, setRevision] = useState(0), [upload, setUpload] = useState(false), [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const [metadataTitle, setMetadataTitle] = useState<string | null>(null);
   const [versionStatus, setVersionStatus] = useState<ReviewStatus | undefined>();
   const [deniedVersions, setDeniedVersions] = useState<Set<string>>(() => new Set());
   const lock = useRef(false);
@@ -232,7 +238,7 @@ function DocumentDetail({ documentId, onDelete, onInvalidate }: { documentId: st
     setVersionStatus(undefined); setPreview(null); setSelected(null); query.reload(); capabilities.reload();
   };
   useEffect(() => { if (!canRead) setPreview(null); }, [versionId, canRead]);
-  return <><PageHeader title={detail?.title ?? '文档详情'} description="版本、处理状态与原始文件" extra={<Link to="/documents">返回文档中心</Link>} />
+  return <><PageHeader title={detail ? metadataTitle ?? detail.title : '文档详情'} description="版本、处理状态与原始文件" extra={<Link to="/documents">返回文档中心</Link>} />
     <Feedback {...query} retry={query.reload} />{blocked && <Alert type="info" title="文档当前不可查看" action={<Button onClick={query.reload}>重新读取</Button>} />}{detail && <>
       <section className="panel"><div className="toolbar"><Tag>密级 {detail.securityLevel}</Tag><span className="muted">当前发布：{detail.currentVersionNo == null ? '尚无版本' : `v${detail.currentVersionNo}`}</span></div>
         <Space wrap><FavoriteButton id={documentId} favorites={favorites} />{(adminAccess.canManageSpace(detail.spaceId) || adminAccess.has(perm.securityLevelWrite)) && <Link to={`/admin/documents/${documentId}`}>管理此文档</Link>}<Button disabled={documentState.exclusive || !capabilities.data?.canUploadVersion} onClick={() => setUpload(true)}>上传新版本</Button>
@@ -257,9 +263,11 @@ function DocumentDetail({ documentId, onDelete, onInvalidate }: { documentId: st
         {capabilities.error && <Alert style={{ marginTop: 16 }} type="warning" title="操作资格暂不可确认，相关操作已禁用。" />}
         {error && <Alert style={{ marginTop: 16 }} type="error" title={error} />}
       </section>
-      {versionId && <><VersionReviewPanel key={`${documentId}/${versionId}/${revision}`} documentId={documentId} versionId={versionId} files={false} onStatus={setVersionStatus} onDenied={loseVersion}
+      <MetadataPanel documentId={documentId} canEdit={capabilities.data?.canEditMetadata === true} onTitle={setMetadataTitle}
+        onDenied={status => { capabilities.reload(); if (status === 404) query.reload(); }} />
+      {versionId && <><VersionReviewPanel key={`review:${documentId}/${versionId}/${revision}`} documentId={documentId} versionId={versionId} files={false} onStatus={setVersionStatus} onDenied={loseVersion}
         onChanged={() => { setPreview(null); query.reload(); capabilities.reload(); setRevision(value => value + 1); }} />
-        {canRead && <ProgressCard key={`${documentId}/${versionId}/${revision}`} documentId={documentId} versionId={versionId} revision={revision} onDenied={loseVersion} />}
+        {canRead && <ProgressCard key={`progress:${documentId}/${versionId}/${revision}`} documentId={documentId} versionId={versionId} revision={revision} onDenied={loseVersion} />}
         <VersionComments key={`${documentId}/${versionId}`} documentId={documentId} versionId={versionId} status={currentStatus} /></>}
       {!versionId && <p>默认读取当前发布版本；查看候选时请从可见版本列表明确选择。</p>}
       <section className="panel"><h2>版本历史</h2><Table<Version> rowKey="id" pagination={false} dataSource={versions} columns={[

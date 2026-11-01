@@ -1,12 +1,13 @@
 package com.zhishiku.kb.app.space.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.zhishiku.kb.app.auth.model.IdentityAuditRecord;
 import com.zhishiku.kb.app.auth.service.AuditScope;
 import com.zhishiku.kb.app.auth.service.IdentityAuditService;
 import com.zhishiku.kb.app.document.service.ReviewCancellationService;
+import com.zhishiku.kb.app.document.metadata.mapper.CategoryMapper;
+import com.zhishiku.kb.app.document.metadata.mapper.MetadataMapper;
+import com.zhishiku.kb.app.document.metadata.service.MetadataAccess;
+import com.zhishiku.kb.app.document.metadata.service.MetadataCommands;
+import com.zhishiku.kb.app.document.metadata.web.MetadataInput;
 import com.zhishiku.kb.app.space.mapper.DocumentAclMapper;
 import com.zhishiku.kb.app.space.mapper.DocumentRelocationMapper;
 import com.zhishiku.kb.app.space.mapper.SpaceMapper;
@@ -22,10 +23,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.LongStream;
 
 /**
  * 文档搬迁：把一篇文档迁入另一个知识空间。
@@ -68,28 +70,33 @@ public class DocumentRelocationService {
      */
     static final int CLEARED_SUMMARY_LIMIT = 50;
 
-    /**
-     * 只用于把本类自己写出的审计状态读回来，供重放回执复原首次结果。
-     */
-    private static final ObjectMapper JSON = new ObjectMapper();
-
     private final DocumentRelocationMapper mapper;
     private final DocumentAclMapper acls;
     private final SpaceMapper spaces;
     private final SpaceAuthorizer authorizer;
     private final IdentityAuditService audit;
     private final ReviewCancellationService reviewCancellation;
+    private final CategoryMapper categories;
+    private final MetadataMapper metadata;
+    private final MetadataCommands commands;
+    private final MetadataAccess access;
 
     @Autowired
     public DocumentRelocationService(DocumentRelocationMapper mapper, DocumentAclMapper acls,
                                      SpaceMapper spaces, SpaceAuthorizer authorizer,
-                                      IdentityAuditService audit, ReviewCancellationService reviewCancellation) {
+                                      IdentityAuditService audit, ReviewCancellationService reviewCancellation,
+                                      CategoryMapper categories, MetadataMapper metadata, MetadataCommands commands,
+                                      MetadataAccess access) {
         this.mapper = mapper;
         this.acls = acls;
         this.spaces = spaces;
         this.authorizer = authorizer;
         this.audit = audit;
         this.reviewCancellation = reviewCancellation;
+        this.categories = categories;
+        this.metadata = metadata;
+        this.commands = commands;
+        this.access = access;
     }
 
     /**
@@ -98,13 +105,13 @@ public class DocumentRelocationService {
      * <p>判定顺序是有意的，不能重排：
      * <ol>
      *   <li>请求自身的错误先拒（夹带密级、缺请求标识、源目标相同）——它们不需要读库。</li>
-     *   <li>取<b>实际</b>归属并锁住文档行；文档不存在或已删除即 404。</li>
+     *   <li>绑定请求，预读实际空间，按空间 ID 升序锁树状态，再锁文档；等待后重新鉴权。</li>
      *   <li>对实际归属与目标空间各判定一次 manage。<b>先鉴权再暴露状态</b>：
      *       否则一个什么都不管的人可以靠 409 与 403 的差异探出"某文档是否在某空间里"。</li>
      *   <li>幂等重放判定<b>必须排在状态校验之前</b>：首次搬迁成功后文档已经在目标空间，
      *       重投时第 5 步的"目标等于当前归属"会命中，把一次正当的重放变成 409。</li>
      *   <li>状态校验：目标等于当前归属、声明归属与实际不符、目标已归档。</li>
-     *   <li>写入：清空例外 → 推进归属 → 同步分块 → 写审计。</li>
+     *   <li>写入：取消审核、清空例外、原子切换空间/分类并推进资料版本、同步分块、保存回执和审计。</li>
      * </ol>
      *
      * @param documentId             被搬迁的文档
@@ -113,34 +120,65 @@ public class DocumentRelocationService {
      * @param requestedSecurityLevel 请求夹带的密级；只为能<b>显式拒绝</b>而接收，非 null 即 400
      * @param actorUserId            审计记录的操作者；为 null 时取服务端解析出的会话主体
      * @param requestId              请求幂等标识，不可为空
+     * @param targetCategoryId       目标空间分类，null 表示明确未分类
+     * @param expectedMetadataVersion 预期的独立资料版本
      * @return 搬迁回执；重放时为首次搬迁的结果且 {@code replayed} 为真
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public DocumentRelocationResult relocate(long documentId, long fromSpaceId, long toSpaceId,
                                              Short requestedSecurityLevel, Long actorUserId,
-                                             String requestId) {
+                                             String requestId, Long targetCategoryId, long expectedMetadataVersion) {
         requireNoSecurityLevelChange(requestedSecurityLevel);
         String request = requireRequestId(requestId);
+        if (documentId <= 0 || fromSpaceId <= 0 || toSpaceId <= 0 || expectedMetadataVersion < 0
+                || (targetCategoryId != null && targetCategoryId <= 0)) {
+            throw IdentityException.badRequest("请求参数无效");
+        }
         if (fromSpaceId == toSpaceId) {
             throw IdentityException.badRequest("源空间与目标空间相同，搬迁没有意义");
         }
-
+        long initialActor = access.current().userId();
+        if (actorUserId != null && actorUserId != initialActor) {
+            throw IdentityException.forbidden("操作者不匹配");
+        }
+        var binding = commands.bind(AuditScope.DOCUMENT_RELOCATE, request, initialActor, documentId, null, documentId,
+                expectedMetadataVersion, new RelocationInput(fromSpaceId, toSpaceId, targetCategoryId, expectedMetadataVersion));
+        var previous = commands.lock(binding);
+        var hint = metadata.document(documentId);
+        if (hint == null || "deleted".equals(hint.getStatus())) {
+            throw IdentityException.notFound("文档不存在或已删除");
+        }
+        for (long space : LongStream.of(hint.getSpaceId(), toSpaceId).distinct().sorted().toArray()) {
+            if (categories.shareTree(space) == null) {
+                throw IdentityException.notFound("空间不存在或已删除");
+            }
+        }
         long owning = requireOwningSpaceLocked(documentId);
+        long currentActor = access.current().userId();
+        if (currentActor != initialActor) {
+            throw IdentityException.forbidden("操作者已变化");
+        }
         // 鉴权针对实际归属，不是请求声明的 fromSpaceId——否则调用方可以指定一个
         // 自己管得动的空间，来搬走一篇根本不在那里的文档。
         long actor = requireRelocationManager(owning, "源空间");
-        Long effectiveActor = actorUserId == null ? actor : actorUserId;
         SpaceRecord target = requireTargetSpace(toSpaceId);
         requireRelocationManager(toSpaceId, "目标空间");
-
-        DocumentRelocationResult replayed = replay(documentId, request);
-        if (replayed != null) return replayed;
+        if (previous != null) {
+            requireRelocationManager(fromSpaceId, "原源空间");
+            var result = commands.receipt(previous, DocumentRelocationResult.class);
+            return new DocumentRelocationResult(result.documentId(), result.fromSpaceId(), result.toSpaceId(),
+                    result.clearedExceptionCount(), result.clearedExceptions(), result.clearedExceptionsTruncated(),
+                    result.clearanceBlockedPrincipalCount(), true, result.targetCategoryId(), result.metadataVersion());
+        }
+        if (audit.existing(AuditScope.DOCUMENT_RELOCATE, request) != null) {
+            throw IdentityException.conflict(IdentityErrorCode.CONFLICT, "旧请求标识没有新协议绑定");
+        }
 
         if (owning == toSpaceId) {
             throw IdentityException.conflict(IdentityConflictReason.ALREADY_IN_TARGET,
                     "文档已在目标空间 " + toSpaceId + " 内，无需搬迁");
         }
-        if (owning != fromSpaceId) {
+        if (owning != fromSpaceId || owning != hint.getSpaceId()) {
             throw IdentityException.conflict(IdentityConflictReason.SOURCE_MISMATCH,
                     "文档当前不在声明的源空间 " + fromSpaceId + " 内，可能已被他人搬走；"
                             + "请重新读取归属后再决定是否搬迁");
@@ -152,6 +190,14 @@ public class DocumentRelocationService {
                     "不能迁入已归档空间 " + toSpaceId + "，文档会对所有人立即消失；请先取消归档");
         }
 
+        var beforeMetadata = metadata.document(documentId);
+        if (beforeMetadata.getMetadataVersion() != expectedMetadataVersion) {
+            throw IdentityException.conflict(IdentityErrorCode.INVALID_VERSION, "文档资料已变化");
+        }
+        if (targetCategoryId != null && metadata.category(toSpaceId, targetCategoryId) == null) {
+            throw IdentityException.conflict(IdentityErrorCode.INVALID_PARENT, "目标分类不可选");
+        }
+
         reviewCancellation.cancelDocument(documentId, actor);
         // 预读只为出回执摘要；删除按 doc_id 整体执行，范围不取自这次预读。
         List<DocumentAclEntry> preview = mapper.listAclEntries(documentId);
@@ -160,20 +206,35 @@ public class DocumentRelocationService {
                 .map(DocumentAclEntry::summary).toList();
         int cleared = mapper.clearAcl(documentId);
 
-        if (mapper.updateDocumentSpace(documentId, toSpaceId) != 1) {
-            // 行锁之后仍然失败只剩一种可能：文档在本事务等待锁期间被软删除。
+        if (mapper.updateDocumentPlacement(documentId, toSpaceId, targetCategoryId, expectedMetadataVersion) != 1) {
+            // 乐观版本和状态条件作为最终写入边界。
             throw IdentityException.conflict(IdentityErrorCode.CONFLICT, "文档已被其他操作变更");
         }
         int syncedChunks = mapper.syncChunkSpace(documentId, toSpaceId);
         long blocked = countClearanceBlocked(documentId, toSpaceId);
 
-        auditSuccess(request, effectiveActor, documentId, owning, toSpaceId,
-                cleared, summary, truncated, blocked);
+        long nextVersion = Math.addExact(expectedMetadataVersion, 1);
+        var receipt = new DocumentRelocationResult(documentId, owning, toSpaceId, cleared, summary,
+                truncated, blocked, false, targetCategoryId, nextVersion);
+        commands.save(binding, receipt);
+        audit.appendSuccess(AuditScope.DOCUMENT_RELOCATE, request, actor, documentId, "relocate",
+                commands.write(new RelocationBefore(owning, beforeMetadata.getCategoryId(), expectedMetadataVersion, summary, truncated)),
+                commands.write(new RelocationAfter(toSpaceId, targetCategoryId, nextVersion, cleared, blocked)));
         log.info("文档搬迁完成: documentId={} from={} to={} clearedExceptions={} chunks={} blocked={}",
                 documentId, owning, toSpaceId, cleared, syncedChunks, blocked);
 
-        return new DocumentRelocationResult(documentId, owning, toSpaceId, cleared, summary,
-                truncated, blocked, false);
+        return receipt;
+    }
+
+    private record RelocationInput(long fromSpaceId, long toSpaceId, Long targetCategoryId, long expectedMetadataVersion) {
+    }
+
+    private record RelocationBefore(long spaceId, Long categoryId, long metadataVersion,
+                                    List<String> clearedExceptions, boolean clearedExceptionsTruncated) {
+    }
+
+    private record RelocationAfter(long spaceId, Long categoryId, long metadataVersion,
+                                   int clearedExceptionCount, long clearanceBlockedPrincipalCount) {
     }
 
     /**
@@ -184,7 +245,9 @@ public class DocumentRelocationService {
      */
     private long requireOwningSpaceLocked(long documentId) {
         Long spaceId = mapper.findOwningSpaceIdForUpdate(documentId);
-        if (spaceId == null) throw IdentityException.notFound("文档不存在或已删除");
+        if (spaceId == null) {
+            throw IdentityException.notFound("文档不存在或已删除");
+        }
         return spaceId;
     }
 
@@ -193,7 +256,9 @@ public class DocumentRelocationService {
      */
     private SpaceRecord requireTargetSpace(long toSpaceId) {
         SpaceRecord target = spaces.findRawById(toSpaceId);
-        if (target == null) throw IdentityException.notFound("目标空间不存在或已删除");
+        if (target == null) {
+            throw IdentityException.notFound("目标空间不存在或已删除");
+        }
         return target;
     }
 
@@ -211,7 +276,9 @@ public class DocumentRelocationService {
         try {
             return authorizer.requireSpaceManager(spaceId);
         } catch (IdentityException denied) {
-            if (denied.errorCode() != IdentityErrorCode.FORBIDDEN) throw denied;
+            if (denied.errorCode() != IdentityErrorCode.FORBIDDEN) {
+                throw denied;
+            }
             throw IdentityException.forbidden("搬迁文档需要" + side + "（" + spaceId
                     + "）的 manage 管理资格；edit 不足以把文档推送给另一个空间的全部受众");
         }
@@ -232,13 +299,19 @@ public class DocumentRelocationService {
         long blocked = 0;
         for (SpaceViewPrincipal principal : mapper.listViewPrincipals(spaceId)) {
             List<Long> userIds = userIdsForPrincipal(principal);
-            if (userIds.isEmpty()) continue;
+            if (userIds.isEmpty()) {
+                continue;
+            }
             short best = 0;
             for (Long userId : userIds) {
                 Short clearance = acls.findUserClearance(userId);
-                if (clearance != null && clearance > best) best = clearance;
+                if (clearance != null && clearance > best) {
+                    best = clearance;
+                }
             }
-            if (acls.countDocumentAboveClearance(documentId, best) > 0) blocked++;
+            if (acls.countDocumentAboveClearance(documentId, best) > 0) {
+                blocked++;
+            }
         }
         return blocked;
     }
@@ -252,72 +325,6 @@ public class DocumentRelocationService {
                     ? List.of() : List.of(principal.principalId());
         }
         return acls.listAclUserIds(principal.principalType(), principal.principalId());
-    }
-
-    /**
-     * 幂等重放：同一 {@code (DOCUMENT_RELOCATE, requestId)} 已成功执行过则返回首次结果。
-     *
-     * <p>这里的"不再执行"比别处更要紧：重放若再清一次例外，会清掉目标空间管理员在
-     * 搬迁之后刚授出的那些——而它们恰恰是搬迁想要恢复的那个决定权的产物。
-     *
-     * <p>首次结果从审计状态读回，而不是重新计算：重新计算会把搬迁之后发生的变化
-     * （新授出的例外、新入职的低密级成员）算进一份声称是首次搬迁的回执里。
-     */
-    private DocumentRelocationResult replay(long documentId, String requestId) {
-        if (audit == null) return null;
-        IdentityAuditRecord previous = audit.existing(AuditScope.DOCUMENT_RELOCATE, requestId);
-        if (previous == null) return null;
-        log.debug("命中重复的搬迁请求，返回首次结果: documentId={} requestId={}", documentId, requestId);
-
-        JsonNode before = parse(previous.getBeforeState());
-        JsonNode after = parse(previous.getAfterState());
-        List<String> cleared = new ArrayList<>();
-        before.path("clearedExceptions").forEach(entry -> cleared.add(entry.asText()));
-        return new DocumentRelocationResult(
-                previous.getTargetId() == null ? documentId : previous.getTargetId(),
-                before.path("spaceId").asLong(),
-                after.path("spaceId").asLong(),
-                after.path("clearedExceptionCount").asInt(),
-                List.copyOf(cleared),
-                before.path("clearedExceptionsTruncated").asBoolean(false),
-                after.path("clearanceBlockedPrincipalCount").asLong(),
-                true);
-    }
-
-    private static JsonNode parse(String state) {
-        if (state == null || state.isBlank()) return JSON.nullNode();
-        try {
-            return JSON.readTree(state);
-        } catch (JsonProcessingException malformed) {
-            // 审计是 append-only 的既成事实。读不回来只让回执退化成零值，
-            // 绝不能因此判定"没搬过"而重跑一次搬迁。
-            log.warn("搬迁审计状态无法解析，重放回执退化为零值: {}", malformed.getOriginalMessage());
-            return JSON.nullNode();
-        }
-    }
-
-    /**
-     * {@code before} 记原空间与被清除例外摘要，{@code after} 记目标空间与清除条数。
-     *
-     * <p>摘要进 {@code before} 是因为它描述的是搬迁<b>之前</b>存在、现已不存在的事实；
-     * 这也是管理员事后唯一能查到"该在新空间重新授出什么"的地方——回执会丢，审计不会。
-     */
-    private void auditSuccess(String requestId, Long actorUserId, long documentId,
-                              long fromSpaceId, long toSpaceId, int cleared,
-                              List<String> summary, boolean truncated, long blocked) {
-        if (audit == null) return;
-        StringBuilder before = new StringBuilder("{\"spaceId\":").append(fromSpaceId)
-                .append(",\"clearedExceptions\":[");
-        for (int i = 0; i < summary.size(); i++) {
-            if (i > 0) before.append(',');
-            before.append('"').append(jsonEscape(summary.get(i))).append('"');
-        }
-        before.append("],\"clearedExceptionsTruncated\":").append(truncated).append('}');
-        String after = "{\"spaceId\":" + toSpaceId
-                + ",\"clearedExceptionCount\":" + cleared
-                + ",\"clearanceBlockedPrincipalCount\":" + blocked + "}";
-        audit.success(AuditScope.DOCUMENT_RELOCATE, requestId, actorUserId, documentId,
-                "relocate", before.toString(), after);
     }
 
     /**
@@ -345,12 +352,6 @@ public class DocumentRelocationService {
         if (requestId == null || requestId.isBlank()) {
             throw IdentityException.badRequest("缺少请求标识 requestId");
         }
-        return requestId;
-    }
-
-    private static String jsonEscape(String value) {
-        if (value == null) return "";
-        return value.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\r", "\\r").replace("\n", "\\n");
+        return MetadataInput.requestId(requestId);
     }
 }

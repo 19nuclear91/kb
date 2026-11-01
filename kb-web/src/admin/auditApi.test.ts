@@ -14,6 +14,20 @@ function client(value: unknown) {
   return { read, state, session: { send: read, getSnapshot: () => state } as unknown as Session };
 }
 describe('审计输入输出单元', () => {
+  it('有限集合保留精确 ID，空集合和显式未分类独立显示', async () => {
+    const c = client({ metadata: meta, summaryAvailable: true, changes: [
+      { field: 'tagIds', before: [9223372036854775807n], after: [] },
+      { field: 'changedFields', before: [], after: ['title', 'tagIds'] }, { field: 'categoryId', before: null, after: null },
+    ] });
+    const value = await auditDetail(c.session, eventId, signal);
+    expect(auditValue(value.changes[0].before)).toBe('9223372036854775807'); expect(auditValue(value.changes[0].after)).toBe('空集合');
+    expect(auditValue(value.changes[2].after, 'categoryId')).toBe('未分类');
+    for (const change of [{ field: 'tagIds', before: [{}], after: [] }, { field: 'tagIds', before: ['name'], after: [] },
+      { field: 'changedFields', before: ['other'], after: [] }, { field: 'unknown', before: [], after: null }]) {
+      const bad = client({ metadata: meta, summaryAvailable: true, changes: [change] });
+      await expect(auditDetail(bad.session, eventId, signal)).rejects.toMatchObject({ status: 503 });
+    }
+  });
   it('列表使用 GET 会话读取，投影安全字段并保留空主体', async () => {
     const c = client({ ...window, items: [{ ...meta, token: 'secret' }], hasMore: false, nextCursor: null, reason: 'secret' });
     const page = await auditPage(c.session, { limit: 20 }, null, signal);

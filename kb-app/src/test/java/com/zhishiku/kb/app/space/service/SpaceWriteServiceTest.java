@@ -24,6 +24,8 @@ import static org.mockito.ArgumentMatchers.anyShort;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -58,6 +60,7 @@ class SpaceWriteServiceTest {
         SpaceSummary created = service.create("ops", "运维", null, null, "req-1");
 
         assertThat(created.spaceId()).isEqualTo(SPACE);
+        verify(mapper).createCategoryTree(SPACE);
         // 授权与创建必须落在同一事务：这里断言它确实被写入了
         verify(mapper).grantAcl(eq(SPACE), eq((short) PrincipalType.USER.code()),
                 eq(ACTOR), eq(PermissionService.PERM_MANAGE));
@@ -153,7 +156,7 @@ class SpaceWriteServiceTest {
     void deleteWithDocumentsIsConflict() {
         when(authorizer.requireSpaceManager(SPACE)).thenReturn(ACTOR);
         when(mapper.findByIdForUpdate(SPACE)).thenReturn(space(SPACE, false, 0L));
-        when(mapper.countLiveDocuments(SPACE)).thenReturn(4L);
+        when(mapper.countReferencedDocuments(SPACE)).thenReturn(4L);
 
         assertThatThrownBy(() -> service.delete(SPACE, null, "req-5"))
                 .isInstanceOf(IdentityException.class)
@@ -168,7 +171,7 @@ class SpaceWriteServiceTest {
     void deleteEmptySpaceSucceeds() {
         when(authorizer.requireSpaceManager(SPACE)).thenReturn(ACTOR);
         when(mapper.findByIdForUpdate(SPACE)).thenReturn(space(SPACE, false, 0L));
-        when(mapper.countLiveDocuments(SPACE)).thenReturn(0L);
+        when(mapper.countReferencedDocuments(SPACE)).thenReturn(0L);
         when(mapper.deleteSpace(SPACE)).thenReturn(1);
 
         service.delete(SPACE, null, "req-6");
@@ -198,6 +201,45 @@ class SpaceWriteServiceTest {
 
     private void verifyNoSuccessAudit() {
         verify(audit, never()).success(any(), anyString(), any(), any(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void treeInitializationFailurePropagatesBeforeGrantAndAudit() {
+        when(authorizer.requireCreate()).thenReturn(ACTOR);
+        when(mapper.nextSpaceId()).thenReturn(SPACE);
+        when(mapper.insertSpace(any())).thenReturn(1);
+        doThrow(new IllegalStateException("目录初始化失败")).when(mapper).createCategoryTree(SPACE);
+        assertThatThrownBy(() -> service.create("ops", "运维", null, null, "tree-failure"))
+                .isInstanceOf(IllegalStateException.class);
+        verify(mapper, never()).grantAcl(anyLong(), anyShort(), anyLong(), anyString());
+        verifyNoSuccessAudit();
+    }
+
+    @Test
+    void archiveReauthorizesAfterTreeLockBeforeLockingSpace() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ACTOR)
+                .thenThrow(IdentityException.forbidden("资格已撤销"));
+        assertThatThrownBy(() -> service.archive(SPACE, 0, null, "revoked"))
+                .isInstanceOf(IdentityException.class);
+        var order = inOrder(authorizer, mapper);
+        order.verify(authorizer).requireSpaceManager(SPACE);
+        order.verify(mapper).lockCategoryTree(SPACE);
+        order.verify(authorizer).requireSpaceManager(SPACE);
+        verify(mapper, never()).findByIdForUpdate(SPACE);
+        verifyNoSuccessAudit();
+    }
+
+    @Test
+    void unarchiveUsesTreeThenSpaceOrder() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ACTOR);
+        when(mapper.findByIdForUpdate(SPACE)).thenReturn(space(SPACE, true, 2));
+        when(mapper.setArchived(SPACE, false, 2)).thenReturn(1);
+        when(mapper.findRawById(SPACE)).thenReturn(space(SPACE, false, 3));
+        assertThat(service.unarchive(SPACE, 2, null, "unarchive").archived()).isFalse();
+        var order = inOrder(mapper);
+        order.verify(mapper).lockCategoryTree(SPACE);
+        order.verify(mapper).findByIdForUpdate(SPACE);
+        order.verify(mapper).setArchived(SPACE, false, 2);
     }
 
     private static void assertConflict(Throwable ex, IdentityConflictReason reason) {

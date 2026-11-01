@@ -10,8 +10,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * @param canUploadVersion 独立编辑资格
  * @param canRetry 独立编辑资格，任务状态另行判定
  * @param canDelete 整文档删除资格，复用独立编辑资格
+ * @param canEditMetadata 文档级资料编辑资格
  */
 @Schema(description = "当前文档操作资格")
 public record DocumentCapabilities(long documentId, boolean canDownload, boolean canUploadVersion, boolean canRetry,
-                                   boolean canDelete) {
+                                   boolean canDelete, boolean canEditMetadata) {
 }

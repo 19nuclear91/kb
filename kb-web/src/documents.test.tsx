@@ -2,13 +2,14 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ApiError } from './api';
-import { deferred, me } from './test/fixtures';
+import { deferred, json, me } from './test/fixtures';
 import type { Session } from './session';
 import type { Progress } from './types';
 const context = vi.hoisted(() => ({ session: {} as Session, state: { phase: 'ready', me: null as typeof me | null, epoch: 1 } }));
 vi.mock('./SessionProvider', () => ({ useSession: () => context }));
 import { DocumentDetailPage, DocumentsPage, ProgressCard, UploadDialog, useProgress } from './pages/Documents';
-beforeEach(() => { context.state.me = me; context.session = { json: vi.fn(), send: vi.fn() } as unknown as Session; });
+beforeEach(() => { context.state.me = me; context.session = { json: vi.fn(), send: vi.fn().mockImplementation(async () => new Response(null, { status: 503 })),
+  post: vi.fn().mockResolvedValue({ items: [{ documentId: '1', favorited: false }] }), getSnapshot: () => context.state, subscribe: () => () => {} } as unknown as Session; });
 afterEach(() => vi.useRealTimers());
 const doc = { id: '1', spaceId: '9', title: '例外可见文档', securityLevel: 1, currentVersionId: '11', currentVersionNo: 1, versions: [{ id: '11', versionNo: 1, current: true, indexStatus: 'indexed', fileName: 'v1.pdf' }, { id: '12', versionNo: 2, current: false, indexStatus: 'pending', taskStatus: 'running', fileName: 'v2.pdf' }] };
 const status = (path: string) => ({ state: { documentId: '1', versionId: path.split('/')[5], versionNo: 1, stateVersion: '1', indexStatus: 'indexed', policy: 'AUTO', publicationEvidence: 'PUBLISHED', reviewState: 'DRAFT' },
@@ -21,10 +22,13 @@ it('上传后 404 保留受理事实，不宣称可检索或继续轮询', async
 
 it('全部文档保留例外可见项，空间筛选不采用管理或归档资格，翻页参数正确', async () => {
   vi.mocked(context.session.json).mockImplementation(async path => path === '/api/admin/spaces' ? [{ spaceId: '2', name: '可读空间', viewable: true, archived: false }, { spaceId: '3', name: '仅管理空间', viewable: false, manageable: true }, { spaceId: '4', name: '归档空间', viewable: true, archived: true }] : { page: 1, size: 20, total: 30, items: [doc] } as never);
-  render(<MemoryRouter><DocumentsPage /></MemoryRouter>); await screen.findByText('例外可见文档'); expect(context.session.json).toHaveBeenCalledWith('/api/documents?page=1&size=20', expect.anything());
-  fireEvent.click(screen.getByTitle('2')); await waitFor(() => expect(context.session.json).toHaveBeenCalledWith('/api/documents?page=2&size=20', expect.anything()));
-  fireEvent.mouseDown(screen.getByRole('combobox', { name: '知识空间' })); await screen.findByText('可读空间'); expect(screen.queryByText('仅管理空间')).toBeNull(); expect(screen.queryByText('归档空间')).toBeNull();
-  fireEvent.click(screen.getByText('可读空间')); await waitFor(() => expect(context.session.json).toHaveBeenCalledWith('/api/documents?page=1&size=20&spaceId=2', expect.anything()));
+  vi.mocked(context.session.send).mockImplementation(async path => path === '/api/documents/query' ? json({ page: 1, size: 20, total: 30, items: [doc] }) : json({ items: [], hasMore: false, nextCursor: null, treeVersion: 0 }));
+  const requests = () => vi.mocked(context.session.send).mock.calls.filter(([path]) => path === '/api/documents/query').map(([, init]) => JSON.parse(String(init?.body)));
+  render(<MemoryRouter><DocumentsPage /></MemoryRouter>); await screen.findByText('例外可见文档'); expect(requests()[0]).toMatchObject({ page: 1, size: 20 });
+  fireEvent.click(screen.getByTitle('2')); await waitFor(() => expect(requests()[1]).toMatchObject({ page: 2, size: 20 }));
+  await screen.findByText('可读空间'); expect(screen.queryByText('仅管理空间')).toBeNull(); expect(screen.queryByText('归档空间')).toBeNull();
+  fireEvent.change(screen.getByRole('combobox', { name: '知识空间' }), { target: { value: '2' } });
+  fireEvent.click(screen.getByRole('button', { name: '应用筛选' })); await waitFor(() => expect(requests().at(-1)).toMatchObject({ page: 1, spaceId: 2 }));
 });
 it('上传候选分页、真实字典新增值和 multipart 表单，提交期间锁定', async () => {
   const pending = deferred<unknown>(), uploaded = vi.fn();
@@ -87,7 +91,7 @@ it('详情不以 V1 成功冒充 V2，能力失败禁用操作；独立权限和
   render(<MemoryRouter initialEntries={['/documents/1']}><Routes><Route path="/documents/:documentId" element={<DocumentDetailPage />} /></Routes></MemoryRouter>);
   fireEvent.click(await screen.findByRole('button', { name: 'v2' }));
   await waitFor(() => expect((screen.getByRole('button', { name: '重试失败解析' }) as HTMLButtonElement).disabled).toBe(false)); fireEvent.click(screen.getByRole('button', { name: '重试失败解析' })); await screen.findByText('当前操作被拒绝。');
-  expect(context.session.json).toHaveBeenCalledWith('/api/documents/1/retry?versionId=12', { method: 'POST' }); expect((screen.getByRole('button', { name: '下载原件' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(context.session.json).toHaveBeenCalledWith('/api/documents/1/retry?versionId=12', { method: 'POST', signal: expect.any(AbortSignal) }); expect((screen.getByRole('button', { name: '下载原件' }) as HTMLButtonElement).disabled).toBe(true);
 });
 it('失败重试提交锁定，成功后按选中版本开始新的处理周期', async () => {
   const pending = deferred<unknown>(); let restarted = false;

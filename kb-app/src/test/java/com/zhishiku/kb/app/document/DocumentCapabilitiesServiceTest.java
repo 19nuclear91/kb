@@ -50,7 +50,7 @@ class DocumentCapabilitiesServiceTest {
                 when(mapper.findSummary(eq(9L), anyList(), anyList(), eq((short) 2), eq("view"))).thenReturn(new DocumentSummary());
                 when(mapper.findSummary(eq(9L), anyList(), anyList(), eq((short) 2), eq("download"))).thenReturn(download ? new DocumentSummary() : null);
                 when(mapper.findSummary(eq(9L), anyList(), anyList(), eq((short) 2), eq("edit"))).thenReturn(edit ? new DocumentSummary() : null);
-                assertThat(service.get("9", Map.of())).isEqualTo(new DocumentCapabilities(9, download, edit, edit, edit));
+                assertThat(service.get("9", Map.of())).isEqualTo(new DocumentCapabilities(9, download, edit, edit, edit, edit));
             }
         }
         verify(access, times(4)).current();
@@ -69,7 +69,7 @@ class DocumentCapabilitiesServiceTest {
     void documentExceptionRangeAndUnpublishedParentReuseExistingPredicate() {
         when(permissions.resolve(eq(handle), anyString())).thenReturn(PermissionScope.of(7, (short) 2, List.of(), List.of("1:7")));
         when(mapper.findSummary(eq(9L), eq(List.of()), eq(List.of("1:7")), eq((short) 2), anyString())).thenReturn(new DocumentSummary());
-        assertThat(service.get("9", Map.of())).isEqualTo(new DocumentCapabilities(9, true, true, true, true));
+        assertThat(service.get("9", Map.of())).isEqualTo(new DocumentCapabilities(9, true, true, true, true, true));
         verify(mapper, never()).findFile(anyLong(), any(), anyList(), anyList(), anyShort(), anyString());
     }
 
@@ -88,7 +88,7 @@ class DocumentCapabilitiesServiceTest {
         when(mapper.findSummary(anyLong(), anyList(), anyList(), anyShort(), anyString())).thenReturn(new DocumentSummary());
         assertThat(service.get("9", Map.of()).canDelete()).isTrue();
         when(mapper.findSummary(eq(9L), anyList(), anyList(), anyShort(), eq("edit"))).thenReturn(null);
-        assertThat(service.get("9", Map.of())).isEqualTo(new DocumentCapabilities(9, true, false, false, false));
+        assertThat(service.get("9", Map.of())).isEqualTo(new DocumentCapabilities(9, true, false, false, false, false));
         when(permissions.resolve(handle, "edit")).thenThrow(new IllegalStateException("private"));
         assertThatThrownBy(() -> service.get("9", Map.of()))
                 .isInstanceOf(QueryException.class).extracting("status").isEqualTo(503);

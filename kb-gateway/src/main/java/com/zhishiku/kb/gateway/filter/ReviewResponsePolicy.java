@@ -18,7 +18,10 @@ public class ReviewResponsePolicy implements WebFilter {
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String path = exchange.getRequest().getPath().value();
         if (DocumentReviewEndpoints.matches(path) || DocumentCommentEndpoints.matches(path)
-                || path.equals("/api/documents") || path.startsWith("/api/documents/")) {
+                || path.equals("/api/documents") || path.startsWith("/api/documents/")
+                || path.startsWith("/api/admin/document-tags")
+                || path.matches("/api/admin/spaces/[^/]+/categories(?:/[^/]+)?")
+                || path.matches("/api/admin/documents/[^/]+/(?:relocation-context|space)")) {
             exchange.getResponse().getHeaders().setCacheControl("no-store");
             exchange.getResponse().beforeCommit(() -> {
                 exchange.getResponse().getHeaders().setCacheControl("no-store");

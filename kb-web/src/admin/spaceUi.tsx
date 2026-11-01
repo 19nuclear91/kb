@@ -1,31 +1,39 @@
 import { useState, type ReactNode } from 'react';
 import { Alert, Button } from 'antd';
-import { positiveId } from '../api';
+import { positiveId, type ApiError } from '../api';
 import { useSession } from '../SessionProvider';
-import type { WriteIntent } from './api';
+import type { WriteIntent, adminWrite } from './api';
 import { useAdminWrite } from './hooks';
 import { AdminModal, WriteNotice, settle } from './ui';
 
 export function validTarget(value: string): boolean { try { positiveId(value); return true; } catch { return false; } }
-const receipts = new WeakMap<object, { epoch: number; values: Map<string, string> }>();
-/** 成功回执在同一身份下的资格重核期间保留，身份切换立即清空。 */
-export function useResourceReceipt(target: string): [string, (text: string) => void] {
+const notices = new WeakMap<object, { epoch: number; values: Map<string, string> }>();
+/** 资源操作反馈在同一身份下的资格重核期间保留，身份切换立即清空。 */
+export function useResourceNotice(target: string): [string, (text: string) => void] {
   const { session, state } = useSession();
-  let record = receipts.get(session);
-  if (!record || record.epoch !== state.epoch) { record = { epoch: state.epoch, values: new Map() }; receipts.set(session, record); }
+  let record = notices.get(session);
+  if (!record || record.epoch !== state.epoch) { record = { epoch: state.epoch, values: new Map() }; notices.set(session, record); }
   const store = record.values, key = `${state.epoch}:${target}`;
   const [view, setView] = useState({ key, text: store.get(target) ?? '' });
   return [view.key === key ? view.text : store.get(target) ?? '', text => { store.set(target, text); setView({ key, text }); }];
 }
+export function useResourceReceipt(target: string): [string, (text: string) => void] { return useResourceNotice(target); }
 /** 弹窗只保存本次意图；发送、重试及身份隔离复用已有写入状态。 */
-export function ResourceWriteDialog<T>({ title, scope, children, build, onDone, onRefresh, onClose, disabled = false }: {
+export function ResourceWriteDialog<T>({ title, scope, children, build, onDone, onRefresh, onClose, disabled = false, retryDisabled = disabled, execute, onVerify = onRefresh, onRejected }: {
   title: string; scope: string; children: ReactNode; build: (data: FormData) => WriteIntent;
   onDone: (result: T) => void; onRefresh: () => void; onClose: () => void; disabled?: boolean;
+  execute?: typeof adminWrite;
+  onVerify?: () => void;
+  onRejected?: (error: ApiError) => void;
+  retryDisabled?: boolean;
 }) {
-  const write = useAdminWrite(scope);
-  const receive = (outcome: Awaited<ReturnType<typeof write.submit<T>>>) => settle(outcome, onDone, onRefresh);
+  const write = useAdminWrite(scope, execute);
+  const receive = (outcome: Awaited<ReturnType<typeof write.submit<T>>>) => {
+    if (outcome.status === 'rejected' && onRejected) onRejected(outcome.error);
+    else settle(outcome, onDone, onRefresh);
+  };
   return <AdminModal title={title} write={write} onClose={onClose}>
-    <WriteNotice write={write} onRetry={() => { if (!disabled) void write.retry<T>().then(receive); }} onVerify={onRefresh} />
+    <WriteNotice write={write} disabled={retryDisabled} onRetry={() => { if (!retryDisabled) void write.retry<T>().then(receive); }} onVerify={onVerify} />
     <form onSubmit={event => { event.preventDefault(); if (!disabled) { const data = new FormData(event.currentTarget); void write.submit<T>(() => build(data)).then(receive); } }}>
       <fieldset disabled={write.busy}>{children}<div style={{ marginTop: 16 }}><Button type="primary" htmlType="submit" disabled={disabled || write.pending}>确认提交</Button></div></fieldset>
     </form>

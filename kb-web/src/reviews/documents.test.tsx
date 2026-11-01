@@ -3,11 +3,11 @@ import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-li
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { DocumentDetailPage, useProgress } from '../pages/Documents';
 import { ApiError } from '../api';
-import { deferred } from '../test/fixtures';
+import { deferred, json } from '../test/fixtures';
 import type { ReviewStatus } from './api';
 
-const f = vi.hoisted(() => ({ json: vi.fn(), epoch: 1, phase: 'ready' }));
-const unitSession = { json: f.json };
+const f = vi.hoisted(() => ({ json: vi.fn(), send: vi.fn(), epoch: 1, phase: 'ready' }));
+const unitSession = { json: f.json, send: f.send, getSnapshot: () => ({ epoch: f.epoch, phase: f.phase }), subscribe: () => () => {} };
 vi.mock('../SessionProvider', () => ({ useSession: () => ({ session: unitSession, state: { epoch: f.epoch, phase: f.phase } }) }));
 vi.mock('../favorites/useFavorites', () => ({ useFavorites: () => ({ unavailable: () => false, status: () => ({ phase: 'loading' }) }) }));
 vi.mock('../favorites/FavoriteButton', () => ({ FavoriteButton: () => null }));
@@ -25,6 +25,7 @@ function status(id = '11', canRead = true): ReviewStatus {
 }
 beforeEach(() => {
   f.epoch++; f.phase = 'ready'; f.json.mockReset();
+  f.send.mockReset().mockImplementation(async () => new Response(null, { status: 503 }));
   f.json.mockImplementation(async (path: string) => {
     if (path.endsWith('/capabilities')) return { canDownload: true, canRetry: false, canUploadVersion: false };
     if (path.endsWith('/review')) return status(path.split('/')[5]);
@@ -34,6 +35,17 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); });
 const show = () => render(<MemoryRouter initialEntries={['/documents/1']}><Routes><Route path="/documents/:documentId" element={<DocumentDetailPage />} /></Routes></MemoryRouter>);
+it('历史版本下编辑仍使用整文档当前资料及独立版本', async () => {
+  const original = f.json.getMockImplementation()!;
+  f.json.mockImplementation((path: string) => path.endsWith('/capabilities') ? Promise.resolve({ canEditMetadata: true })
+    : path === '/api/documents/1' ? Promise.resolve({ ...document, currentVersionId: '12', currentVersionNo: 2, versions: versions.map(v => ({ ...v, current: v.id === '12' })) }) : original(path));
+  f.send.mockImplementation(async (path: string) => path.endsWith('/metadata') ? json({ documentId: '1', spaceId: '9', title: '当前资料', summary: '人工摘要', category: null, tags: [], metadataVersion: 7, updatedAt: '2026-11-01T00:00:00Z' }) : json({ items: [], hasMore: false, nextCursor: null, treeVersion: 0 }));
+  show(); fireEvent.click(await screen.findByRole('button', { name: 'v1' }));
+  await waitFor(() => expect((screen.getByRole('button', { name: '编辑资料' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: '编辑资料' })); await screen.findByDisplayValue('当前资料');
+  expect(screen.getByDisplayValue('人工摘要')).toBeTruthy(); expect(screen.getByText(/资料版本 7/)).toBeTruthy();
+  expect(f.send.mock.calls.filter(([path]) => path.endsWith('/metadata')).map(([path]) => path)).toEqual(['/api/documents/1/metadata', '/api/documents/1/metadata']);
+});
 it('最高 V2 待审不成为默认文件；显式选中后区分索引和发布且下载独立', async () => {
   show(); await waitFor(() => expect((screen.getByRole('button', { name: '预览选中版本' }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: '预览选中版本' }));

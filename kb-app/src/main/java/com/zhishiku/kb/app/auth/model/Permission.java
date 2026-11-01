@@ -29,6 +29,8 @@ public enum Permission {
     SPACE_MANAGE_ALL("space:manage-all", "绕过空间 ACL 管理所有空间"),
     SPACE_GRANT_MANAGE("space:grant-manage", "授予与撤销空间 manage 授权"),
     DOCUMENT_SECURITY_LEVEL_WRITE("document:security-level:write", "查询和调整文档密级"),
+    DOCUMENT_TAG_READ("document:tag:read", "读取全局标签管理目录"),
+    DOCUMENT_TAG_WRITE("document:tag:write", "创建、改名和启停全局标签"),
     EMBEDDING_READ("embedding:read", "查询向量配置与重建状态"),
     EMBEDDING_REBUILD("embedding:rebuild", "发起与恢复向量重建");
 

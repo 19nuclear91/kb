@@ -54,6 +54,7 @@ logging:
     com.zhishiku.kb.app.auth.mapper.IdentityQueryMapper: "OFF"
     com.zhishiku.kb.app.auth.mapper.AuditQueryMapper: "OFF"
     com.zhishiku.kb.app.document.mapper.DocumentAdminQueryMapper: "OFF"
+    com.zhishiku.kb.app.document.metadata.mapper: "OFF"
 
 kb:
   conversation:

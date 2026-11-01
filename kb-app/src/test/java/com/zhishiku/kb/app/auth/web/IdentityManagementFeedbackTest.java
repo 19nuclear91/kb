@@ -441,7 +441,7 @@ class IdentityManagementFeedbackTest {
                 new Write("DELETE", "/api/admin/spaces/2/acl", acl),
                 new Write("POST", "/api/admin/documents/7/acl", acl),
                 new Write("DELETE", "/api/admin/documents/7/acl", acl),
-                new Write("PATCH", "/api/admin/documents/7/space", "{\"fromSpaceId\":2,\"toSpaceId\":3}"),
+                new Write("PATCH", "/api/admin/documents/7/space", "{\"fromSpaceId\":2,\"toSpaceId\":3,\"targetCategoryId\":null,\"expectedMetadataVersion\":0}"),
                 new Write("PATCH", "/api/admin/documents/7/security-level", "{\"securityLevel\":2,\"securityVersion\":1,\"reason\":\"定级\"}"));
     }
 
@@ -514,7 +514,7 @@ class IdentityManagementFeedbackTest {
         when(documentAcls.list(anyLong())).thenThrow(error);
         when(documentAcls.grant(anyLong(), any(), anyLong(), anyString(), any(), anyString())).thenThrow(error);
         doThrow(error).when(documentAcls).revoke(anyLong(), any(), anyLong(), anyString(), any(), anyString());
-        when(relocate.relocate(anyLong(), anyLong(), anyLong(), any(), any(), anyString())).thenThrow(error);
+        when(relocate.relocate(anyLong(), anyLong(), anyLong(), any(), any(), anyString(), any(), anyLong())).thenThrow(error);
         when(security.get(anyLong())).thenThrow(error);
         when(security.change(anyLong(), any(), any())).thenThrow(error);
         return mvc(new SpaceController(query, writes, acls, authorizer), new DocumentAclController(documentAcls),

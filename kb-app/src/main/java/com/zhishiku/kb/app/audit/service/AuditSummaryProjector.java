@@ -16,6 +16,7 @@ import com.zhishiku.kb.app.auth.sso.SsoSettings;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,7 +56,8 @@ public class AuditSummaryProjector {
                     if (permission == null) throw new IllegalArgumentException();
                     boolean grant = scope == AuditScope.ROLE_PERMISSION_GRANT;
                     changes.add(new Change("permission", grant ? null : permission, grant ? permission : null));
-                } else if (old != null || value != null) {
+                } else if (old != null || value != null || (rule.getValue() == Kind.NULLABLE_ID
+                        && (before.has(rule.getKey()) || after.has(rule.getKey())))) {
                     // 保留 roleId 等不变的定位字段，防止解除绑定时丢失被解除主体。
                     changes.add(new Change(rule.getKey(), old, value));
                 }
@@ -117,7 +119,14 @@ public class AuditSummaryProjector {
                     fields("documentId", Kind.ID, "principalKey", Kind.PRINCIPAL, "permission", Kind.ACL_PERMISSION);
             case DOCUMENT_RELOCATE ->
                     fields("spaceId", Kind.ID, "clearedExceptionCount", Kind.COUNT, "clearanceBlockedPrincipalCount",
-                            Kind.COUNT);
+                            Kind.COUNT, "categoryId", Kind.NULLABLE_ID, "metadataVersion", Kind.COUNT);
+            case DOCUMENT_METADATA_UPDATE -> fields("categoryId", Kind.NULLABLE_ID, "tagIds", Kind.IDS,
+                    "metadataVersion", Kind.COUNT, "changedFields", Kind.CHANGED_FIELDS);
+            case DOCUMENT_CATEGORY_CREATE, DOCUMENT_CATEGORY_UPDATE, DOCUMENT_CATEGORY_DELETE ->
+                    fields("spaceId", Kind.ID, "categoryId", Kind.ID, "parentId", Kind.NULLABLE_ID,
+                            "sortOrder", Kind.COUNT, "treeVersion", Kind.COUNT, "nameChanged", Kind.BOOL);
+            case DOCUMENT_TAG_CREATE, DOCUMENT_TAG_UPDATE ->
+                    fields("tagId", Kind.ID, "enabled", Kind.BOOL, "version", Kind.COUNT, "nameChanged", Kind.BOOL);
             case DOCUMENT_SECURITY_LEVEL_CHANGE ->
                     fields("securityLevel", Kind.LEVEL, "securityVersion", Kind.COUNT, "expectedSecurityVersion",
                             Kind.COUNT);
@@ -135,7 +144,38 @@ public class AuditSummaryProjector {
     }
 
     private static Object scalar(JsonNode value, Kind kind) {
-        if (value == null || value.isNull()) return null;
+        if (value == null) {
+            return null;
+        }
+        if (kind == Kind.IDS || kind == Kind.CHANGED_FIELDS) {
+            if (!value.isArray() || value.size() > (kind == Kind.IDS ? 20 : 4)) {
+                throw new IllegalArgumentException();
+            }
+            List<Object> result = new ArrayList<>();
+            Set<Object> seen = new HashSet<>();
+            for (JsonNode element : value) {
+                Object item;
+                if (kind == Kind.IDS && element.isIntegralNumber() && element.canConvertToLong() && element.longValue() > 0) {
+                    item = element.longValue();
+                } else if (kind == Kind.CHANGED_FIELDS && element.isTextual()
+                        && Set.of("title", "summary", "categoryId", "tagIds").contains(element.textValue())) {
+                    item = element.textValue();
+                } else {
+                    throw new IllegalArgumentException();
+                }
+                if (!seen.add(item)) {
+                    throw new IllegalArgumentException();
+                }
+                result.add(item);
+            }
+            return List.copyOf(result);
+        }
+        if (value.isNull()) {
+            return null;
+        }
+        if (kind == Kind.NULLABLE_ID) {
+            kind = Kind.ID;
+        }
         if (kind == Kind.BOOL && value.isBoolean()) return value.booleanValue();
         if ((kind == Kind.ID || kind == Kind.COUNT || kind == Kind.LEVEL) && value.isIntegralNumber() && value.canConvertToLong()) {
             long number = value.longValue();
@@ -156,6 +196,6 @@ public class AuditSummaryProjector {
         throw new IllegalArgumentException();
     }
 
-    private enum Kind {ID, COUNT, LEVEL, BOOL, FUNCTIONAL_PERMISSION, ACL_PERMISSION, PRINCIPAL, DEAD_LETTER_STATUS,
+    private enum Kind {ID, NULLABLE_ID, IDS, CHANGED_FIELDS, COUNT, LEVEL, BOOL, FUNCTIONAL_PERMISSION, ACL_PERMISSION, PRINCIPAL, DEAD_LETTER_STATUS,
         SSO_PLATFORM, SSO_RESULT, PUBLICATION_POLICY}
 }

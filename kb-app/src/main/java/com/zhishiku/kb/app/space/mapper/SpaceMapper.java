@@ -5,6 +5,7 @@ import com.zhishiku.kb.app.space.model.SpaceRecord;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
@@ -50,6 +51,7 @@ public interface SpaceMapper {
             SELECT id, code, name, description, archived, version
               FROM kb_space WHERE id = #{spaceId} FOR UPDATE
             """)
+    @Options(useCache = false, flushCache = Options.FlushCachePolicy.TRUE)
     SpaceRecord findByIdForUpdate(@Param("spaceId") long spaceId);
 
     @Select("""
@@ -66,6 +68,16 @@ public interface SpaceMapper {
             VALUES (#{id}, #{code}, #{name}, #{description}, false, 0)
             """)
     int insertSpace(SpaceRecord space);
+
+    @Insert("INSERT INTO kb_category_tree_state (space_id) VALUES (#{spaceId})")
+    void createCategoryTree(@Param("spaceId") long spaceId);
+
+    @Select("SELECT tree_version FROM kb_category_tree_state WHERE space_id = #{spaceId} FOR UPDATE")
+    @Options(useCache = false, flushCache = Options.FlushCachePolicy.TRUE)
+    long lockCategoryTree(@Param("spaceId") long spaceId);
+
+    @Select("SELECT count(*) FROM kb_document WHERE space_id = #{spaceId}")
+    long countReferencedDocuments(@Param("spaceId") long spaceId);
 
     /**
      * 元数据更新，带乐观锁。
