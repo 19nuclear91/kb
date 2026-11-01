@@ -49,6 +49,20 @@ kb:
     # 网关、Nginx、企业出口代理里取最小值，再留一半余量。
     keep-alive-ms: 15000
     upstream-timeout: 60
+    chat-model:
+      enabled: ${KB_CHAT_MODEL_ENABLED:false}
+      base-url: ${KB_CHAT_MODEL_BASE_URL:}
+      api-key: ${KB_CHAT_MODEL_API_KEY:}
+      model: ${KB_CHAT_MODEL_NAME:}
+      output-token-field: ${KB_CHAT_MODEL_OUTPUT_TOKEN_FIELD:max_tokens}
+      request-usage: ${KB_CHAT_MODEL_REQUEST_USAGE:true}
+      single-max-output-tokens: ${KB_CHAT_MODEL_SINGLE_MAX_OUTPUT_TOKENS:2048}
+      connect-timeout-ms: ${KB_CHAT_MODEL_CONNECT_TIMEOUT_MS:5000}
+      idle-timeout-ms: ${KB_CHAT_MODEL_IDLE_TIMEOUT_MS:30000}
+      max-request-bytes: ${KB_CHAT_MODEL_MAX_REQUEST_BYTES:1048576}
+      max-event-bytes: ${KB_CHAT_MODEL_MAX_EVENT_BYTES:1048576}
+      max-response-bytes: ${KB_CHAT_MODEL_MAX_RESPONSE_BYTES:4194304}
+      max-answer-codepoints: ${KB_CHAT_MODEL_MAX_ANSWER_CODEPOINTS:64000}
 
 sa-token:
   token-name: satoken
@@ -101,7 +115,8 @@ management:
 #    这是刻意的（防止靠提问探测文档是否存在），
 #    区分二者请看 kb-app 的日志与 db/verify_permission.sql。
 #
-# kb-ai 不绑定具体 Chat SDK：部署方注入 ChatModelClient Bean 后即可替换占位应答。
+# kb-ai 不绑定厂商 SDK：显式启用 chat-model 可接入通用文本协议，自定义模型 Bean 分别优先。
+# 多轮还需经核验的 ChatTokenBudget；本期未提供生产策略，配置协议不等于多轮就绪。
 # kb-app 已提供查询 embedding、RRF、rerank 和 top-k；本服务只负责授权召回与编排。
 # 已包含：按部门的 Redis 请求配额、token 预算、可续期并发租约和幂等审计摘要；
 # 释放/续期/审计写入具备有界重试，Redis 不可用时请求拒绝或进入错误收尾。

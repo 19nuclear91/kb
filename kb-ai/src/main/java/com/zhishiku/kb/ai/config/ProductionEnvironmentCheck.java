@@ -1,6 +1,7 @@
 package com.zhishiku.kb.ai.config;
 
 import com.zhishiku.kb.common.config.ProductionSettings;
+import com.zhishiku.kb.ai.model.ChatModelEnvironmentValidator;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.env.EnvironmentPostProcessor;
 import org.springframework.core.Ordered;
@@ -18,6 +19,7 @@ import java.util.Locale;
 public class ProductionEnvironmentCheck implements EnvironmentPostProcessor, Ordered {
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+        ChatModelEnvironmentValidator.validate(environment);
         ConversationEnvironmentValidator.validate(environment);
         var profiles = new HashSet<>(Arrays.asList(environment.getActiveProfiles().length == 0
                 ? environment.getDefaultProfiles() : environment.getActiveProfiles()));

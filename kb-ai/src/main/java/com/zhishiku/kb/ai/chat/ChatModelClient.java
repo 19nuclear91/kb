@@ -7,8 +7,8 @@ import java.util.List;
 /**
  * Chat 模型最小适配边界。
  *
- * <p>具体供应商由部署方注入实现；AI 编排只负责把已授权的引用交给它，
- * 不在本模块内绑定某个 SDK 或 OpenAI-compatible Chat 客户端。
+ * <p>AI 编排只负责把已授权的引用交给它。部署方可注入自定义实现，
+ * 或显式启用通用 OpenAI-compatible 适配器；本接口不绑定厂商 SDK。
  */
 public interface ChatModelClient {
 
