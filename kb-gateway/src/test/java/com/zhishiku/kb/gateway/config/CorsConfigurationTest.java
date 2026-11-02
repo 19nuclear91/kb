@@ -21,7 +21,7 @@ class CorsConfigurationTest {
         new ApplicationContextRunner().withPropertyValues("spring.profiles.active=prod",
                         "KB_CORS_ALLOWED_ORIGINS=https://kb.example.com",
                         "KB_APP_BASE_URL=http://app:8081", "KB_AI_BASE_URL=http://ai:8082",
-                        "KB_REDIS_HOST=redis")
+                        "KB_REDIS_HOST=redis", "management.server.port=9080", "management.server.address=127.0.0.1")
                 .withInitializer(new ConfigDataApplicationContextInitializer())
                 .run(context -> {
                     new ProductionEnvironmentCheck().postProcessEnvironment(context.getEnvironment(),
@@ -29,6 +29,8 @@ class CorsConfigurationTest {
                     var properties = Binder.get(context.getEnvironment())
                             .bind("spring.cloud.gateway.globalcors", GlobalCorsProperties.class).get();
                     var config = properties.getCorsConfigurations().get("/**");
+                    assertThat(config.getExposedHeaders()).containsExactly("X-Conversation-Id", "X-Turn-Id",
+                            "Retry-After", "X-Search-Filter-Version");
                     var valid = exchange("https://kb.example.com");
                     assertThat(new DefaultCorsProcessor().process(config, valid)).isTrue();
                     assertThat(valid.getResponse().getHeaders().getAccessControlAllowMethods())

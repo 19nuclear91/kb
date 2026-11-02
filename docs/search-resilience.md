@@ -109,6 +109,14 @@ prod/dev 的 `kb-search` 路由单独匹配 `/api/search`，默认等待 10000 �
 
 HTTP 正文/输入校验在门面前完成；这一层的拒绝不计入门面请求计数。阶段耗时与实际资源占用是不同口径：可选阶段超时可先完成等待计时，实际工作仍体现在 inflight/lingering。重复取消、退出、关闭不增加请求计数或重复释放。指标没有用户、query、requestId、凭据或任意 profile 标签；日志只记录固定阶段、类别和状态，不附原始异常。
 
+业务应用的上述指标从独立管理端口 `/actuator/prometheus` 导出；显式 dev 未配置管理端口时沿用业务端口。`kb.search.stage.duration` 与 `kb.search.options.stage.duration` 默认 SLO 边界为 1.5s、2s、3s、8s，可通过 `kb.telemetry.histograms.search` 覆盖，必须为递增正值。抓取协议与端口迁移见[遥测运维](telemetry-operations.md)。
+
+AI 侧另以 `kb.ai.retrieval.failures{reason}` 记录失败：`REJECTED` 为请求或准入拒绝，`TIMEOUT` 为等待超时，`UNAVAILABLE` 为依赖/连接故障，`PROTOCOL` 为响应格式损坏。错误流使用固定 `SEARCH_UNAVAILABLE` 码，与正常零命中分开统计；这些标签不记录远程错误体或查询。
+
+同一保密规则覆盖追踪跨度属性、指标标签和 exemplar。HTTP 观测只记录路由模板、方法、状态、结果及异常类名；客户端以固定目标类别记录，不记录完整 URL、查询串、请求头、正文、筛选值或候选名称。exemplar 只用于关联 trace，不携带问题或资源身份。导出前过滤 `http.url`、`url.full`、`http.request.header.*` 和 `net.*`；新增埋点仍须遵守上述白名单。Embedding 和 rerank 使用隔离客户端，默认路径与预算路径都不向供应商传播追踪头或 baggage。
+
+搜索主工作 `search-*` 与可选阶段 `search-external-*` 在提交前捕获遥测白名单快照，仅包含 Observation、独立 span 和本地 requestId；执行期间恢复，退出时清理或恢复先前值，不复制其他 MDC、认证或事务上下文。降级日志因此可与入口 trace 关联。取消响应先交付时，仍执行的底层工作保持自己的作用域直至实际退出；准入、预算、容量与取消记账不变。追踪关闭时不创建跨度，requestId 仍在搜索日志中可用。
+
 已有查询向量在共享锁内因 profile、epoch 或维护状态变化而失效时，记录一次 `kb.search.degradation{stage=RETRIEVAL,reason=PROFILE_UNAVAILABLE}`。合法向量路径和原本没有向量的 BM25 路径不会重复记录该降级。
 
 ## 发布与回退

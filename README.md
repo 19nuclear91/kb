@@ -664,6 +664,8 @@ psql -h localhost -U kb -d kb -c "SELECT permission FROM sys_role_permission
   不记录原始 URI、查询字符串、请求体及认证令牌；已有日志按保留策略处理。
 - [ ] 答案缓存若要做，key 必须按权限范围隔离。同一个问题，
   不同权限的用户不能命中彼此的缓存。
+- [x] 后端追踪开关、内部 W3C 传播、供应商隔离和四单元 Prometheus 导出已落地，追踪默认关闭；
+  生产必须设置独立管理端口及绑定地址，并同步迁移健康探针。配置、OpenMetrics 与回退见[遥测运维](docs/telemetry-operations.md)。
 
 ---
 
@@ -734,6 +736,8 @@ kb-ai/
 8. **对象存储对账**
    ：孤儿识别、护栏删除（默认关闭）、缺失抽样、调度与运维文档均已落地，启用与回滚见[对账运维文档](docs/storage-reconciliation-operations.md)
    ；真实桶上的删除效果与多实例单飞尚未验证（见 5.10）。
+9. **接入监控与追踪平台**：按[遥测运维](docs/telemetry-operations.md)配置各单元管理端口、健康探针与 Prometheus 抓取；
+   在 Tempo 或 Collector 就绪后显式开启追踪，配置 OpenMetrics exemplar 存储与 Grafana 关联。平台部署与真实网络联调仍由部署环境完成。
 
 《架构决策记录.md》第 10 节"仍待收集"列了还需要向业务方确认的信息，
 其中"文档格式与扫描件/表格比例"和"密级分几级、与用户 clearance 如何对应"

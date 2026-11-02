@@ -36,6 +36,11 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 kb:
+  telemetry:
+    tracing:
+      enabled: ${KB_TELEMETRY_TRACING_ENABLED:false}
+      otlp-endpoint: ${KB_TELEMETRY_OTLP_ENDPOINT:}
+      sampling-probability: ${KB_TELEMETRY_SAMPLING_PROBABILITY:1.0}
   worker:
     # 租约时长。必须大于最慢文档的解析耗时。
     # 300 秒是个未经实测的初值——等文档格式分布摸清后按 P99 解析耗时重新定。
@@ -74,10 +79,13 @@ logging:
     com.zhishiku.kb: INFO
 
 management:
+  server:
+    port: ${KB_MANAGEMENT_PORT:}
+    address: ${KB_MANAGEMENT_ADDRESS:}
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: when-authorized

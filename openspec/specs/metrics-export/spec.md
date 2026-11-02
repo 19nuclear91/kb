@@ -1,19 +1,20 @@
-# Spec Delta
+# metrics-export Specification
 
 ## Purpose
 
 为四个部署单元提供统一、可被 Prometheus 抓取的指标导出契约：限定暴露面与管理端口、固定直方图分桶、约束标签基数，并把流式响应生命周期纳入可观测范围。
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: 指标必须以 Prometheus 兼容格式从每个部署单元导出
 
-网关、业务应用、AI 服务与 Worker SHALL 各自提供可被 Prometheus 抓取的指标端点，输出该单元注册的全部指标；端点 MUST 支持 OpenMetrics 协商，以便在追踪启用时为直方图样本附带 exemplar。既有指标名与标签 MUST 保持不变，导出不得改写或重命名。
+网关、业务应用、AI 服务与 Worker SHALL 各自提供可被 Prometheus 抓取的指标端点，输出该单元注册的全部指标；端点 MUST 支持 OpenMetrics 协商，以便在追踪启用时为直方图样本附带 exemplar。除下述显式兼容性例外外，既有指标名与标签 MUST 保持不变，导出不得改写或重命名：Worker MUST 保留 `kb.parse.tasks.retried`、`kb.parse.tasks.dead_lettered` 无标签总量，将其 `failure_class` 分类序列分别注册为 `kb.parse.tasks.retried.by_class`、`kb.parse.tasks.dead_lettered.by_class`，标签键和值域保持不变，避免同名指标标签键集合冲突。
 
 #### Scenario: 抓取 Worker 指标
 
 - **WHEN** 监控系统按 Prometheus 协议抓取 Worker 指标端点
-- **THEN** 返回既有解析任务、队列、死信与 embedding 指标，名称与标签与导出前一致
+- **THEN** 返回既有解析任务、队列、死信与 embedding 指标，除明确拆名的重试/死信分类序列外，名称与标签与导出前一致
+- **AND** 原无标签重试/死信总量与 `.by_class` 分类序列同时可被抓取
 
 #### Scenario: 抓取网关指标
 

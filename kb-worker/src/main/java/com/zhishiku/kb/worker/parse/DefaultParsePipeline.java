@@ -6,6 +6,8 @@ import com.zhishiku.kb.worker.parse.model.ParseExecution;
 import com.zhishiku.kb.worker.parse.model.ParseIssue;
 import com.zhishiku.kb.worker.parse.model.ParseTask;
 import com.zhishiku.kb.worker.storage.ObjectStorage;
+import com.zhishiku.kb.worker.telemetry.TaskTelemetry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
@@ -22,6 +24,12 @@ public class DefaultParsePipeline implements ParsePipeline {
     private final DocumentParser parser;
     private final IngestionProperties props;
     private final EmbeddingClientRegistry clients;
+    private TaskTelemetry telemetry = TaskTelemetry.NOOP;
+
+    @Autowired
+    public void setTelemetry(TaskTelemetry telemetry) {
+        this.telemetry = telemetry;
+    }
 
     public DefaultParsePipeline(ObjectStorage objectStorage, DocumentParser parser,
                                 IngestionProperties props, EmbeddingClientRegistry clients) {
@@ -49,28 +57,35 @@ public class DefaultParsePipeline implements ParsePipeline {
             throw new IllegalArgumentException("文件超过 Worker 限制：" + props.maxFileBytes() + " bytes");
         }
 
-        com.zhishiku.kb.worker.parse.model.ParsedDocument parsed;
-        try (InputStream input = objectStorage.get(task.objectKey())) {
-            parsed = parser.parseDocument(input, task.fileName(), task.mimeType(),
-                    props.maxExtractedChars());
-        }
-        if (!lease.stillHeld()) throw new LeaseLostException();
-        if (parsed.hasErrors()) {
-            ParseIssue issue = parsed.issues().stream()
-                    .filter(item -> item.severity() == ParseIssue.Severity.ERROR)
-                    .findFirst().orElseThrow();
-            throw new ParseFailureException("文档解析失败 [" + issue.code() + "]: "
-                    + issue.message(), new ParsedDocument(List.of(), parsed.parserName(),
-                    parsed.parserVersion(), parsed.truncated(), parsed.issues(), execution));
-        }
+        var parsed = telemetry.inStage(TaskTelemetry.Stage.PARSE, () -> {
+            com.zhishiku.kb.worker.parse.model.ParsedDocument result;
+            try (InputStream input = objectStorage.get(task.objectKey())) {
+                result = parser.parseDocument(input, task.fileName(), task.mimeType(), props.maxExtractedChars());
+            }
+            if (!lease.stillHeld()) {
+                throw new LeaseLostException();
+            }
+            if (result.hasErrors()) {
+                ParseIssue issue = result.issues().stream()
+                        .filter(item -> item.severity() == ParseIssue.Severity.ERROR)
+                        .findFirst().orElseThrow();
+                throw new ParseFailureException("文档解析失败 [" + issue.code() + "]: "
+                        + issue.message(), new ParsedDocument(List.of(), result.parserName(),
+                        result.parserVersion(), result.truncated(), result.issues(), execution));
+            }
+            return result;
+        });
 
         TextChunker chunker = new TextChunker(props.chunkSize(), props.chunkOverlap());
         List<TextChunker.Chunk> chunks = chunker.split(parsed);
         if (chunks.isEmpty()) throw new IllegalArgumentException("文档没有可索引的文本内容");
 
         List<String> contents = chunks.stream().map(TextChunker.Chunk::content).toList();
-        var generated = client.embed(contents);
-        generated.require(execution.profile(), EmbeddingRole.DOCUMENT, chunks.size());
+        var generated = telemetry.inStage(TaskTelemetry.Stage.EMBEDDING, () -> {
+            var result = client.embed(contents);
+            result.require(execution.profile(), EmbeddingRole.DOCUMENT, chunks.size());
+            return result;
+        });
         List<float[]> vectors = generated.vectors();
         if (!lease.stillHeld()) throw new LeaseLostException();
 

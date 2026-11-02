@@ -2,6 +2,8 @@ package com.zhishiku.kb.app.search.execution;
 
 import com.zhishiku.kb.app.search.config.SearchExecutionProperties;
 import com.zhishiku.kb.app.search.model.SearchFailure;
+import com.zhishiku.kb.app.telemetry.SearchContextPropagation;
+import io.micrometer.context.ContextSnapshot;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -41,6 +43,12 @@ public class SearchExecutor implements AutoCloseable {
     private final Set<Execution> active = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean closed = new AtomicBoolean();
     private SearchMetrics metrics = new SearchMetrics(null);
+    private SearchContextPropagation contexts = SearchContextPropagation.REQUEST_ID_ONLY;
+
+    @Autowired
+    public void setContextPropagation(SearchContextPropagation contexts) {
+        this.contexts = contexts;
+    }
 
     @Autowired
     public SearchExecutor(SearchExecutionProperties properties, SearchAdmission admission, SearchMetrics metrics) {
@@ -123,7 +131,7 @@ public class SearchExecutor implements AutoCloseable {
         }
         var execution = new Execution(budget, admission.acquire(userId), operation);
         active.add(execution);
-        Work<T> work = new Work<>(execution, budget.work(), () -> action.apply(execution));
+        Work<T> work = new Work<>(execution, budget.work(), () -> action.apply(execution), contexts.capture());
         try {
             if (closed.get()) {
                 throw new RejectedExecutionException();
@@ -190,7 +198,7 @@ public class SearchExecutor implements AutoCloseable {
         if (window.remainingNanos() <= 0) {
             throw new SearchStageFailure(SearchStageFailure.Reason.TIME_BUDGET);
         }
-        var work = new Work<>(execution, window, action);
+        var work = new Work<>(execution, window, action, contexts.capture());
         try {
             external.execute(work);
             T value = await(work.result, window);
@@ -363,16 +371,18 @@ public class SearchExecutor implements AutoCloseable {
         private final Execution execution;
         private final SearchBudget.Window window;
         private final Supplier<T> action;
+        private final ContextSnapshot snapshot;
         private final CompletableFuture<T> result = new CompletableFuture<>();
         private final Set<Registration> registrations = ConcurrentHashMap.newKeySet();
         private int state;
         private Thread thread;
         private volatile SearchFailure failure;
 
-        private Work(Execution execution, SearchBudget.Window window, Supplier<T> action) {
+        private Work(Execution execution, SearchBudget.Window window, Supplier<T> action, ContextSnapshot snapshot) {
             this.execution = execution;
             this.window = window;
             this.action = action;
+            this.snapshot = snapshot;
             if (!execution.retain()) {
                 throw new IllegalStateException("搜索已退出");
             }
@@ -391,7 +401,7 @@ public class SearchExecutor implements AutoCloseable {
                 state = 1;
                 thread = Thread.currentThread();
             }
-            try (var scope = SearchContext.install(this, window)) {
+            try (var telemetry = snapshot.setThreadLocals(); var scope = SearchContext.install(this, window)) {
                 check();
                 window.check();
                 T value = action.get();

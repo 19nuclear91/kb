@@ -1,6 +1,7 @@
 package com.zhishiku.kb.ai.chat;
 
 import com.zhishiku.kb.common.security.AuthHeaders;
+import com.zhishiku.kb.ai.telemetry.DependencyTelemetry;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.core.StreamReadFeature;
@@ -71,6 +72,12 @@ public class RetrievalClient {
     private final WebClient webClient;
     private final AiProperties props;
     private final RetrievalProperties retrieval;
+    private DependencyTelemetry telemetry = DependencyTelemetry.NOOP;
+
+    @Autowired
+    public void setTelemetry(DependencyTelemetry telemetry) {
+        this.telemetry = telemetry;
+    }
 
     public RetrievalClient(WebClient.Builder builder, AiProperties props) {
         this(builder, props, RetrievalProperties.defaults());
@@ -112,7 +119,10 @@ public class RetrievalClient {
                         : new RetrievalFailure(error instanceof TimeoutException ? RetrievalFailure.Kind.TIMEOUT
                         : error instanceof DataBufferLimitException ? RetrievalFailure.Kind.PAYLOAD_LIMIT
                         : RetrievalFailure.Kind.DEPENDENCY))
-                .doOnError(RetrievalFailure.class, error -> log.warn("AI 检索失败 stage=retrieval category={}", error.kind()));
+                .doOnError(RetrievalFailure.class, error -> {
+                    telemetry.retrievalFailed(error);
+                    log.warn("AI 检索失败 stage=retrieval category={}", error.kind());
+                });
     }
 
     private static ClientResponse singleUseBody(ClientResponse response) {
@@ -136,7 +146,7 @@ public class RetrievalClient {
                     DataBufferUtils.release(buffer);
                 }
             });
-            return Mono.error(new RetrievalFailure(RetrievalFailure.Kind.HTTP));
+            return Mono.error(new RetrievalFailure(RetrievalFailure.Kind.HTTP, response.statusCode().value()));
         }
         return DataBufferUtils.join(response.bodyToFlux(DataBuffer.class), retrieval.maxResponseBytes())
                 .map(buffer -> {

@@ -41,6 +41,36 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class RetrievalClientTest {
 
+    @Test
+    void telemetryClassifiesHttpProtocolDependencyAndTimeoutWithoutSensitiveLabels() {
+        var meters = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        try {
+            for (HttpStatus status : List.of(HttpStatus.UNAUTHORIZED, HttpStatus.TOO_MANY_REQUESTS, HttpStatus.SERVICE_UNAVAILABLE, HttpStatus.OK)) {
+                request.set(null);
+                var client = client(status, "secret-invalid-body");
+                client.setTelemetry(new com.zhishiku.kb.ai.telemetry.DependencyTelemetry(meters));
+                StepVerifier.create(client.retrieve("secret-query", "secret-token")).expectError(RetrievalFailure.class).verify();
+            }
+            for (boolean timeout : new boolean[]{false, true}) {
+                var client = new RetrievalClient(WebClient.builder().exchangeFunction(request -> timeout ? Mono.never()
+                        : Mono.error(new IllegalStateException("secret-error"))), new AiProperties("http://app.invalid", 5, 1000, 60));
+                client.setTelemetry(new com.zhishiku.kb.ai.telemetry.DependencyTelemetry(meters));
+                StepVerifier.withVirtualTime(() -> client.retrieve("secret-query", "secret-token"))
+                        .thenAwait(Duration.ofMinutes(1)).expectError(RetrievalFailure.class).verify();
+            }
+            assertThat(meters.get("kb.ai.retrieval.failures").tag("reason", "REJECTED").counter().count()).isEqualTo(2);
+            assertThat(meters.get("kb.ai.retrieval.failures").tag("reason", "UNAVAILABLE").counter().count()).isEqualTo(2);
+            assertThat(meters.get("kb.ai.retrieval.failures").tag("reason", "PROTOCOL").counter().count()).isEqualTo(1);
+            assertThat(meters.get("kb.ai.retrieval.failures").tag("reason", "TIMEOUT").counter().count()).isEqualTo(1);
+            assertThat(meters.getMeters()).allSatisfy(meter -> assertThat(meter.getId().getTags()).singleElement().satisfies(tag -> {
+                assertThat(tag.getKey()).isEqualTo("reason");
+                assertThat(tag.getValue()).isIn("REJECTED", "UNAVAILABLE", "PROTOCOL", "TIMEOUT");
+            }));
+        } finally {
+            meters.close();
+        }
+    }
+
     private final AtomicReference<ClientRequest> request = new AtomicReference<>();
     private final AtomicReference<String> requestBody = new AtomicReference<>();
 

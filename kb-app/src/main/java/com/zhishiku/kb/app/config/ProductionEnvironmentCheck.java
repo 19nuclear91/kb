@@ -32,7 +32,7 @@ public class ProductionEnvironmentCheck implements EnvironmentPostProcessor, Ord
                                 .toLowerCase(Locale.ROOT).replace('_', '.');
                         settings.put(loggerKey, environment.getProperty(key));
                     }
-                    if (key.startsWith("spring.") || key.startsWith("kb.")
+                    if (key.startsWith("spring.") || key.startsWith("kb.") || key.startsWith("management.")
                             || key.startsWith("logging.level.") || key.startsWith("sa-token.")) {
                         settings.put(key, environment.getProperty(key));
                     }
@@ -45,7 +45,8 @@ public class ProductionEnvironmentCheck implements EnvironmentPostProcessor, Ord
                 "spring.flyway.baseline-on-migrate", "kb.dev-auth.enabled", "kb.storage.endpoint",
                 "kb.storage.access-key", "kb.storage.secret-key", "kb.storage.bucket",
                 "kb.ai.app-base-url", "kb.ai.audit-in-memory-enabled", "sa-token.is-log", "logging.level.root",
-                "spring.cloud.gateway.routes[0].uri", "spring.cloud.gateway.routes[1].uri"}) {
+                "spring.cloud.gateway.routes[0].uri", "spring.cloud.gateway.routes[1].uri", "server.port",
+                "management.server.port", "management.server.address", "management.endpoints.web.exposure.include"}) {
             settings.put(key, environment.getProperty(key));
         }
         ProductionSettings.validate("kb-app", profiles, settings);

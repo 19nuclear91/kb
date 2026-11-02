@@ -37,7 +37,7 @@ public class EmbeddingProfilesConfiguration {
                     .connectTimeout(timeout).build());
             requestFactory.setReadTimeout(timeout);
             String endpoint = connection.endpoint().replaceAll("/+$", "");
-            var configured = builder.clone().baseUrl(endpoint).requestFactory(requestFactory);
+            var configured = RestClient.builder().baseUrl(endpoint).requestFactory(requestFactory);
             if (connection.apiKey() != null && !connection.apiKey().isBlank()) {
                 configured.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + connection.apiKey());
             }

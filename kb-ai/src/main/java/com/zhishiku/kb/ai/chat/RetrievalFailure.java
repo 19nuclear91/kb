@@ -10,13 +10,23 @@ public final class RetrievalFailure extends RuntimeException {
     }
 
     private final Kind kind;
+    private final int httpStatus;
 
     public RetrievalFailure(Kind kind) {
+        this(kind, 0);
+    }
+
+    public RetrievalFailure(Kind kind, int httpStatus) {
         super(CODE);
         this.kind = kind;
+        this.httpStatus = httpStatus;
     }
 
     public Kind kind() {
         return kind;
+    }
+
+    public int httpStatus() {
+        return httpStatus;
     }
 }

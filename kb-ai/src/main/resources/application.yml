@@ -6,6 +6,8 @@ spring:
     default: prod
   application:
     name: kb-ai
+  reactor:
+    context-propagation: auto
 
   data:
     redis:
@@ -23,6 +25,11 @@ spring:
     max-in-memory-size: 4MB
 
 kb:
+  telemetry:
+    tracing:
+      enabled: ${KB_TELEMETRY_TRACING_ENABLED:false}
+      otlp-endpoint: ${KB_TELEMETRY_OTLP_ENDPOINT:}
+      sampling-probability: ${KB_TELEMETRY_SAMPLING_PROBABILITY:1.0}
   conversation:
     enabled: ${KB_CONVERSATION_ENABLED:false}
     secret: ${KB_CONVERSATION_SECRET:}
@@ -86,14 +93,19 @@ knife4j:
     language: zh_cn
 
 logging:
+  pattern:
+    level: "%5p [requestId=%X{requestId:-}]"
   level:
     com.zhishiku.kb: INFO
 
 management:
+  server:
+    port: ${KB_MANAGEMENT_PORT:}
+    address: ${KB_MANAGEMENT_ADDRESS:}
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
 
 # ============================================================
 # P0 验证方法（必须实测，光看配置不算）：

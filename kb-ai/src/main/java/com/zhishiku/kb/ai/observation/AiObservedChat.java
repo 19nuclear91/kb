@@ -7,6 +7,7 @@ import com.zhishiku.kb.ai.chat.ChatObservation;
 import com.zhishiku.kb.ai.chat.ChatQuotaAuditService;
 import com.zhishiku.kb.ai.chat.ChatService;
 import com.zhishiku.kb.ai.chat.QuotaPrincipalRejectedException;
+import com.zhishiku.kb.ai.telemetry.StreamTelemetry;
 import com.zhishiku.kb.common.aiusage.AiObservation;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
@@ -42,6 +43,7 @@ public class AiObservedChat {
                 run -> run.close("CANCELLED", 0, "CANCELLED").onErrorResume(error -> Mono.empty()),
                 (run, error) -> run.close("FAILED", 0, "FAILED").onErrorResume(ignored -> Mono.empty()),
                 run -> run.close("CANCELLED", 0, "CANCELLED").onErrorResume(error -> Mono.empty()))
+                .transform(StreamTelemetry::captureFailures)
                 .onErrorResume(error -> Flux.just(sse(new ChatEvent.Error("聊天采集或依赖暂不可用，请稍后重试。"))));
     }
 
@@ -82,7 +84,7 @@ public class AiObservedChat {
                             return close("FAILED", 0, "FAILED").onErrorResume(error -> Mono.empty()).thenReturn(event);
                         }
                         return Mono.just(event);
-                    }).onErrorResume(error -> {
+                    }).transform(StreamTelemetry::captureFailures).onErrorResume(error -> {
                         if (lease == null && error instanceof QuotaPrincipalRejectedException) acquisitionIntended = false;
                         boolean rejected = error instanceof ChatQuotaAuditService.QuotaExceededException;
                         return close(rejected ? "REJECTED" : "FAILED", 0, rejected ? "QUOTA_REJECTED" : "DEPENDENCY_UNAVAILABLE")

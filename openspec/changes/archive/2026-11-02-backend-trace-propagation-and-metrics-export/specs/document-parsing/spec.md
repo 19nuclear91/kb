@@ -4,7 +4,7 @@
 
 ### Requirement: 解析任务指标必须支持健康观测
 
-系统 SHALL 暴露低基数的任务处理、队列、租约、死信和告警指标，并使其可经 Worker 的指标导出端点被监控系统抓取；任务处理耗时 MUST 使用显式分桶。指标标签 MUST 不包含任务 ID、版本 ID、对象路径或用户输入。
+系统 SHALL 暴露低基数的任务处理、队列、租约、死信和告警指标，并使其可经 Worker 的指标导出端点被监控系统抓取；任务处理耗时 MUST 使用显式分桶。重试/死信 MUST 保留既有无标签总量名称，`failure_class` 分类计数分别使用 `kb.parse.tasks.retried.by_class`、`kb.parse.tasks.dead_lettered.by_class`，不得因同名标签键集合冲突丢失分类输出。指标标签 MUST 不包含任务 ID、版本 ID、对象路径或用户输入。
 
 #### Scenario: 队列积压观测
 
@@ -27,7 +27,7 @@
 #### Scenario: 导出端点抓取
 
 - **WHEN** 监控系统按 Prometheus 协议抓取 Worker 指标端点
-- **THEN** 取得上述全部指标，名称与标签与导出前一致，任务耗时直方图含显式分桶
+- **THEN** 取得上述全部指标，除明确拆名的重试/死信分类序列外名称与标签不变，总量与分类同时可见，任务耗时直方图含显式分桶
 
 ## ADDED Requirements
 

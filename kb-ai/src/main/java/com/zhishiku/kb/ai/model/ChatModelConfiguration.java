@@ -2,6 +2,7 @@ package com.zhishiku.kb.ai.model;
 
 import com.zhishiku.kb.ai.chat.ChatModelClient;
 import com.zhishiku.kb.ai.conversation.MultiTurnModel;
+import com.zhishiku.kb.ai.telemetry.ModelTelemetry;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -34,8 +35,9 @@ public class ChatModelConfiguration {
     }
 
     @Bean
-    OpenAiChatTransport openAiChatTransport(OpenAiSseDecoder decoder) {
-        return new OpenAiChatTransport(properties, totalSeconds, OpenAiChatTransport.isolatedClient(properties), decoder);
+    OpenAiChatTransport openAiChatTransport(OpenAiSseDecoder decoder, ObjectProvider<ModelTelemetry> telemetry) {
+        return new OpenAiChatTransport(properties, totalSeconds, OpenAiChatTransport.isolatedClient(properties), decoder,
+                telemetry.getIfAvailable(() -> ModelTelemetry.NOOP));
     }
 
     @Bean

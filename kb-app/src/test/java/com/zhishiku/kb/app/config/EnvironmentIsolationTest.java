@@ -38,6 +38,7 @@ class EnvironmentIsolationTest {
     @Test
     void safeProdExcludesSeedsAndKeepsSqlLoggingOff() {
         runner("prod").withPropertyValues(
+                        "management.server.port=9081", "management.server.address=127.0.0.1",
                         "spring.datasource.url=jdbc:postgresql://db/kb", "spring.datasource.username=service",
                         "spring.datasource.password=external", "spring.data.redis.host=redis",
                         "kb.storage.endpoint=https://s3.example", "kb.storage.access-key=external",

@@ -1,6 +1,7 @@
 package com.zhishiku.kb.ai.chat;
 
 import com.zhishiku.kb.common.security.AuthHeaders;
+import com.zhishiku.kb.ai.telemetry.StreamTelemetry;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -47,6 +48,12 @@ public class ChatController {
     private final AiProperties props;
     private final ChatQuotaAuditService quotaAudit;
     private AiObservedChat observed;
+    private StreamTelemetry telemetry = StreamTelemetry.NOOP;
+
+    @Autowired
+    public void setTelemetry(StreamTelemetry telemetry) {
+        this.telemetry = telemetry;
+    }
 
     @Autowired
     public void setObservedChat(AiObservedChat observed) { this.observed = observed; }
@@ -103,7 +110,13 @@ public class ChatController {
     }
 
     private Flux<ServerSentEvent<Object>> stream(String question, String tokenValue) {
-        if (observed != null && observed.enabled()) return observed.stream(question, tokenValue);
+        return telemetry.observe(() -> unobservedStream(question, tokenValue));
+    }
+
+    private Flux<ServerSentEvent<Object>> unobservedStream(String question, String tokenValue) {
+        if (observed != null && observed.enabled()) {
+            return observed.stream(question, tokenValue);
+        }
         // 不记 question 内容，只记长度。理由同 RetrievalClient 里的说明。
         log.debug("收到流式问答请求 questionLength={} hasToken={}",
                 question == null ? 0 : question.length(), tokenValue != null);
@@ -150,6 +163,7 @@ public class ChatController {
                     }
                     return Mono.just(event);
                 })
+                .transform(StreamTelemetry::captureFailures)
                 .onErrorResume(error -> {
                     SafeChatLog.error(log, "stream", error);
                     Mono<Void> settle = activeLease == null

@@ -26,7 +26,7 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
                 .connectTimeout(Duration.ofSeconds(props.timeoutSeconds()))
                 .build());
         requestFactory.setReadTimeout(Duration.ofSeconds(props.timeoutSeconds()));
-        var b = builder.baseUrl(stripTrailingSlash(props.baseUrl()))
+        var b = RestClient.builder().baseUrl(stripTrailingSlash(props.baseUrl()))
                 .requestFactory(requestFactory);
         if (props.apiKey() != null && !props.apiKey().isBlank()) {
             b.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + props.apiKey());

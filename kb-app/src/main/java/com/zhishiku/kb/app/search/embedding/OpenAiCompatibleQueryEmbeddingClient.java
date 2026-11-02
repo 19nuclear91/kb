@@ -24,7 +24,7 @@ public class OpenAiCompatibleQueryEmbeddingClient implements QueryEmbeddingClien
                 .connectTimeout(Duration.ofSeconds(props.timeoutSeconds()))
                 .build());
         requestFactory.setReadTimeout(Duration.ofSeconds(props.timeoutSeconds()));
-        var configured = builder.baseUrl(stripTrailingSlash(props.baseUrl())).requestFactory(requestFactory);
+        var configured = RestClient.builder().baseUrl(stripTrailingSlash(props.baseUrl())).requestFactory(requestFactory);
         if (props.apiKey() != null && !props.apiKey().isBlank()) {
             configured.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + props.apiKey());
         }

@@ -1,6 +1,8 @@
 package com.zhishiku.kb.ai.chat;
 
 import com.zhishiku.kb.common.security.QuotaPrincipal;
+import com.zhishiku.kb.ai.telemetry.DependencyTelemetry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
@@ -120,6 +122,12 @@ public class ChatQuotaAuditService {
     private final QuotaPrincipalClient principalClient;
     private final ReactiveStringRedisTemplate redis;
     private final Clock clock;
+    private DependencyTelemetry telemetry = DependencyTelemetry.NOOP;
+
+    @Autowired
+    public void setTelemetry(DependencyTelemetry telemetry) {
+        this.telemetry = telemetry;
+    }
 
     public ChatQuotaAuditService(AiProperties props,
                                  ChatAuditSink sink,
@@ -201,6 +209,8 @@ public class ChatQuotaAuditService {
                 .flatMap(allowed -> {
                     if (allowed != 1L) {
                         boolean tokenRejected = allowed == -2L;
+                        telemetry.quotaRejected(tokenRejected ? DependencyTelemetry.QuotaReason.TOKEN_BUDGET
+                                : DependencyTelemetry.QuotaReason.REQUEST_OR_CONCURRENCY);
                         ChatAuditEvent event = auditEvent(principal, fingerprint(tokenValue), questionChars,
                                 tokenRejected ? "token_quota_rejected" : "quota_rejected",
                                 0, 0, now, UUID.randomUUID().toString());

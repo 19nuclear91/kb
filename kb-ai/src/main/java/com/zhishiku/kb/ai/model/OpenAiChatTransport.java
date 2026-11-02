@@ -1,5 +1,7 @@
 package com.zhishiku.kb.ai.model;
 
+import com.zhishiku.kb.ai.telemetry.ModelTelemetry;
+import io.micrometer.observation.ObservationRegistry;
 import io.netty.channel.ChannelOption;
 import org.reactivestreams.Subscription;
 import org.springframework.core.io.buffer.DataBuffer;
@@ -33,14 +35,22 @@ public class OpenAiChatTransport {
     private final int responseLimit;
     private final Duration idleTimeout;
     private final Duration totalTimeout;
+    private final ModelTelemetry telemetry;
 
     public OpenAiChatTransport(ChatModelProperties properties, int totalSeconds,
                                WebClient client, OpenAiSseDecoder decoder) {
+        this(properties, totalSeconds, client, decoder, ModelTelemetry.NOOP);
+    }
+
+    public OpenAiChatTransport(ChatModelProperties properties, int totalSeconds,
+                               WebClient client, OpenAiSseDecoder decoder, ModelTelemetry telemetry) {
         this.client = client.mutate().defaultHeaders(headers -> headers.clear())
                 .defaultCookies(cookies -> cookies.clear()).filters(filters -> filters.clear())
+                .observationRegistry(ObservationRegistry.NOOP)
                 .filter((request, next) -> next.exchange(request)
                 .map(OpenAiChatTransport::singleUseBody)).build();
         this.decoder = decoder;
+        this.telemetry = telemetry;
         endpoint = properties.endpoint();
         apiKey = properties.getApiKey();
         responseLimit = properties.getMaxResponseBytes();
@@ -60,19 +70,7 @@ public class OpenAiChatTransport {
             if (!subscribed.compareAndSet(false, true)) {
                 return Flux.error(new ChatModelFailure(ChatModelFailure.Kind.ALREADY_SUBSCRIBED));
             }
-            Scheduler clock = Schedulers.parallel();
-            long deadline = clock.now(TimeUnit.MILLISECONDS) + totalTimeout.toMillis();
-            byte[] bytes = prepared.encode();
-            return client.post().uri(endpoint).headers(headers -> {
-                        headers.clear();
-                        headers.setBearerAuth(apiKey);
-                        headers.setContentType(MediaType.APPLICATION_JSON);
-                        headers.setAccept(List.of(MediaType.TEXT_EVENT_STREAM));
-                    }).cookies(cookies -> cookies.clear()).bodyValue(bytes)
-                    .exchangeToFlux(this::readResponse)
-                    // 每次活动只重置空闲期限，总期限固定；timeout 同时取消实际上游订阅。
-                    .timeout(nextTimeout(clock, deadline), event -> nextTimeout(clock, deadline))
-                    .filter(event -> event instanceof ModelEvent.Delta || event instanceof ModelEvent.FinalUsage);
+            return telemetry.observe(() -> call(prepared));
         }).onErrorMap(error -> {
             if (error instanceof ChatModelFailure) {
                 return error;
@@ -80,6 +78,22 @@ public class OpenAiChatTransport {
             return new ChatModelFailure(error instanceof TimeoutException ? ChatModelFailure.Kind.TIMEOUT
                     : ChatModelFailure.Kind.CONNECT_FAILED);
         });
+    }
+
+    private Flux<ModelEvent> call(PreparedChatRequest prepared) {
+        Scheduler clock = Schedulers.parallel();
+        long deadline = clock.now(TimeUnit.MILLISECONDS) + totalTimeout.toMillis();
+        byte[] bytes = prepared.encode();
+        return client.post().uri(endpoint).headers(headers -> {
+                    headers.clear();
+                    headers.setBearerAuth(apiKey);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                    headers.setAccept(List.of(MediaType.TEXT_EVENT_STREAM));
+                }).cookies(cookies -> cookies.clear()).bodyValue(bytes)
+                .exchangeToFlux(this::readResponse)
+                // 每次活动只重置空闲期限，总期限固定；timeout 同时取消实际上游订阅。
+                .timeout(nextTimeout(clock, deadline), event -> nextTimeout(clock, deadline))
+                .filter(event -> event instanceof ModelEvent.Delta || event instanceof ModelEvent.FinalUsage);
     }
 
     private Mono<Long> nextTimeout(Scheduler clock, long deadline) {

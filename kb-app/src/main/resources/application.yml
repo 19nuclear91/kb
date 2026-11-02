@@ -46,7 +46,18 @@ mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
 
+management:
+  server:
+    port: ${KB_MANAGEMENT_PORT:}
+    address: ${KB_MANAGEMENT_ADDRESS:}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+
 logging:
+  pattern:
+    level: "%5p [requestId=%X{requestId:-}]"
   level:
     com.zhishiku.kb: INFO
     com.zhishiku.kb.app.search.mapper: "OFF"
@@ -57,6 +68,11 @@ logging:
     com.zhishiku.kb.app.document.metadata.mapper: "OFF"
 
 kb:
+  telemetry:
+    tracing:
+      enabled: ${KB_TELEMETRY_TRACING_ENABLED:false}
+      otlp-endpoint: ${KB_TELEMETRY_OTLP_ENDPOINT:}
+      sampling-probability: ${KB_TELEMETRY_SAMPLING_PROBABILITY:1.0}
   conversation:
     enabled: ${KB_CONVERSATION_ENABLED:false}
     secret: ${KB_CONVERSATION_SECRET:}

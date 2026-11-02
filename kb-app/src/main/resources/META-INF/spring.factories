@@ -1,1 +1,2 @@
-org.springframework.boot.env.EnvironmentPostProcessor=com.zhishiku.kb.app.config.ProductionEnvironmentCheck
+org.springframework.boot.env.EnvironmentPostProcessor=com.zhishiku.kb.app.telemetry.TelemetryEnvironmentPostProcessor,com.zhishiku.kb.app.config.ProductionEnvironmentCheck
+org.springframework.boot.autoconfigure.AutoConfigurationImportFilter=com.zhishiku.kb.app.telemetry.TracingAutoConfigurationFilter

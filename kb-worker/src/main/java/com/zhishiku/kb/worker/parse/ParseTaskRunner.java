@@ -2,6 +2,10 @@ package com.zhishiku.kb.worker.parse;
 
 import com.zhishiku.kb.worker.parse.mapper.ParseTaskMapper;
 import com.zhishiku.kb.worker.parse.model.ParseTask;
+import com.zhishiku.kb.worker.telemetry.TaskContextPropagation;
+import com.zhishiku.kb.worker.telemetry.TaskTelemetry;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.tracing.Tracer;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,11 +53,14 @@ public class ParseTaskRunner {
     private final FailureClassifier failureClassifier;
     private final ParseTaskRecoveryService recoveryService;
     private final ParseTaskMetrics metrics;
-    private final ExecutorService pipelineExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "kb-worker-pipeline");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private final TaskContextPropagation contexts;
+    private final ExecutorService pipelineExecutor;
+    private TaskTelemetry telemetry = TaskTelemetry.NOOP;
+
+    @Autowired
+    public void setTelemetry(TaskTelemetry telemetry) {
+        this.telemetry = telemetry;
+    }
 
     /**
      * 本实例标识。出现"任务卡在 running"时靠它定位是哪台机器。
@@ -80,7 +87,18 @@ public class ParseTaskRunner {
                            TaskFailureAlert failureAlert,
                            FailureClassifier failureClassifier,
                            ParseTaskRecoveryService recoveryService,
-                           ParseTaskMetrics metrics, ParseTaskClaimService claims) {
+                           ParseTaskMetrics metrics, ParseTaskClaimService claims, TaskContextPropagation contexts) {
+        this(mapper, pipeline, publisher, props, failureAlert, failureClassifier, recoveryService, metrics, claims,
+                contexts, Executors.newSingleThreadExecutor(r -> {
+                    Thread thread = new Thread(r, "kb-worker-pipeline");
+                    thread.setDaemon(true);
+                    return thread;
+                }));
+    }
+
+    ParseTaskRunner(ParseTaskMapper mapper, ParsePipeline pipeline, ChunkPublisher publisher, ParseProperties props,
+                    TaskFailureAlert failureAlert, FailureClassifier failureClassifier, ParseTaskRecoveryService recoveryService,
+                    ParseTaskMetrics metrics, ParseTaskClaimService claims, TaskContextPropagation contexts, ExecutorService executor) {
         this.mapper = mapper;
         this.claims = claims;
         this.pipeline = pipeline;
@@ -90,6 +108,8 @@ public class ParseTaskRunner {
         this.failureClassifier = failureClassifier;
         this.recoveryService = recoveryService;
         this.metrics = metrics;
+        this.contexts = contexts;
+        this.pipelineExecutor = executor;
         this.owner = buildOwnerId();
         log.info("Worker 实例标识 owner={}", owner);
     }
@@ -97,6 +117,13 @@ public class ParseTaskRunner {
     /**
      * 兼容直接构造 Worker runner 的测试和嵌入式调用方。
      */
+    public ParseTaskRunner(ParseTaskMapper mapper, ParsePipeline pipeline, ChunkPublisher publisher, ParseProperties props,
+                           TaskFailureAlert failureAlert, FailureClassifier failureClassifier,
+                           ParseTaskRecoveryService recoveryService, ParseTaskMetrics metrics, ParseTaskClaimService claims) {
+        this(mapper, pipeline, publisher, props, failureAlert, failureClassifier, recoveryService, metrics, claims,
+                new TaskContextPropagation(ObservationRegistry.NOOP, Tracer.NOOP));
+    }
+
     public ParseTaskRunner(ParseTaskMapper mapper, ParsePipeline pipeline,
                            ChunkPublisher publisher, ParseProperties props,
                            TaskFailureAlert failureAlert,
@@ -127,15 +154,23 @@ public class ParseTaskRunner {
     }
 
     private void runOne(ParseTask task) {
+        try (var span = telemetry.start(task)) {
+            runOne(task, span);
+        }
+    }
+
+    private void runOne(ParseTask task, TaskTelemetry.TaskSpan span) {
         Execution execution = new Execution(task, new AtomicBoolean(true));
         inFlightTask.set(execution);
         long startedAt = System.currentTimeMillis();
         var timer = metrics.startTimer();
 
         try {
+            log.debug("执行已领取任务 taskId={} versionId={}", task.id(), task.versionId());
             ParsePipeline.ParsedDocument parsed = runPipelineWithTimeout(task, execution.leaseHeld());
 
             if (!execution.leaseHeld().get()) {
+                span.failed(failureClassifier.classify(new LeaseLostException()));
                 // 租约在处理期间失守，说明任务已被其他实例领走。
                 // 此时不能标成功：我们的结果可能只写了一半，
                 // 而新持有者正在重做。让新持有者去写终态。
@@ -143,7 +178,8 @@ public class ParseTaskRunner {
                 return;
             }
 
-            if (!publisher.publish(task, owner, parsed)) {
+            if (!telemetry.inStage(TaskTelemetry.Stage.PUBLISH, () -> publisher.publish(task, owner, parsed))) {
+                span.failed(failureClassifier.classify(new LeaseLostException()));
                 log.warn("发布结果时租约已被回收 taskId={} versionId={}", task.id(), task.versionId());
                 return;
             }
@@ -152,6 +188,7 @@ public class ParseTaskRunner {
             metrics.completed();
 
         } catch (LeaseLostException e) {
+            span.failed(failureClassifier.classify(e));
             log.warn("租约失守，放弃任务 taskId={} versionId={}", task.id(), task.versionId());
             metrics.leaseLost();
             try {
@@ -160,6 +197,7 @@ public class ParseTaskRunner {
                 log.warn("记录租约失守事件失败 taskId={}", task.id(), eventFailure);
             }
         } catch (Exception e) {
+            span.failed(failureClassifier.classify(e));
             handleFailure(task, e);
         } finally {
             inFlightTask.compareAndSet(execution, null);
@@ -178,7 +216,7 @@ public class ParseTaskRunner {
         boolean deadLetter = classification.permanent() || lastChance;
         log.error("解析失败 taskId={} versionId={} attempts={}/{} class={} code={} deadLetter={}",
                 task.id(), task.versionId(), task.attempts(), task.maxAttempts(),
-                classification.metricClass(), classification.code(), deadLetter, e);
+                classification.metricClass(), classification.code(), deadLetter);
 
         if (e instanceof ParseFailureException parseFailure) {
             try {
@@ -210,8 +248,12 @@ public class ParseTaskRunner {
     }
 
     private ParsePipeline.ParsedDocument runPipelineWithTimeout(ParseTask task, AtomicBoolean leaseHeld) throws Exception {
-        Future<ParsePipeline.ParsedDocument> future = pipelineExecutor.submit(
-                () -> pipeline.process(task, leaseHeld::get));
+        var snapshot = contexts.capture();
+        Future<ParsePipeline.ParsedDocument> future = pipelineExecutor.submit(() -> {
+            try (var scope = snapshot.setThreadLocals()) {
+                return pipeline.process(task, leaseHeld::get);
+            }
+        });
         try {
             return future.get(props.taskTimeoutSeconds(), TimeUnit.SECONDS);
         } catch (TimeoutException e) {

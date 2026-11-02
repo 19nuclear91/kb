@@ -41,15 +41,27 @@ Worker 使用 PostgreSQL 任务表作为持久队列。`pending` 任务只有在
 
 ## 指标与事件
 
-Actuator 暴露 `/actuator/metrics`。Worker 注册以下低基数指标：
+Actuator 在管理端口暴露 `/actuator/metrics` 与 `/actuator/prometheus`。生产须配置 `KB_MANAGEMENT_PORT` 和 `KB_MANAGEMENT_ADDRESS`，同步把健康探针迁移到管理端口；显式 dev 可沿用业务端口。Worker 注册以下低基数指标：
 
 - `kb.parse.tasks.claimed`、`completed`、`retried`、`dead_lettered`、`lease_lost`
+- `kb.parse.tasks.retried.by_class`、`kb.parse.tasks.dead_lettered.by_class`
 - `kb.parse.alerts.failed`
 - `kb.parse.task.duration`
 - `kb.parse.queue.depth`、`kb.parse.dead_letter.depth`、`kb.parse.queue.oldest_age_seconds`
 
-失败结果计数可带 `failure_class`（`PERMANENT`、`RETRYABLE`、`UNKNOWN`）标签。标签不包含任务 ID、版本
-ID、对象路径或用户输入。建议外部监控按队列年龄、死信深度、租约失守率和告警投递失败率配置阈值；Worker 不绑定通知平台。
+无标签重试/死信总量保持旧名称不变；只有 `.by_class` 分类计数携带 `failure_class`（`PERMANENT`、`RETRYABLE`、`UNKNOWN`）标签。原同名分类序列改用独立名称，避免 Prometheus registry 因标签键集合冲突丢失分类输出。原总量查询不变，分类查询迁移为 `kb_parse_tasks_retried_by_class_total{failure_class="RETRYABLE"}` 或 `kb_parse_tasks_dead_lettered_by_class_total{failure_class="PERMANENT"}`；不要把总量和分类相加。
+
+标签不包含任务 ID、版本 ID、对象路径或用户输入。建议外部监控按队列年龄、死信深度、租约失守率和告警投递失败率配置阈值；Worker 不绑定通知平台。
+
+`kb.parse.task.duration` 保持无业务标签，默认显式边界为 1s、5s、30s、60s、300s，并去重合入 `KB_TASK_TIMEOUT_SECONDS`（默认 900s）。`kb.telemetry.histograms.parse` 可覆盖基础边界，配置必须严格递增且为正；Prometheus 按秒导出 `_bucket`、`_count`、`_sum`。抓取与 OpenMetrics 配置见[遥测运维](telemetry-operations.md)。
 
 死信转移和重试耗尽先写入 `kb_parse_task_event` 与 `kb_parse_alert_delivery`，告警投递器在事务提交后调用
 `TaskFailureAlert`。`dedupe_key` 保证重复巡检最多发送一次；发送失败保留待投递记录并增加失败指标。
+
+## 任务级追踪
+
+追踪默认关闭；显式启用后，每次 `ParseTaskRunner.runOne` 执行生成独立根跨度 `kb.parse.task`，`kb.parse.document`、`kb.parse.embedding`、`kb.parse.publish` 分别覆盖解析、向量化与发布。重复领取、自动重试和人工重放后的执行使用新的 trace，以任务和版本 ID 关联历史；不把上传请求 trace 存进任务表或当作父跨度。
+
+上下文在提交流水线前捕获，并在独立 executor 线程恢复和清理；任务执行日志携带 traceId/spanId，心跳与巡检线程保持独立。任务跨度属性仅允许 `kb.task.id`、`kb.version.id`、`kb.execution.generation` 和固定 `kb.failure.class`；不记录对象键、原件内容、解析器原始错误体或异常堆栈。解析器未就绪时不领取任务，也不生成任务跨度。
+
+第三方解析与 embedding 客户端不传播内部追踪头或 baggage。任务关闭追踪后使用无操作 tracer，领取、重试、发布及指标继续按原流程运行。启用、采样和回退操作见[遥测运维](telemetry-operations.md)。

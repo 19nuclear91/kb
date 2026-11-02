@@ -83,6 +83,25 @@ estimated 的计数只用于准入及裁剪，KNOWN 仍完整记录和结算供�
 
 verified 下没有匹配策略时多轮不可用；同一身份存在多个策略则配置拒绝。更换地址、模型或消息格式需要重新核验，不能把同名模型别名视为权重证明。estimated 使用冻结参数的 `utf8-budget-v1`，不实现 `ChatTokenBudget`，不解析或调用严格策略；计算说明见[多轮适配器与预算](conversation-model-budget.md)。自定义模型仍分别优先，估算配置不会补齐自定义多轮实现缺失的预算能力。单轮现有字符/字节保护和输出上限不是总 token 上界；实际用量、预算预留与额度扣除继续分别表达。
 
+## 指标与追踪隔离
+
+AI 管理端口的 `/actuator/prometheus` 导出以下指标，追踪开关不影响计数。端口迁移、OpenMetrics 协商和配置见[遥测运维](telemetry-operations.md)。
+
+| 指标 | 标签 / 口径 |
+| --- | --- |
+| `kb.model.calls`、`kb.model.call.duration` | `outcome=COMPLETED/UPSTREAM_ERROR/PROTOCOL_ERROR/LIMIT/TIMEOUT/CANCELLED` |
+| `kb.model.first_text.delay` | 从调用订阅到首个非空文本增量，只有实际收到文本才记录 |
+| `kb.model.usage` | `status=KNOWN/UNKNOWN`；每次调用终结计一次，非 token 数累加 |
+| `kb.chat.started` | 每次 SSE 订阅开始计一次 |
+| `kb.chat.streams`、`kb.chat.stream.duration` | `outcome=COMPLETED/ERROR/CANCELLED/TIMEOUT`，`error_code=NONE/UNKNOWN/SEARCH_UNAVAILABLE/INPUT_BUDGET_EXCEEDED` |
+| `kb.chat.first_event.delay` | 首个 delta 或 citation，心跳、done 和 error 不计作内容 |
+| `kb.ai.quota.rejections` | `reason=REQUEST_OR_CONCURRENCY/TOKEN_BUDGET`，依据实际配额拒绝决定计数 |
+| `kb.ai.retrieval.failures` | `reason=REJECTED/TIMEOUT/UNAVAILABLE/PROTOCOL`；HTTP 4xx 为 REJECTED，其他 HTTP 故障为 UNAVAILABLE |
+
+模型完成但没有最终 usage 时记 UNKNOWN，失败/取消且未收到最终 usage 也记 UNKNOWN，不伪造实际零用量。输出截断、字节/预算限额归 LIMIT；HTTP 拒绝（包括 429）及连接错误归 UPSTREAM_ERROR。模型整次耗时默认边界为 1s、5s、15s、30s、60s，由 `kb.telemetry.histograms.model` 配置。未订阅或同一模型流的重复订阅拒绝不新增调用计数。计数、耗时和标签不包含问题、答案、会话、轮次、模型密钥或原始错误。
+
+内部 HTTP 使用 W3C 上下文关联日志；模型 HTTP 使用自建隔离 WebClient，构造时强制 `ObservationRegistry.NOOP`，不发送 `traceparent`、`tracestate`、baggage、用户令牌、Cookie 或内部签名，不采用供应商响应的追踪头。清空默认头和过滤器不足以禁用 WebClient 观测。模型指标是本地埋点，不依赖向供应商传播上下文。
+
 ## 发布与回退
 
 内置自动配置只在 `KB_CHAT_MODEL_ENABLED=true` 时生效，单轮和多轮分别通过缺失 Bean 条件退让已有自定义模型。启用配置仍独立校验，不因为已有自定义 Bean 就忽略错误配置。仅修改 kb-ai 的适配层与配置，没有数据库迁移或前端/网关协议变更。

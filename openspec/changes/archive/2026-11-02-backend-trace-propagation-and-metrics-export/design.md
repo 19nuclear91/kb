@@ -19,7 +19,7 @@
 
 - 让"关闭"成为真正的零行为：未启用追踪时不产生跨度、不注入头、不改变任何出站请求。
 - 让对外隔离可被单元测试证伪，而不是靠约定：每个单元都有断言供应商请求不含传播头的守卫测试。
-- 既有指标名、标签与测试构造方式不变；新增指标沿用"固定枚举标签、ID 不入标签"的既有规则。
+- 既有指标名、标签与测试构造方式不变，唯独解析任务重试/死信分类序列按 D7 拆名；新增指标沿用"固定枚举标签、ID 不入标签"的既有规则。
 - 生产暴露面由 `ProductionSettings` 硬校验，与现有 dev/prod 边界一致。
 - 全部验证限定为进程内单元测试、内存导出器与静态构建。
 
@@ -50,15 +50,18 @@
 | `management.server.port` | `KB_MANAGEMENT_PORT` | 空 | 生产必填；dev 留空沿用业务端口 |
 | `management.server.address` | `KB_MANAGEMENT_ADDRESS` | 空 | 生产必填且不得为 `0.0.0.0`/空白 |
 | `management.endpoints.web.exposure.include` | 固定 | `health,info,prometheus`（worker 另含 `metrics`） | 生产禁止含 `*` |
-| `management.tracing.baggage.remote-fields` | 固定 | 空 | baggage 不出站；本地可用于 requestId 关联 |
+| `management.tracing.baggage.enabled` | 固定 | false | 禁用 Boot 的 baggage 网络传播；显式设置为 true 时拒绝启动 |
+| `management.tracing.baggage.remote-fields` | 固定 | 空 | 禁止配置远程字段；仅置空不能关闭 OTel 的 W3C baggage 传播 |
 
 四个 `ProductionEnvironmentCheck` 增加 `management.` 前缀采集（`kb.telemetry.` 已由既有 `kb.` 前缀覆盖）；`ProductionSettings` 新增规则：追踪启用则地址必填且采样率有界；生产管理端口与绑定地址必填、暴露清单无通配；分桶配置非递增或非正拒绝。错误只含配置名。
 
 **取舍：** 以 `kb.telemetry.*` 作为唯一开关并映射到 `management.tracing.*`，避免部署方直接设置 Boot 原生键绕过校验；原生键仍可用但受同一校验约束。
 
+**Boot 3.3.5 启停兼容性：** 仅设置 `management.tracing.enabled=false` 不能关闭本地 OTel 跨度创建。四个单元分别注册自动配置导入过滤器，关闭时排除 OTel tracing、OTLP exporter 与 Prometheus exemplar 自动配置，由 Boot 提供 `Tracer.NOOP`，保留指标观测；启用时沿用 Boot 自动配置。启停验证必须通过真实自动配置导入路径装配，并验证关闭时无跨度、传播头与 exemplar。
+
 ### D3. 网关为 trace 根，不消费入站上下文
 
-网关使用 Boot 的 WebFlux 服务端观测作为 trace 根；传播配置为**只产生、不消费**（`consume` 为空），因此客户端自带的 `traceparent` 永不成为父上下文。另在现有入站净化之外增加一个静默剥离步骤，去掉 `traceparent`、`tracestate`、`baggage` 后再路由，防止它们作为普通头被转发到下游；该剥离不记 WARN（不是身份攻击面）。Sa-Token 的 401 拒绝发生在观测过滤器之内，因而同样带 trace。
+网关使用 Boot 的 WebFlux 服务端观测作为 trace 根；传播配置为**只产生、不消费**（`consume` 为空），因此客户端自带的 `traceparent` 永不成为父上下文。另通过 `HttpHandlerDecoratorFactory` 在 `HttpWebHandlerAdapter` 外层增加静默剥离步骤，去掉 `traceparent`、`tracestate`、`baggage` 后才进入观测与路由，防止它们作为普通头被转发到下游；该剥离不记 WARN（不是身份攻击面）。Spring WebFlux 6.1 的观测位于 WebFilter 链外层，不能依靠 WebFilter 排序实现这一顺序。Sa-Token 的 401 拒绝发生在服务端观测范围内，因而同样带 trace。
 
 响应不回写任何追踪头；CORS `exposedHeaders` 不变。
 
@@ -72,19 +75,22 @@
 
 **取舍：** 也可保留注入 builder 并为供应商客户端移除观测过滤器，但那依赖过滤器顺序与 Boot 内部实现；自建 builder 与项目已有的模型隔离做法一致，更稳。
 
-### D5. 日志关联与三处桥接
+### D5. 日志关联与跨线程桥接
 
 - 日志模式沿用 Boot 自动关联字段，不新增 logback 文件；各单元 `spring.application.name` 已存在。
-- `requestId`：kb-app 以 Servlet 过滤器在请求进入时读取 `X-Request-Id` 写入 MDC 并在 finally 清理；kb-gateway、kb-ai 以本地 baggage 字段关联到 MDC（`remote-fields` 为空保证不出站）。worker 的任务事件已持有 `request_id`，日志按既有方式输出。
+- `requestId`：kb-app 以 Servlet 过滤器在请求进入时读取 `X-Request-Id` 写入 MDC 并在 finally 清理；kb-gateway、kb-ai 通过 API 创建仅供本地上下文使用的 requestId baggage，并显式装配 `Slf4JBaggageEventListener` 将该字段关联到 MDC。固定 `management.tracing.baggage.enabled=false` 关闭 Boot 的 baggage 网络传播，同时保持 `remote-fields` 为空。worker 的任务事件已持有 `request_id`，日志按既有方式输出。
 - Reactor：开启 Boot 的自动上下文传播，使 WebFlux 处理链与 SSE 流在各线程上保持 MDC；SSE 流全程处于一个服务端跨度，流结束时关闭。
 - Worker：`ParseTaskRunner` 在提交流水线前捕获当前上下文快照，并在 `pipelineExecutor` 线程内恢复后执行，finally 清理；心跳与巡检线程不继承任务上下文。
+- 搜索：`SearchExecutor` 的主工作与可选阶段在提交前捕获 Observation、独立 span 和本地 requestId 的白名单快照，在实际执行作用域内恢复、退出时清理或恢复先前值；不复制认证、事务、查询、正文及其他 MDC 字段。保留既有准入、截止、取消与真实工作退出记账，不依赖 Reactor 钩子或线程继承。
 
 **取舍：** 不把 `requestId` 做成远程 baggage——那会随内部调用流转并增加误传到供应商的面。kb-ai 到 kb-app 的内部请求本身携带的 `requestId` 已在各自入口写入 MDC。
+
+**Boot 3.3.5 / OTel 兼容性：** 不设置 `management.tracing.baggage.local-fields`，该版本的 OTel 自动配置不支持它。默认 W3C 传播器会在 baggage 启用时同时装配 `W3CBaggagePropagator`，不受空 `remote-fields` 限制；因此必须显式禁用 baggage 网络传播。禁用后 Boot 不再自动装配 baggage 的 MDC 监听器，本项目仅对本地 requestId 显式注册该监听器，并以含本地 baggage 的真实内存传播测试验证内部出站无 `baggage` 头。
 
 ### D6. 属性红线由自定义约定与导出过滤共同兑现
 
 - MVC 与 WebFlux 的服务端观测约定替换为本项目实现：只记录路由模板、方法、状态、结果与异常类名；不记录 `http.url`、任何请求头、远端地址。客户端观定同样只记录目标类别（`internal-app`、`internal-ai`、`vendor-model`、`vendor-embedding`、`vendor-rerank`、`vendor-parser`、`sso`）、方法、状态与结果。
-- 导出前再加一道属性过滤：删除任何名为 `http.url`、`url.full`、`http.request.header.*`、`net.*` 的属性，作为 Boot 默认约定变化时的兜底。
+- 导出前再加一道过滤：删除任何名为 `http.url`、`url.full`、`http.request.header.*`、`net.*` 的属性，作为 Boot 默认约定变化时的兜底。OTel 会在异常事件中保存消息与堆栈，并可能将消息写入状态描述；异常事件须重建为仅保留合法异常类名的安全事件，状态保留代码但清空描述。事件与跨度属性中的 `exception.message`/`exception.stacktrace` 同样删除；通过 OTel SpanData 的委托视图完成，保留跨度标识、时间与安全属性类型。
 - Worker 跨度允许 `kb.task.id`、`kb.version.id`、`kb.failure.class` 等低敏属性（跨度属性不是指标标签，不受基数规则约束），但不允许对象路径、原件内容或解析器错误体。
 - 守卫测试用内存跨度导出器断言：搜索请求、SSO 回调请求、带 `satoken` 的请求导出的跨度属性不含查询文本、授权码、state、令牌或查询串。
 
@@ -94,14 +100,14 @@
 
 - 四个单元加入 `micrometer-registry-prometheus`；kb-gateway 同时加入 actuator，并以单测断言不存在匹配 `/actuator/**` 的路由（现有路由只覆盖 `/api/**`）。
 - 生产通过独立管理端口与显式绑定地址提供 `/actuator/prometheus`、`/actuator/health`；dev 留空沿用业务端口，README 的本机验证命令不变。生产健康检查探针地址需随之调整，列入发布说明（proposal 已标 BREAKING）。
-- 既有指标名不变；`ParseTaskMetrics`、`EmbeddingMetrics` 等现有类不改接口。
+- 保留 `kb.parse.tasks.retried`、`kb.parse.tasks.dead_lettered` 的无标签总量；原同名 `failure_class` 分类序列分别改为 `kb.parse.tasks.retried.by_class`、`kb.parse.tasks.dead_lettered.by_class`，标签仍为 `failure_class`。这是经确认的唯一指标兼容性例外，原因是 Prometheus registry 不接受同名指标使用不同标签键集合；其余名称与标签不变。`ParseTaskMetrics`、`EmbeddingMetrics` 等现有类不改接口。
 
 **取舍：** 以 push（OTLP metrics）可避免匿名端点，但 Prometheus 已确定为抓取模型；因此以端口与绑定校验收紧暴露面，不在应用内再做指标端点认证（项目无 spring-security，不为此引入）。
 
 ### D8. 分桶、exemplar 与自动 HTTP 指标基数
 
 - 使用 Micrometer 的 SLO 分桶按指标名显式配置：`kb.search.stage.duration` 与 `kb.search.options.stage.duration` 为 1.5s/2s/3s/8s，`kb.model.call.duration` 为 1s/5s/15s/30s/60s，`kb.parse.task.duration` 为 1s/5s/30s/60s/300s 并包含 `KB_TASK_TIMEOUT_SECONDS`，`http.server.requests` 为 100ms/500ms/2s/10s。分桶由 `kb.telemetry.histograms.*` 承载并校验递增正值，再映射到 Micrometer 分布配置。
-- exemplar 依赖 Boot 在追踪启用时的自动配置；运维文档要求 Prometheus 抓取协商 OpenMetrics。实现时核对 Boot 3.3 的 exemplar 自动配置条件与协商媒体类型；追踪关闭时端点必须仍正常。
+- exemplar 在追踪启用时使用 Boot 自动配置；关闭时由项目的导入过滤器显式排除 `PrometheusExemplarsAutoConfiguration`，因为 Boot 3.3.5 仅检查 Tracer Bean 存在，不能自行区分启停。运维文档要求 Prometheus 抓取协商 OpenMetrics；关闭时采样上下文 Bean 不存在，端点正常且无 exemplar。
 - `http.server.requests`：保留 Boot 的 URI 模板标签与 `max-uri-tags` 上限，增加 `MeterFilter` 拒绝管理端点自身的序列，未匹配路径归入固定值；网关以路由 id 作为标签，不使用原始路径。单测用随机路径与多 ID 路径断言序列数不增长。
 
 **取舍：** 全局百分位直方图开销大且边界与预算无关；按指标名显式 SLO 桶更省、更能回答"是否逼近预算"。
@@ -116,6 +122,8 @@
 | `kb.model.usage` | `status=KNOWN/UNKNOWN` | 最终 usage 确认 |
 | `kb.chat.streams` | `outcome=COMPLETED/ERROR/CANCELLED/TIMEOUT`，`error_code` 固定枚举 | `ChatController`、多轮 SSE 收尾 |
 | `kb.chat.first_event.delay` | 无 | 首个内容事件 |
+| `kb.chat.started` | 无 | SSE 订阅开始 |
+| `kb.chat.stream.duration` | `outcome`、`error_code`（同终态计数） | SSE 终结，落实流生命周期规格的整流耗时 |
 | `kb.ai.quota.rejections` | `reason` 固定枚举 | 配额拒绝处理 |
 | `kb.ai.retrieval.failures` | `reason=REJECTED/TIMEOUT/UNAVAILABLE/PROTOCOL` | `RetrievalClient` 失败映射 |
 
@@ -132,7 +140,9 @@
 - 指标：`SimpleMeterRegistry` 断言名称、标签集合与计数；分桶配置单测断言映射结果与非法值拒绝。
 - 追踪：Micrometer 的内存 tracer / OTel 内存跨度导出器；配置类单测分别在关闭与启用两种装配下运行。
 - 头部：替身捕获出站请求头；网关用 `MockServerWebExchange` 断言剥离、无响应追踪头与 401 路径处于跨度内。
+- 接收端：app/AI 分别用 MockMvc/WebFlux 处理已知 W3C 头，验证服务端跨度、日志及后续内部出站均沿用原 trace；仅使用内存导出器和出站替身，不启动跨服务环境。
 - 桥接：Worker 以受控 executor 与 latch 断言流水线线程 MDC 含 trace 标识且 finally 清理；kb-ai 用 `StepVerifier` 与虚拟时间断言 SSE 跨度随流关闭。
+- 搜索桥接：以真实搜索执行器和可复用受控线程覆盖主工作、可选阶段、实际 SearchService 降级日志及成功/异常/取消后的作用域清理；追踪关闭仍保留 requestId，不产生跨度或传播头。
 - 生产校验：`ProductionSettings` 参数化测试覆盖新增规则。
 - 测试命令显式列出类名，不执行全量或通配；文档不测试。
 

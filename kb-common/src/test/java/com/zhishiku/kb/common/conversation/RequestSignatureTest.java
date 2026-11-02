@@ -8,9 +8,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.HashSet;
+import java.util.HashMap;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 
 class RequestSignatureTest {
     private final String secret = "0123456789abcdef0123456789abcdef";
@@ -52,5 +54,23 @@ class RequestSignatureTest {
         RequestSignature.verify(secret, "kb-ai", "POST", "/internal/conversations/begin", value, token, headers, time
                 , 60, 180, store);
     }
-}
 
+    @Test
+    void transportTraceHeadersDoNotParticipateInAuthentication() {
+        var signed = RequestSignature.sign(secret, "kb-ai", "POST", "/internal/conversations/begin", body, "token", clock);
+        var transport = new HashMap<String, String>();
+        transport.put("X-Service-Caller", signed.caller());
+        transport.put("X-Service-Timestamp", Long.toString(signed.timestamp()));
+        transport.put("X-Service-Nonce", signed.nonce());
+        transport.put("X-Service-Signature", signed.signature());
+        for (String traceparent : new String[]{"", "00-11111111111111111111111111111111-2222222222222222-01", "untrusted"}) {
+            transport.put("traceparent", traceparent);
+            var received = new RequestSignature.Headers(transport.get("X-Service-Caller"),
+                    Long.parseLong(transport.get("X-Service-Timestamp")), transport.get("X-Service-Nonce"),
+                    transport.get("X-Service-Signature"));
+            assertThat(received.signature()).isEqualTo(signed.signature());
+            assertThatCode(() -> verify(received, body, "token", clock, (caller, nonce, ttl) -> true))
+                    .doesNotThrowAnyException();
+        }
+    }
+}

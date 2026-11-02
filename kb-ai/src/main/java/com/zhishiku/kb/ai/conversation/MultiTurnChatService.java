@@ -7,6 +7,7 @@ import com.zhishiku.kb.ai.chat.RetrievalClient;
 import com.zhishiku.kb.ai.chat.RetrievalFailure;
 import com.zhishiku.kb.ai.budget.BudgetCapability;
 import com.zhishiku.kb.ai.conversation.config.ConversationProperties;
+import com.zhishiku.kb.ai.telemetry.StreamTelemetry;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
@@ -39,6 +40,12 @@ public class MultiTurnChatService {
     private final AiProperties ai;
     private final ObjectProvider<MultiTurnModel> models;
     private com.zhishiku.kb.ai.observation.AiObservationClient observation;
+    private StreamTelemetry telemetry = StreamTelemetry.NOOP;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setTelemetry(StreamTelemetry telemetry) {
+        this.telemetry = telemetry;
+    }
 
     @org.springframework.beans.factory.annotation.Autowired
     public void setObservation(com.zhishiku.kb.ai.observation.AiObservationClient observation) {
@@ -132,8 +139,14 @@ public class MultiTurnChatService {
 
     public Flux<ServerSentEvent<Object>> stream(Prepared state) {
         return Flux.defer(() -> {
-            if (state.result.replayed() || !state.subscribed.compareAndSet(false, true))
+            if (state.result.replayed() || !state.subscribed.compareAndSet(false, true)) {
                 return Flux.error(new ResponseStatusException(HttpStatus.CONFLICT, "轮次不能重复执行"));
+            }
+            return telemetry.observe(() -> streamOnce(state));
+        });
+    }
+
+    private Flux<ServerSentEvent<Object>> streamOnce(Prepared state) {
             var key = state.result.execution();
             var budget = new ConversationBudget(properties);
             Flux<ServerSentEvent<Object>> body = app.prepare(key.conversationId(), state.token)
@@ -170,6 +183,7 @@ public class MultiTurnChatService {
             Flux<ServerSentEvent<Object>> keepAlive = Flux.interval(Duration.ofMillis(ai.keepAliveMs()))
                     .onBackpressureDrop().map(t -> ServerSentEvent.builder().comment("keep-alive").<Object>build());
             return Flux.merge(1, body, keepAlive).takeUntil(e -> "done".equals(e.event()) || "error".equals(e.event()))
+                    .transform(StreamTelemetry::captureFailures)
                     .onErrorResume(error -> cleanup(state, "FAILED").thenMany(Flux.just(event("error", failure(state, error)))))
                     .doFinally(signal -> {
                         if (signal == SignalType.CANCEL && !state.terminal)
@@ -177,7 +191,6 @@ public class MultiTurnChatService {
                             }, ignored -> {
                             });
                     });
-        });
     }
 
     private Flux<ServerSentEvent<Object>> commands(Prepared state, Flux<MultiTurnModel.Event> source) {

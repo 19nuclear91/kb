@@ -1,5 +1,6 @@
 package com.zhishiku.kb.ai.chat;
 
+import com.zhishiku.kb.ai.telemetry.StreamTelemetry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -113,6 +114,7 @@ public class ChatService {
                     .concatWith(Mono.fromSupplier(() ->
                             new ChatEvent.Done(usage.promptTokens(), usage.completionTokens(),
                                     System.currentTimeMillis() - startedAt)))
+                    .transform(StreamTelemetry::captureFailures)
                     .onErrorResume(e -> {
                         if (e instanceof RetrievalFailure) {
                             observation.result("FAILED");

@@ -27,6 +27,28 @@ import static org.mockito.Mockito.when;
 
 class ChatQuotaAuditServiceTest {
 
+    @ParameterizedTest
+    @ValueSource(longs = {0, -2})
+    void rejectionMetricsUseOnlyFixedReasons(long response) {
+        var meters = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        try {
+            var redis = mock(ReactiveStringRedisTemplate.class);
+            doReturn(Flux.just(response)).when(redis).execute(any(), anyList(), anyList());
+            var principals = mock(QuotaPrincipalClient.class);
+            when(principals.resolve("secret-token")).thenReturn(Mono.just(new QuotaPrincipal(8, 42)));
+            var service = new ChatQuotaAuditService(PROPS, mock(ChatAuditSink.class), principals, redis, CLOCK);
+            service.setTelemetry(new com.zhishiku.kb.ai.telemetry.DependencyTelemetry(meters));
+            var acquisition = service.acquire("secret-token", 10);
+            assertThat(meters.getMeters()).isEmpty();
+            StepVerifier.create(acquisition).expectError(ChatQuotaAuditService.QuotaExceededException.class).verify();
+            assertThat(meters.get("kb.ai.quota.rejections").counter().count()).isEqualTo(1);
+            assertThat(meters.getMeters()).singleElement().satisfies(meter -> assertThat(meter.getId().getTags())
+                    .containsExactly(io.micrometer.core.instrument.Tag.of("reason", response == -2 ? "TOKEN_BUDGET" : "REQUEST_OR_CONCURRENCY")));
+        } finally {
+            meters.close();
+        }
+    }
+
     private static final AiProperties PROPS =
             new AiProperties("http://localhost:8081", 8, 60_000L, 60);
     private static final Clock CLOCK = Clock.fixed(

@@ -6,6 +6,8 @@ spring:
     default: prod
   application:
     name: kb-gateway
+  reactor:
+    context-propagation: auto
 
   data:
     redis:
@@ -85,7 +87,16 @@ spring:
             exposedHeaders: [ X-Conversation-Id, X-Turn-Id, Retry-After, X-Search-Filter-Version ]
             allowCredentials: true
 
+kb:
+  telemetry:
+    tracing:
+      enabled: ${KB_TELEMETRY_TRACING_ENABLED:false}
+      otlp-endpoint: ${KB_TELEMETRY_OTLP_ENDPOINT:}
+      sampling-probability: ${KB_TELEMETRY_SAMPLING_PROBABILITY:1.0}
+
 logging:
+  pattern:
+    level: "%5p [requestId=%X{requestId:-}]"
   level:
     org.springframework.cloud.gateway: INFO
     # 客户端自带身份头会在此打 WARN，生产环境应接入告警
@@ -99,6 +110,15 @@ sa-token:
   is-share: true
   token-style: uuid
   is-log: ${KB_SA_TOKEN_LOG:false}
+
+management:
+  server:
+    port: ${KB_MANAGEMENT_PORT:}
+    address: ${KB_MANAGEMENT_ADDRESS:}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
 
 # ============================================================
 # 尚未接入的部分，不要误以为已完成：

@@ -241,7 +241,7 @@ MUST 保留结果并保留问题信息供诊断。
 
 ### Requirement: 解析任务指标必须支持健康观测
 
-系统 SHALL 暴露低基数的任务处理、队列、租约、死信和告警指标；指标标签 MUST 不包含任务 ID、版本 ID、对象路径或用户输入。
+系统 SHALL 暴露低基数的任务处理、队列、租约、死信和告警指标，并使其可经 Worker 的指标导出端点被监控系统抓取；任务处理耗时 MUST 使用显式分桶。重试/死信 MUST 保留既有无标签总量名称，`failure_class` 分类计数分别使用 `kb.parse.tasks.retried.by_class`、`kb.parse.tasks.dead_lettered.by_class`，不得因同名标签键集合冲突丢失分类输出。指标标签 MUST 不包含任务 ID、版本 ID、对象路径或用户输入。
 
 #### Scenario: 队列积压观测
 
@@ -260,6 +260,11 @@ MUST 保留结果并保留问题信息供诊断。
 - **WHEN** 外部监控规则根据积压年龄、死信深度或租约失守率超过阈值
 - **THEN** 运维系统可以触发通知
 - **AND** Worker 不要求绑定某个具体通知平台才能提供这些观测数据
+
+#### Scenario: 导出端点抓取
+
+- **WHEN** 监控系统按 Prometheus 协议抓取 Worker 指标端点
+- **THEN** 取得上述全部指标，除明确拆名的重试/死信分类序列外名称与标签不变，总量与分类同时可见，任务耗时直方图含显式分桶
 
 ### Requirement: embedding 维护期间上传必须排队而非伪发布
 
@@ -390,3 +395,22 @@ MUST 保留。迟到心跳、失败写回和旧结果 MUST 不改变新状态，
 #### Scenario: Embedding 维护中重放
 - **WHEN** 系统处于未初始化、维护或 BLOCKED 状态且合格用户重放真实失败任务
 - **THEN** 新周期保持排队并保留历史，等待维护结束后才可被普通解析领取
+
+### Requirement: 任务执行必须具有独立追踪且不向第三方传播
+
+Worker 每次任务执行 SHALL 开启独立的追踪上下文，并写入该次执行的全部日志，包括在独立工作线程中完成的解析、分块、向量化与发布。对第三方解析服务与 embedding 供应商的调用 MUST NOT 携带追踪传播头或 baggage。追踪关闭时 MUST 不影响任务领取、执行与发布。
+
+#### Scenario: 执行日志关联
+
+- **WHEN** 一次解析任务在工作线程中执行并发布
+- **THEN** 领取、解析、向量化与发布的日志共享同一 trace 标识，并保留原任务与版本标识
+
+#### Scenario: 第三方解析请求头
+
+- **WHEN** Worker 调用第三方解析服务或 embedding 供应商
+- **THEN** 请求不含 `traceparent`、`tracestate` 或 baggage
+
+#### Scenario: 追踪关闭
+
+- **WHEN** Worker 未启用追踪
+- **THEN** 任务领取、执行、重试与发布行为与启用前一致，日志不含追踪标识但保留任务与版本标识

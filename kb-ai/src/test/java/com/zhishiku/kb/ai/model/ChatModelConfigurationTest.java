@@ -42,7 +42,9 @@ class ChatModelConfigurationTest {
         assertThat(configuration.openAiMultiTurnModel(renderer, transport, budget)).isInstanceOf(OpenAiMultiTurnModel.class);
         assertThat(configuration.chatPromptRenderer()).isInstanceOf(ChatPromptRenderer.class);
         assertThat(configuration.openAiSseDecoder()).isInstanceOf(OpenAiSseDecoder.class);
-        assertThat(configuration.openAiChatTransport(mock(OpenAiSseDecoder.class))).isInstanceOf(OpenAiChatTransport.class);
+        assertThat(configuration.openAiChatTransport(mock(OpenAiSseDecoder.class),
+                new org.springframework.beans.factory.support.StaticListableBeanFactory()
+                        .getBeanProvider(com.zhishiku.kb.ai.telemetry.ModelTelemetry.class))).isInstanceOf(OpenAiChatTransport.class);
     }
 
     @Test

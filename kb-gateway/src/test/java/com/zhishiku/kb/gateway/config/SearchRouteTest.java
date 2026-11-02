@@ -52,6 +52,11 @@ class SearchRouteTest {
                             .setPatterns(new ArrayList<>(path.getArgs().values())));
                     var route = Route.async().id(definition.getId()).uri(definition.getUri())
                             .metadata(definition.getMetadata()).predicate(predicate).build();
+                    for (String managementPath : new String[]{"/actuator", "/actuator/health", "/actuator/prometheus",
+                            "/actuator/metrics", "/actuator/custom/deep"}) {
+                        var management = MockServerWebExchange.from(MockServerHttpRequest.get(managementPath));
+                        assertThat(Mono.from(route.getPredicate().apply(management)).block()).isFalse();
+                    }
                     if (Boolean.TRUE.equals(Mono.from(route.getPredicate().apply(search)).block())) {
                         matches++;
                         assertThat(route.getId()).isEqualTo("kb-search");

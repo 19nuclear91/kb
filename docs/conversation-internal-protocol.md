@@ -9,6 +9,8 @@
 SHA-256、satoken SHA-256（缺省为空字符串摘要）。按原始字节签名，禁止对签名后正文再次序列化。比较采用常量时间；验签后 Redis SET
 NX EX 去重，故障拒绝。重试保留业务标识并重新生成 nonce。
 
+内部 HTTP 调用通过 W3C `traceparent`/`tracestate` 关联追踪；这些头不参与签名，不作为身份、授权或幂等依据。`X-Request-Id` 与 trace 标识语义独立，匹配重放复用 requestId，但每次入口请求生成新的 trace。baggage 不进行网络传播，供应商请求不得携带内部追踪上下文。
+
 check/begin/prepare 需要有效的当前用户会话；seal 还须当前用户与执行票据归属相同。它们检查当前启用、强制改密与个人归属。append/renew/reserve/dispatch/finish
 使用服务身份和 app 铸造的 execution：conversationId、turnId、ownerUserId、executionEpoch、ticket。票据仅首次 begin
 返回，数据库保存摘要；校验活动状态、租约和删除栅栏，因此用户会话自然过期后仅能关闭原有执行，不能读取其他历史。
@@ -23,4 +25,3 @@ turnId/intentDigest：AI 完成固定账本结算后确认 SETTLED，不读取�
 
 输入拒绝未知字段，并限制大小、数量、长度、深度及数值类型。错误只含固定消息；日志不记录问题、回答、令牌、票据、完整
 prompt、材料或原始异常。所有敏感成功与错误响应 no-store。数据库不保存密钥、用户令牌、明文票据或检索材料快照。
-

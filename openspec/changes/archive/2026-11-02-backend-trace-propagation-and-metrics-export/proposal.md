@@ -6,12 +6,12 @@
 
 ## What Changes
 
-- 在 kb-gateway 为每个入站请求生成 trace（忽略并丢弃客户端自带的 `traceparent`/`tracestate`），以 W3C 头在 gateway→app/ai、ai→app、app→ai 的内部 HTTP 调用间传播；MVC、Reactor 与 Worker 独立执行线程三处显式桥接 MDC，日志统一携带 `traceId`/`spanId`，存在 `X-Request-Id` 时另记 `requestId`。匹配重放复用 requestId，但每次请求都是新的 trace。
+- 在 kb-gateway 为每个入站请求生成 trace（忽略并丢弃客户端自带的 `traceparent`/`tracestate`），以 W3C 头在 gateway→app/ai、ai→app、app→ai 的内部 HTTP 调用间传播；MVC 入口及搜索工作线程、Reactor 与 Worker 独立执行线程显式桥接 MDC，日志统一携带 `traceId`/`spanId`，存在 `X-Request-Id` 时另记 `requestId`。匹配重放复用 requestId，但每次请求都是新的 trace。
 - 所有发往本系统之外的 HTTP 调用（模型、embedding、rerank、第三方解析、SSO 供应商）不得携带 trace 传播头或 baggage：app/worker 四处使用注入 builder 的 embedding/rerank 客户端对齐 `OpenAiChatTransport` 的隔离方式，并以守卫测试钉住。
 - span 属性与指标标签遵守既有日志红线：不记录查询、正文、令牌、授权码/state、请求头与 URI 查询串；服务端观测只记录路由模板。
 - tracing 默认关闭；显式启用时 OTLP 地址必填、采样率有界、baggage 关闭，配置不全在建立业务连接前拒绝启动。
 - 四个单元统一接入 Prometheus 导出（kb-gateway 新增 actuator），端点只在管理端口暴露；生产要求显式管理端口与绑定地址，禁止通配暴露。**BREAKING**：生产环境 `/actuator/health` 随显式管理端口迁移，部署健康检查地址需同步调整；开发态可继续使用业务端口。
-- 按既有预算为耗时直方图显式分桶（检索 2s/3s/1.5s/8s、模型 60s），启用 exemplar 关联 trace，约束 Boot 自动 `http.server.requests` 的 URI 标签基数；既有指标名与标签保持不变。
+- 按既有预算为耗时直方图显式分桶（检索 2s/3s/1.5s/8s、模型 60s），启用 exemplar 关联 trace，约束 Boot 自动 `http.server.requests` 的 URI 标签基数；既有指标名与标签保持不变，唯一例外是解析任务重试/死信的 `failure_class` 分类序列改用 `.by_class` 后缀，保留旧无标签总量名称，避免 Prometheus 同名指标标签集合冲突。
 - 补齐 kb-ai 指标：模型调用结果、上游耗时与首 token 延迟、流终结类别、最终用量已知/未知计数、配额拒绝与检索失败分类；Worker 每次任务执行开启任务级 trace，覆盖第三方解析、embedding 与发布。
 - 交付 `docs/telemetry-operations.md`（启用、端口、抓取配置、OpenMetrics 协商与回退）并更新 README 第六节与第八节；不交付 Prometheus/Grafana/Tempo 的部署、看板或告警规则。
 - 不做：浏览器可见 traceId、SSE error 携带 traceId、`kb_parse_task`/`kb_ai_call` 的 trace 列、跨请求权限缓存。

@@ -20,6 +20,8 @@ Worker 可以启动，但缺少 `DocumentParser` Bean 时自动装配不可用�
 
 适配器自行负责认证、文件上传、服务协议、连接与响应超时、响应大小上限、字符预算、取消及错误映射。不得将服务密钥、原件正文或远程错误体写入日志和失败摘要；不得静默忽略 `maxExtractedChars`。具体配置键待服务协议确定后定义。
 
+HTTP 适配器必须使用自建隔离客户端，不得复用或克隆注入的 `RestClient.Builder`/`WebClient.Builder`。不得向解析服务传播 `traceparent`、`tracestate`、baggage、用户会话令牌或内部服务签名；供应商返回的追踪头不得改写本地上下文。清空默认请求头或过滤器不足以隔离 WebClient，复用客户端时还必须禁用其 `ObservationRegistry`。任务的本地解析子跨度仅用于内部日志关联，不允许记录对象键、原件内容或解析器原始错误体。
+
 Worker 继续负责对象存储读取、任务租约、失败恢复、统一结果分块、Embedding 及原子发布。现有文件与字符限制、`KB_TASK_TIMEOUT_SECONDS` 仍有效；原本地解析堆和解析超时配置已移除，不再使用。
 
 ## 验证范围

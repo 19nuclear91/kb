@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -30,6 +31,7 @@ public class ParseTaskMetrics {
     private final AtomicLong deadLetterGauge = new AtomicLong();
     private final AtomicLong oldestAgeGauge = new AtomicLong();
 
+    @Autowired
     public ParseTaskMetrics(MeterRegistry registry, JdbcTemplate jdbc) {
         this.registry = registry;
         this.jdbc = jdbc;
@@ -61,12 +63,13 @@ public class ParseTaskMetrics {
 
     public void retried(String failureClass) {
         retried.increment();
-        counterByClass("kb.parse.tasks.retried", failureClass).increment();
+        // Prometheus 同名指标必须使用相同标签键集合，分类与无标签总量分开命名。
+        counterByClass("kb.parse.tasks.retried.by_class", failureClass).increment();
     }
 
     public void deadLettered(String failureClass) {
         deadLettered.increment();
-        counterByClass("kb.parse.tasks.dead_lettered", failureClass).increment();
+        counterByClass("kb.parse.tasks.dead_lettered.by_class", failureClass).increment();
     }
 
     public void leaseLost() {
