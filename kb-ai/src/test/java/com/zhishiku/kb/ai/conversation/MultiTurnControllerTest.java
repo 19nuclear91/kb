@@ -23,6 +23,25 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MultiTurnControllerTest {
+    @Test
+    void budgetRejectionBeforeResponseHasFixed400CodeAndNoStore() {
+        var fixture = new MultiTurnChatServiceTest();
+        when(fixture.app.check(anyLong(), anyString(), anyString(), anyLong(), anyString()))
+                .thenReturn(Mono.error(new InputBudgetExceededException()));
+        var controller = new MultiTurnChatController(fixture.service(true), fixture.properties);
+        StepVerifier.create(controller.turn(9, request(), "token", null)).expectErrorSatisfies(error -> {
+            assertThat(error).isInstanceOf(InputBudgetExceededException.class).hasNoCause();
+            var response = new ConversationExceptionHandler().status((ResponseStatusException) error);
+            assertThat(response.getStatusCode().value()).isEqualTo(400);
+            assertThat(response.getHeaders().getCacheControl()).isEqualTo("no-store");
+            assertThat(response.getBody()).containsEntry("code", "INPUT_BUDGET_EXCEEDED")
+                    .containsEntry("message", "输入超出模型预算").hasSize(2);
+        }).verify();
+        verify(fixture.quota, never()).acquire(anyString(), anyInt());
+        verify(fixture.retrieval, never()).retrieve(anyString(), anyString());
+        assertThat(fixture.subscriptions).hasValue(0);
+    }
+
     MultiTurnChatController.TurnRequest request() {
         var r = new MultiTurnChatController.TurnRequest();
         r.setQuestion("问题");

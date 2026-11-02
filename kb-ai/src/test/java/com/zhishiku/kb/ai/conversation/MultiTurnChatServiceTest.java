@@ -4,11 +4,16 @@ import com.zhishiku.kb.ai.chat.AiProperties;
 import com.zhishiku.kb.ai.chat.ChatQuotaAuditService;
 import com.zhishiku.kb.ai.chat.RetrievalClient;
 import com.zhishiku.kb.ai.chat.RetrievalFailure;
+import com.zhishiku.kb.ai.budget.BudgetCapability;
+import com.zhishiku.kb.ai.budget.BudgetKind;
+import com.zhishiku.kb.ai.budget.InputTokenCount;
+import com.zhishiku.kb.ai.model.ChatModelFailure;
 import com.zhishiku.kb.ai.conversation.config.ConversationProperties;
 import com.zhishiku.kb.common.conversation.UsageSettlement;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.server.ResponseStatusException;
@@ -77,10 +82,27 @@ class MultiTurnChatServiceTest {
             });
         }
     };
+    MultiTurnModel activeModel = model;
+
+    MultiTurnModel estimated(long count) {
+        var estimated = mock(MultiTurnModel.class);
+        when(estimated.budgetCapability()).thenReturn(new BudgetCapability(BudgetKind.ESTIMATED, 16000, 512));
+        when(estimated.countInputTokens(any())).thenReturn(new InputTokenCount(BudgetKind.ESTIMATED, count));
+        when(estimated.generate(any())).thenAnswer(call -> model.generate(call.getArgument(0)));
+        activeModel = estimated;
+        return estimated;
+    }
+
+    private static List<RetrievalClient.Citation> materials() {
+        return List.of(new RetrievalClient.Citation(1, "title", null, 3, "材料", 2L, 1, 0,
+                null, null, null, null, null, null, null, false));
+    }
 
     MultiTurnChatService service(boolean provider) {
         var beans = new StaticListableBeanFactory();
-        if (provider) beans.addBean("model", model);
+        if (provider) {
+            beans.addBean("model", activeModel);
+        }
         return new MultiTurnChatService(app, retrieval, quota, settlement, properties, new AiProperties("http://app",
                 5, 10000, 60), beans.getBeanProvider(MultiTurnModel.class));
     }
@@ -144,8 +166,9 @@ class MultiTurnChatServiceTest {
         }
     }
 
-    @Test
-    void cancellationWinsWhileRetrievalErrorDeliveryIsInFlight() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void cancellationWinsWhileSelectionErrorDeliveryIsInFlight(boolean budgetFailure) throws Exception {
         var source = TestPublisher.<List<RetrievalClient.Citation>>create();
         var finishing = TestPublisher.<SettlementIntent>create();
         var errorEntered = new CountDownLatch(1);
@@ -154,6 +177,13 @@ class MultiTurnChatServiceTest {
             errorEntered.countDown();
             awaitErrorRelease(releaseError);
         }));
+        if (budgetFailure) {
+            when(estimated(9441).countInputTokens(any())).thenAnswer(call -> {
+                errorEntered.countDown();
+                awaitErrorRelease(releaseError);
+                return new InputTokenCount(BudgetKind.ESTIMATED, 9441);
+            });
+        }
         when(app.finish(any(), anyString(), anyLong(), anyBoolean(), any(), any())).thenReturn(finishing.mono());
         var service = service(true);
         var state = service.prepare(9, "q", "r", 0, "token").block();
@@ -163,7 +193,13 @@ class MultiTurnChatServiceTest {
         var subscription = service.stream(state).subscribe(output::add, errors::add, completed::incrementAndGet);
         var sender = Executors.newSingleThreadExecutor();
         try {
-            var delivered = sender.submit(() -> source.error(new RetrievalFailure(RetrievalFailure.Kind.HTTP)));
+            var delivered = sender.submit(() -> {
+                if (budgetFailure) {
+                    source.emit(materials());
+                } else {
+                    source.error(new RetrievalFailure(RetrievalFailure.Kind.HTTP));
+                }
+            });
             assertThat(errorEntered.await(3, TimeUnit.SECONDS)).isTrue();
             subscription.dispose();
             finishing.assertSubscribers(1);
@@ -186,14 +222,17 @@ class MultiTurnChatServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    void retrievalFailureCleanupSurvivesCancellationDuringFinishOrSettlement(boolean finishConfirmed) {
+    @CsvSource({"false,false", "true,false", "false,true", "true,true"})
+    void selectionFailureCleanupSurvivesCancellationDuringFinishOrSettlement(boolean finishConfirmed, boolean budgetFailure) {
         var source = TestPublisher.<List<RetrievalClient.Citation>>create();
         var finishing = TestPublisher.<SettlementIntent>create();
         var settling = TestPublisher.<Void>create();
         var finishSubscriptions = new AtomicInteger();
         var settleSubscriptions = new AtomicInteger();
         when(retrieval.retrieve(anyString(), anyString())).thenReturn(source.mono());
+        if (budgetFailure) {
+            estimated(9441);
+        }
         when(app.finish(any(), anyString(), anyLong(), anyBoolean(), any(), any()))
                 .thenReturn(finishing.mono().doOnSubscribe(ignored -> finishSubscriptions.incrementAndGet()));
         when(settlement.settle(any()))
@@ -205,7 +244,11 @@ class MultiTurnChatServiceTest {
         var completed = new AtomicInteger();
         var subscription = service.stream(state).subscribe(output::add, errors::add, completed::incrementAndGet);
         try {
-            source.error(new RetrievalFailure(RetrievalFailure.Kind.TIMEOUT));
+            if (budgetFailure) {
+                source.emit(materials());
+            } else {
+                source.error(new RetrievalFailure(RetrievalFailure.Kind.TIMEOUT));
+            }
             finishing.assertSubscribers(1);
             verify(app).finish(key, "FAILED", 0, false, null, null);
             var intent = unusedIntent("FAILED");
@@ -262,10 +305,15 @@ class MultiTurnChatServiceTest {
         }
     }
 
-    @Test
-    void retrievalFailureCleanupTimesOutAndConfirmedFailedIsNotRewrittenBySettlementFailure() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void selectionFailureCleanupTimesOutAndConfirmedFailedIsNotRewrittenBySettlementFailure(boolean budgetFailure) {
         properties.setCleanupTimeoutMs(100);
-        when(retrieval.retrieve(anyString(), anyString())).thenReturn(Mono.error(new RetrievalFailure(RetrievalFailure.Kind.TIMEOUT)));
+        if (budgetFailure) {
+            estimated(9441);
+        } else {
+            when(retrieval.retrieve(anyString(), anyString())).thenReturn(Mono.error(new RetrievalFailure(RetrievalFailure.Kind.TIMEOUT)));
+        }
         when(app.finish(any(), anyString(), anyLong(), anyBoolean(), any(), any())).thenReturn(Mono.never());
         var service = service(true);
         var state = service.prepare(9, "q", "r", 0, "token").block();
@@ -273,7 +321,11 @@ class MultiTurnChatServiceTest {
                 .expectNextMatches(event -> "error".equals(event.event())).verifyComplete();
         verify(settlement, never()).settle(any());
         var other = new MultiTurnChatServiceTest();
-        when(other.retrieval.retrieve(anyString(), anyString())).thenReturn(Mono.error(new RetrievalFailure(RetrievalFailure.Kind.HTTP)));
+        if (budgetFailure) {
+            other.estimated(9441);
+        } else {
+            when(other.retrieval.retrieve(anyString(), anyString())).thenReturn(Mono.error(new RetrievalFailure(RetrievalFailure.Kind.HTTP)));
+        }
         when(other.settlement.settle(any())).thenReturn(Mono.error(new IllegalStateException("private")));
         var next = other.service(true);
         next.stream(next.prepare(9, "q", "r", 0, "token").block()).blockLast(Duration.ofSeconds(2));
@@ -400,5 +452,121 @@ class MultiTurnChatServiceTest {
         var output = service.stream(prepared).collectList().block();
         assertThat(output.getLast().event()).isEqualTo("error");
         assertThat(order).contains("finish:FAILED").noneMatch(value -> value.startsWith("append:"));
+    }
+
+    @Test
+    void budgetExhaustionIsSafeFailedNotInvokedWithoutCitationsOrAnswer() {
+        var estimated = estimated(9441);
+        var service = service(true);
+        var state = service.prepare(9, "private-question", "r", 0, "token").block();
+        var output = service.stream(state).collectList().block(Duration.ofSeconds(2));
+        assertThat(output).extracting(ServerSentEvent::event).containsExactly("error");
+        assertThat(output.getFirst().data().toString()).contains("INPUT_BUDGET_EXCEEDED", "输入超出模型预算")
+                .doesNotContain("private-question", "token", "材料", "未找到");
+        verify(estimated, never()).generate(any());
+        verify(app, never()).seal(any(), anyString(), any(), any(), anyString());
+        verify(app, never()).append(any(), anyLong(), anyString());
+        verify(app, never()).dispatch(any());
+        assertThat(order).containsExactly("finish:FAILED", "settle");
+        verify(settlement).settle(org.mockito.ArgumentMatchers.argThat(intent ->
+                intent.generationStatus().equals("FAILED") && intent.usageStatus().equals("NOT_INVOKED")
+                        && intent.promptTokens() == 0 && intent.completionTokens() == 0 && intent.chargedTokens() == 0));
+        verify(app).acknowledge(any());
+    }
+
+    @Test
+    void whitespaceOnlyMaterialAfterClippingFailsWithoutSealingOrDispatchAndSettlesZero() {
+        var estimated = estimated(100);
+        properties.setMaxContextCodepoints(ConversationBudget.INSTRUCTION.codePointCount(0,
+                ConversationBudget.INSTRUCTION.length()) + 3);
+        when(retrieval.retrieve(anyString(), anyString())).thenReturn(Mono.just(List.of(
+                new RetrievalClient.Citation(1, "t", 2, 3, " \u3000😀文", 4L,
+                        null, null, null, null, null, null, null, null, null, false))));
+        var service = service(true);
+        var output = service.stream(service.prepare(9, "Q", "r", 0, "token").block())
+                .collectList().block(Duration.ofSeconds(2));
+        assertThat(output).extracting(ServerSentEvent::event).containsExactly("error");
+        assertThat(output.getFirst().data().toString()).contains("INPUT_BUDGET_EXCEEDED")
+                .doesNotContain("未找到", "😀文", "token");
+        verify(estimated, never()).generate(any());
+        verify(app, never()).seal(any(), anyString(), any(), any(), anyString());
+        verify(app, never()).append(any(), anyLong(), anyString());
+        verify(app, never()).dispatch(any());
+        verify(app).finish(key, "FAILED", 0, false, null, null);
+        verify(settlement).settle(org.mockito.ArgumentMatchers.argThat(intent ->
+                intent.generationStatus().equals("FAILED") && intent.usageStatus().equals("NOT_INVOKED")
+                        && intent.promptTokens() == 0 && intent.completionTokens() == 0 && intent.chargedTokens() == 0));
+        verify(app).acknowledge(any());
+    }
+
+    @Test
+    void estimatedUsageAboveReservationIsPreservedWithoutClampingOrRetry() {
+        var estimated = estimated(100);
+        events = Flux.just(new MultiTurnModel.Event("answer", false, null, null),
+                new MultiTurnModel.Event(null, true, 15000L, 3000L));
+        var service = service(true);
+        var output = service.stream(service.prepare(9, "q", "r", 0, "token").block())
+                .collectList().block(Duration.ofSeconds(2));
+        assertThat(output.getLast().event()).isEqualTo("done");
+        assertThat(output.getLast().data().toString()).contains("KNOWN", "18000", "15000", "3000");
+        verify(app).finish(key, "COMPLETED", 1, true, 15000L, 3000L);
+        verify(settlement).settle(org.mockito.ArgumentMatchers.argThat(intent ->
+                intent.usageStatus().equals("KNOWN") && intent.chargedTokens() == 18000));
+        verify(estimated).generate(any());
+        assertThat(subscriptions).hasValue(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void estimatedMissingUsageOrUpstreamRejectionStaysUnknownAndNeverRetries(boolean rejection) {
+        var estimated = estimated(100);
+        events = rejection ? Flux.error(new ChatModelFailure(ChatModelFailure.Kind.HTTP_REJECTED))
+                : Flux.just(new MultiTurnModel.Event("answer", false, null, null));
+        var service = service(true);
+        var output = service.stream(service.prepare(9, "q", "r", 0, "token").block())
+                .collectList().block(Duration.ofSeconds(2));
+        assertThat(output.getLast().event()).isEqualTo(rejection ? "error" : "done");
+        if (!rejection) {
+            assertThat(output.getLast().data().toString())
+                    .contains("UNKNOWN", "promptTokens=null", "completionTokens=null", "chargedTokens=12000", "lastBatchSeq=1");
+        }
+        verify(settlement).settle(org.mockito.ArgumentMatchers.argThat(intent ->
+                intent.usageStatus().equals("UNKNOWN") && intent.chargedTokens() == 12000
+                        && intent.promptTokens() == null && intent.completionTokens() == null
+                        && intent.generationStatus().equals(rejection ? "FAILED" : "COMPLETED")));
+        verify(estimated).generate(any());
+        assertThat(subscriptions).hasValue(1);
+    }
+
+    @Test
+    void finalBudgetCheckFailureAfterDispatchStillSettlesUnknownEvenWithoutGenerationSubscription() {
+        var estimated = estimated(100);
+        when(estimated.generate(any())).thenThrow(new ChatModelFailure(ChatModelFailure.Kind.BUDGET_UNAVAILABLE));
+        var service = service(true);
+        var output = service.stream(service.prepare(9, "q", "r", 0, "token").block())
+                .collectList().block(Duration.ofSeconds(2));
+        assertThat(output).extracting(ServerSentEvent::event).containsExactly("citation", "error");
+        assertThat(order).containsExactly("seal", "dispatch", "finish:FAILED", "settle");
+        assertThat(subscriptions).hasValue(0);
+        verify(estimated).generate(any());
+        verify(settlement).settle(org.mockito.ArgumentMatchers.argThat(intent ->
+                intent.usageStatus().equals("UNKNOWN") && intent.chargedTokens() == 12000
+                        && intent.promptTokens() == null && intent.completionTokens() == null));
+    }
+
+    @Test
+    void capabilityDriftAfterSealingCannotSwitchBudgetForGeneration() {
+        var estimated = estimated(100);
+        when(app.dispatch(any())).thenAnswer(call -> Mono.fromRunnable(() -> {
+            dispatched.set(true);
+            when(estimated.budgetCapability()).thenReturn(new BudgetCapability(BudgetKind.ESTIMATED, 32000, 0));
+        }));
+        var service = service(true);
+        var output = service.stream(service.prepare(9, "q", "r", 0, "token").block())
+                .collectList().block(Duration.ofSeconds(2));
+        assertThat(output.getLast().event()).isEqualTo("error");
+        verify(estimated, never()).generate(any());
+        verify(settlement).settle(org.mockito.ArgumentMatchers.argThat(intent ->
+                intent.usageStatus().equals("UNKNOWN") && intent.chargedTokens() == 12000));
     }
 }

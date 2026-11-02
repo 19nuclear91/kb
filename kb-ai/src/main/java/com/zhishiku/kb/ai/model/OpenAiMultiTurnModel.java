@@ -1,17 +1,21 @@
 package com.zhishiku.kb.ai.model;
 
 import com.zhishiku.kb.ai.conversation.MultiTurnModel;
+import com.zhishiku.kb.ai.budget.BudgetCapability;
+import com.zhishiku.kb.ai.budget.BudgetGuard;
+import com.zhishiku.kb.ai.budget.BudgetKind;
+import com.zhishiku.kb.ai.budget.InputTokenCount;
 import reactor.core.publisher.Flux;
 
-/** 多轮协议桥接与预算能力分开；缺少核验策略时绝不发送请求。 */
+/** 多轮协议桥接与预算能力分开；严格与估算策略显式选择。 */
 public class OpenAiMultiTurnModel implements MultiTurnModel {
     private final ChatPromptRenderer renderer;
     private final OpenAiChatTransport transport;
-    private final ChatBudgetBinding budget;
+    private final ChatBudgetPolicy budget;
     private final long reservationTokens;
 
     OpenAiMultiTurnModel(ChatPromptRenderer renderer, OpenAiChatTransport transport,
-                        ChatBudgetBinding budget, long reservationTokens) {
+                        ChatBudgetPolicy budget, long reservationTokens) {
         this.renderer = renderer;
         this.transport = transport;
         this.budget = budget;
@@ -20,18 +24,35 @@ public class OpenAiMultiTurnModel implements MultiTurnModel {
 
     @Override
     public boolean supportsTokenUpperBound() {
-        return budget.available();
+        return budgetCapability().kind() == BudgetKind.VERIFIED;
     }
 
     @Override
     public long contextWindowTokens() {
-        return budget.window();
+        return budgetCapability().windowTokens();
     }
 
     @Override
     public long inputTokenUpperBound(Input input) {
+        if (!supportsTokenUpperBound()) {
+            throw new ChatModelFailure(ChatModelFailure.Kind.BUDGET_UNAVAILABLE);
+        }
+        return countInputTokens(input).tokens();
+    }
+
+    @Override
+    public BudgetCapability budgetCapability() {
+        return budget.capability();
+    }
+
+    @Override
+    public InputTokenCount countInputTokens(Input input) {
         requireBudget();
-        return budget.upperBound(renderer.render(input));
+        InputTokenCount count = budget.count(renderer.render(input));
+        if (count == null || count.kind() != budgetCapability().kind()) {
+            throw new ChatModelFailure(ChatModelFailure.Kind.BUDGET_UNAVAILABLE);
+        }
+        return count;
     }
 
     @Override
@@ -39,10 +60,7 @@ public class OpenAiMultiTurnModel implements MultiTurnModel {
         return ModelStreams.once(() -> {
             requireBudget();
             PreparedChatRequest request = renderer.render(input);
-            long capacity = Math.min(reservationTokens, budget.window());
-            long upper = budget.upperBound(request);
-            if (request.maxOutputTokens() <= 0 || request.maxOutputTokens() > capacity
-                    || upper > capacity - request.maxOutputTokens()) {
+            if (!BudgetGuard.fits(budgetCapability(), budget.count(request), reservationTokens, request.maxOutputTokens())) {
                 throw new ChatModelFailure(ChatModelFailure.Kind.BUDGET_UNAVAILABLE);
             }
             return transport.stream(request).map(event -> {
@@ -59,7 +77,7 @@ public class OpenAiMultiTurnModel implements MultiTurnModel {
     }
 
     private void requireBudget() {
-        if (!budget.available()) {
+        if (budgetCapability() == null || budgetCapability().kind() == BudgetKind.UNAVAILABLE) {
             throw new ChatModelFailure(ChatModelFailure.Kind.BUDGET_UNAVAILABLE);
         }
     }

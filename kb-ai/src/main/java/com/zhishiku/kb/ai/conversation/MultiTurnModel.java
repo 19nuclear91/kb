@@ -1,16 +1,19 @@
 package com.zhishiku.kb.ai.conversation;
 
 import com.zhishiku.kb.ai.chat.RetrievalClient;
+import com.zhishiku.kb.ai.budget.BudgetCapability;
+import com.zhishiku.kb.ai.budget.BudgetKind;
+import com.zhishiku.kb.ai.budget.InputTokenCount;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
 
 /**
- * 新多轮适配器必须明确提供预算上界能力，不回退旧单轮占位实现。
+ * 多轮适配器必须明确提供预算类型，不回退旧单轮占位实现。
  */
 public interface MultiTurnModel {
     /**
-     * 是否能验证多轮输入的 token 上界；不支持时入口返回 503。
+     * 旧严格上界能力；估算实现返回 false，新编排使用 budgetCapability 判断就绪。
      */
     boolean supportsTokenUpperBound();
 
@@ -23,6 +26,22 @@ public interface MultiTurnModel {
      * 包含消息包装、角色和材料格式化成本的输入 token 上界。
      */
     long inputTokenUpperBound(Input input);
+
+    /** 兼容原严格扩展；未支持上界时不会读取窗口或计算计数。 */
+    default BudgetCapability budgetCapability() {
+        if (!supportsTokenUpperBound()) {
+            return BudgetCapability.unavailable();
+        }
+        return new BudgetCapability(BudgetKind.VERIFIED, contextWindowTokens(), 0);
+    }
+
+    /** 新编排使用带类型的计数；估算实现必须覆盖此入口。 */
+    default InputTokenCount countInputTokens(Input input) {
+        if (!supportsTokenUpperBound()) {
+            throw new IllegalStateException("模型预算不可用");
+        }
+        return new InputTokenCount(BudgetKind.VERIFIED, inputTokenUpperBound(input));
+    }
 
     Flux<Event> generate(Input input);
 

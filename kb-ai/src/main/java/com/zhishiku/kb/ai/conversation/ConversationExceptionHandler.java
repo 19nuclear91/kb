@@ -17,6 +17,10 @@ import java.util.Map;
 public class ConversationExceptionHandler {
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String, String>> status(ResponseStatusException error) {
+        if (error instanceof InputBudgetExceededException) {
+            return ResponseEntity.badRequest().header("Cache-Control", "no-store")
+                    .body(Map.of("code", InputBudgetExceededException.CODE, "message", InputBudgetExceededException.MESSAGE));
+        }
         return ResponseEntity.status(error.getStatusCode()).header("Cache-Control", "no-store").body(Map.of("message"
                 , "会话请求未被接受"));
     }

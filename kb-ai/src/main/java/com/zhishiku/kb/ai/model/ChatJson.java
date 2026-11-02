@@ -25,9 +25,15 @@ final class ChatJson {
     }
 
     static void text(String value) {
+        utf8Length(value);
+    }
+
+    /** 验证 Unicode 并线性统计 UTF-8 字节，不分配正文的字节副本。 */
+    static long utf8Length(String value) {
         if (value == null) {
             throw new ChatModelFailure(ChatModelFailure.Kind.PROTOCOL_INVALID);
         }
+        long bytes = 0;
         for (int i = 0; i < value.length(); i++) {
             char c = value.charAt(i);
             if (c == 0) {
@@ -38,10 +44,14 @@ final class ChatJson {
                 if (i >= value.length() || !Character.isLowSurrogate(value.charAt(i))) {
                     throw new ChatModelFailure(ChatModelFailure.Kind.PROTOCOL_INVALID);
                 }
+                bytes = Math.addExact(bytes, 4);
             } else if (Character.isLowSurrogate(c)) {
                 throw new ChatModelFailure(ChatModelFailure.Kind.PROTOCOL_INVALID);
+            } else {
+                bytes = Math.addExact(bytes, c <= 0x7f ? 1 : c <= 0x7ff ? 2 : 3);
             }
         }
+        return bytes;
     }
 
     private static final class LimitedOutput extends OutputStream {

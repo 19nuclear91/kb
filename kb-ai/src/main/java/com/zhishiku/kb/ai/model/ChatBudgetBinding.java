@@ -1,9 +1,13 @@
 package com.zhishiku.kb.ai.model;
 
+import com.zhishiku.kb.ai.budget.BudgetCapability;
+import com.zhishiku.kb.ai.budget.BudgetKind;
+import com.zhishiku.kb.ai.budget.InputTokenCount;
+
 import java.util.List;
 
 /** 一个模型身份至多绑定一个预算策略；缺少策略明确不可用。 */
-final class ChatBudgetBinding {
+final class ChatBudgetBinding implements ChatBudgetPolicy {
     private final ChatModelIdentity identity;
     private final ChatTokenBudget policy;
     private final long window;
@@ -32,6 +36,17 @@ final class ChatBudgetBinding {
 
     long window() {
         return window;
+    }
+
+    @Override
+    public BudgetCapability capability() {
+        return available() ? new BudgetCapability(BudgetKind.VERIFIED, window, 0)
+                : BudgetCapability.unavailable();
+    }
+
+    @Override
+    public InputTokenCount count(PreparedChatRequest request) {
+        return new InputTokenCount(BudgetKind.VERIFIED, upperBound(request));
     }
 
     long upperBound(PreparedChatRequest request) {

@@ -39,7 +39,10 @@ public class ChatModelConfiguration {
     }
 
     @Bean
-    ChatBudgetBinding chatBudgetBinding(ObjectProvider<ChatTokenBudget> policies) {
+    ChatBudgetPolicy chatBudgetPolicy(ObjectProvider<ChatTokenBudget> policies) {
+        if ("estimated".equals(properties.getBudget().getMode())) {
+            return new ConfiguredEstimatedTokenBudget(ChatModelIdentity.of(properties), properties.getBudget());
+        }
         return new ChatBudgetBinding(ChatModelIdentity.of(properties), policies.orderedStream().toList());
     }
 
@@ -51,7 +54,7 @@ public class ChatModelConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(MultiTurnModel.class)
-    MultiTurnModel openAiMultiTurnModel(ChatPromptRenderer renderer, OpenAiChatTransport transport, ChatBudgetBinding budget) {
+    MultiTurnModel openAiMultiTurnModel(ChatPromptRenderer renderer, OpenAiChatTransport transport, ChatBudgetPolicy budget) {
         return new OpenAiMultiTurnModel(renderer, transport, budget, reservationTokens);
     }
 }

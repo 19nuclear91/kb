@@ -1,6 +1,8 @@
 package com.zhishiku.kb.ai.conversation;
 
 import com.zhishiku.kb.ai.chat.RetrievalClient;
+import com.zhishiku.kb.ai.budget.BudgetCapability;
+import com.zhishiku.kb.ai.budget.BudgetGuard;
 import com.zhishiku.kb.ai.conversation.config.ConversationProperties;
 import com.zhishiku.kb.common.conversation.SourceKey;
 import org.springframework.http.HttpStatus;
@@ -28,49 +30,78 @@ public class ConversationBudget {
      *
      * @param input   实际模型输入
      * @param history 实际选择的历史
+     * @param capability 本轮冻结的能力声明
      */
-    public record Plan(MultiTurnModel.Input input, List<HistoryTurn> history) {
+    public record Plan(MultiTurnModel.Input input, List<HistoryTurn> history, BudgetCapability capability) {
+        public Plan {
+            history = List.copyOf(history);
+        }
     }
 
-    public void ready(MultiTurnModel model) {
-        if (model == null || !model.supportsTokenUpperBound() || model.contextWindowTokens() <= properties.getMaxOutputTokens())
+    public BudgetCapability ready(MultiTurnModel model) {
+        try {
+            BudgetCapability capability = model.budgetCapability();
+            BudgetGuard.inputCapacity(capability, properties.getReservationTokens(), properties.getMaxOutputTokens());
+            return capability;
+        } catch (RuntimeException error) {
             throw unavailable();
+        }
     }
 
     public Plan select(MultiTurnModel model, String question, List<HistoryTurn> supplied,
                        List<RetrievalClient.Citation> retrieved) {
-        ready(model);
+        BudgetCapability capability = ready(model);
         var history =
                 new ArrayList<>(supplied.stream().filter(this::validHistory).sorted(Comparator.comparingLong(HistoryTurn::turnSeq)).toList());
-        while (history.size() > properties.getHistoryPairs()) history.removeFirst();
+        while (history.size() > properties.getHistoryPairs()) {
+            history.removeFirst();
+        }
         var materials = new ArrayList<>(retrieved.stream().filter(c -> c.versionId() != null && c.versionId() > 0
                 && c.docId() > 0 && c.chunkId() > 0 && c.content() != null && !c.content().isBlank()).toList());
-        while (!history.isEmpty() && sources(history, materials) > properties.getMaxSources()) history.removeFirst();
-        while (!materials.isEmpty() && sources(history, materials) > properties.getMaxSources()) materials.removeLast();
+        boolean hadMaterials = !materials.isEmpty();
+        while (!history.isEmpty() && sources(history, materials) > properties.getMaxSources()) {
+            history.removeFirst();
+        }
+        while (!materials.isEmpty() && sources(history, materials) > properties.getMaxSources()) {
+            materials.removeLast();
+        }
         while (true) {
+            if (hadMaterials && materials.isEmpty()) {
+                throw new InputBudgetExceededException();
+            }
             var input = input(question, history, materials);
-            long upper;
+            boolean fits;
             try {
-                upper = model.inputTokenUpperBound(input);
+                if (!capability.equals(model.budgetCapability())) {
+                    throw unavailable();
+                }
+                fits = BudgetGuard.fits(capability, model.countInputTokens(input), properties.getReservationTokens(),
+                        input.maxOutputTokens());
             } catch (RuntimeException error) {
                 throw unavailable();
             }
-            if (upper < 0) throw unavailable();
-            if (upper <= Math.min(model.contextWindowTokens(), properties.getReservationTokens()) - properties.getMaxOutputTokens()
-                    && chars(input) <= properties.getMaxContextCodepoints())
-                return new Plan(input, List.copyOf(history));
+            if (fits && chars(input) <= properties.getMaxContextCodepoints()) {
+                return new Plan(input, history, capability);
+            }
             if (!history.isEmpty()) {
                 history.removeFirst();
                 continue;
             }
-            if (materials.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "问题超出模型输入预算");
+            if (materials.isEmpty()) {
+                throw new InputBudgetExceededException();
+            }
             var last = materials.getLast();
             int length = last.content().codePointCount(0, last.content().length());
-            if (length <= 1) materials.removeLast();
-            else {
+            if (length <= 1) {
+                materials.removeLast();
+            } else {
                 int keep = length / 2;
-                materials.set(materials.size() - 1, last.withContextContent(last.content().substring(0,
-                        last.content().offsetByCodePoints(0, keep)), true));
+                String content = last.content().substring(0, last.content().offsetByCodePoints(0, keep));
+                if (content.isBlank()) {
+                    materials.removeLast();
+                } else {
+                    materials.set(materials.size() - 1, last.withContextContent(content, true));
+                }
             }
         }
     }
@@ -117,9 +148,12 @@ public class ConversationBudget {
 
     private long chars(MultiTurnModel.Input input) {
         long chars = input.instruction().codePointCount(0, input.instruction().length());
-        for (var message : input.messages()) chars += message.text().codePointCount(0, message.text().length());
-        for (var material : input.materials())
+        for (var message : input.messages()) {
+            chars += message.text().codePointCount(0, message.text().length());
+        }
+        for (var material : input.materials()) {
             chars += material.content().codePointCount(0, material.content().length());
+        }
         return chars;
     }
 

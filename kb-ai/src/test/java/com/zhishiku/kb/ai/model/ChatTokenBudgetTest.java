@@ -1,5 +1,8 @@
 package com.zhishiku.kb.ai.model;
 
+import com.zhishiku.kb.ai.budget.BudgetCapability;
+import com.zhishiku.kb.ai.budget.BudgetKind;
+import com.zhishiku.kb.ai.budget.InputTokenCount;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
@@ -51,9 +54,11 @@ class ChatTokenBudgetTest {
         var binding = new ChatBudgetBinding(ID, List.of(policy));
         assertThat(binding.available()).isTrue();
         assertThat(binding.window()).isEqualTo(16000);
+        assertThat(binding.capability()).isEqualTo(new BudgetCapability(BudgetKind.VERIFIED, 16000, 0));
         long expected = request.messages().stream()
                 .mapToLong(message -> message.role().length() + message.content().length() + 10).sum();
         assertThat(binding.upperBound(request)).isEqualTo(expected);
+        assertThat(binding.count(request)).isEqualTo(new InputTokenCount(BudgetKind.VERIFIED, expected));
         assertThat(binding.upperBound(request)).isEqualTo(expected);
         assertThat(request.encode()).containsExactly(original);
     }
@@ -70,6 +75,7 @@ class ChatTokenBudgetTest {
             var binding = new ChatBudgetBinding(changed, List.of(policy));
             assertThat(binding.available()).isFalse();
             assertThat(binding.window()).isZero();
+            assertThat(binding.capability()).isEqualTo(BudgetCapability.unavailable());
             assertThatThrownBy(() -> binding.upperBound(prepared()))
                     .hasMessage("BUDGET_UNAVAILABLE").hasNoCause();
         }
@@ -98,8 +104,10 @@ class ChatTokenBudgetTest {
         when(policy.contextWindowTokens()).thenReturn(16000L);
         var binding = new ChatBudgetBinding(ID, List.of(policy));
         when(policy.inputTokenUpperBound(any())).thenReturn(-1L);
+        assertThatThrownBy(() -> binding.count(prepared())).hasMessage("BUDGET_UNAVAILABLE").hasNoCause();
         assertThatThrownBy(() -> binding.upperBound(prepared())).hasMessage("BUDGET_UNAVAILABLE").hasNoCause();
         when(policy.inputTokenUpperBound(any())).thenThrow(new IllegalStateException("secret"));
+        assertThatThrownBy(() -> binding.count(prepared())).hasMessage("BUDGET_UNAVAILABLE").hasNoCause();
         assertThatThrownBy(() -> binding.upperBound(prepared())).hasMessage("BUDGET_UNAVAILABLE").hasNoCause();
         when(policy.identity()).thenReturn(new ChatModelIdentity(ID.baseUrl(), "changed", ID.formatVersion()));
         assertThatThrownBy(() -> binding.upperBound(prepared())).hasMessage("BUDGET_UNAVAILABLE").hasNoCause();

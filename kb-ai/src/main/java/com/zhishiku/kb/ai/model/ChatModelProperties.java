@@ -24,8 +24,13 @@ public class ChatModelProperties {
     private int maxEventBytes = 1048576;
     private int maxResponseBytes = 4194304;
     private int maxAnswerCodepoints = 64000;
+    private Budget budget = new Budget();
 
     public void validate(boolean production, int totalSeconds, int reservationTokens) {
+        validate(production, totalSeconds, reservationTokens, 2048);
+    }
+
+    public void validate(boolean production, int totalSeconds, int reservationTokens, int multiTurnOutputTokens) {
         if (!enabled) {
             return;
         }
@@ -41,6 +46,49 @@ public class ChatModelProperties {
         URI root = rootUri();
         if (production && !"https".equals(root.getScheme())) {
             throw invalid();
+        }
+        if (budget == null) {
+            throw invalid();
+        }
+        budget.validate(reservationTokens, multiTurnOutputTokens);
+    }
+
+    /** 仅本地部署配置；不包含秘密，不参与实际 usage。 */
+    @Getter
+    @Setter
+    public static class Budget {
+        private String mode = "verified";
+        private int contextWindowTokens;
+        private int tokensPerKib = 1024;
+        private int perMessageTokens = 16;
+        private int requestOverheadTokens = 64;
+        private int safetyMarginTokens = 512;
+
+        void validate(long reservationTokens, long outputTokens) {
+            if (!"verified".equals(mode) && !"estimated".equals(mode)) {
+                throw invalid();
+            }
+            if (!"estimated".equals(mode)) {
+                return;
+            }
+            validateEstimateParameters();
+            try {
+                if (reservationTokens <= 0 || outputTokens <= 0
+                        || Math.min(contextWindowTokens, reservationTokens)
+                        <= Math.addExact(outputTokens, safetyMarginTokens)) {
+                    throw invalid();
+                }
+            } catch (ArithmeticException error) {
+                throw invalid();
+            }
+        }
+
+        void validateEstimateParameters() {
+            if (contextWindowTokens <= 0 || tokensPerKib < 1 || tokensPerKib > 65536
+                    || perMessageTokens < 0 || perMessageTokens > 65536
+                    || requestOverheadTokens < 0 || requestOverheadTokens > 65536 || safetyMarginTokens < 0) {
+                throw invalid();
+            }
         }
     }
 

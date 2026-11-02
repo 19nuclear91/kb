@@ -51,7 +51,7 @@ P0 阶段交付的是骨架。下面这张表比任何描述都重要——
 | 空间与授权管理 API                 | ✅ 代码已实现，**未连真实 PG 实测**                        | `/api/admin/spaces` 与 `/api/admin/documents/{id}/acl`；空间为授权主单位，文档 ACL 只能扩权；manage 授出要求 `space:grant-manage`；归档空间退出读权限位但保留管理可达性；均带 `X-Request-Id` 幂等与审计。归档对读路径的全链路生效尚未实测（见 5.7）                                                                                          |
 | 文档搬迁                        | ✅ 代码已实现，**未连真实 PG/MinIO/Worker 实测**           | `PATCH /api/admin/documents/{id}/space`；要求源空间与目标空间**双侧 manage**，同一事务内清空该文档的全部例外 ACL 并同步 `kb_doc_chunk.space_id`，与 Worker 的分块发布争同一把文档行锁；拒绝迁入已归档空间，允许从已归档空间迁出。原空间成员的检索与读取隔离、以及与发布的并发串行化尚未实测（见 5.8）                                                                        |
 | 角色与密级管理                     | ✅ 功能权限、用户与文档密级调整、角色分配和管理员引导已实现，**未连真实 PG 实测** | 功能资格每次按持久化角色权限并集精确匹配。用户密级调整使用 `identity:clearance:write`，拒绝调整自己；文档密级管理独立使用 `document:security-level:write`，要求原密级和目标密级均不超过操作者当前密级，带独立版本、幂等和审计，并同步全部版本分块。接口、迁移与无外部依赖测试见[文档密级管理](docs/document-security-level.md)。角色 CRUD、`users/{userId}/roles` 和 `kb.bootstrap.*` 保留既有语义 |
-| 真实 chat 模型调用 | ✅ 通用适配代码已实现，仅离线单元验证 | 显式配置 OpenAI-compatible Chat Completions 可接入真实单轮；默认关闭。多轮缺少可信预算策略时仍 503；未联调真实供应商，见[模型接入说明](docs/chat-model-adapter.md) |
+| 真实 chat 模型调用 | ✅ 通用适配与可配置多轮估算已实现，仅离线单元验证 | OpenAI-compatible Chat Completions 默认关闭。多轮默认 verified，缺严格策略时 503；显式 estimated 可使用本地估算及配置窗口，接受实际 token 超估算。未联调真实供应商，见[模型接入说明](docs/chat-model-adapter.md) |
 | 认证与 SSO                     | ✅ 本地登录、账号管理及三家浏览器企业登录代码已实现，**仅离线验证**          | 钉钉／企业微信／飞书连接默认关闭；扫码成员核验后仅登录已有绑定账号，本人新绑定须当前会话及本次本地密码。无自动建号、工作台免登或离职同步；真实 PG／Redis／供应商／浏览器未验证。接口与配置见 [企业 SSO](docs/enterprise-sso-api.md)、[配置与回退](docs/enterprise-sso-configuration.md)、[验证记录](docs/enterprise-sso-verification.md)。生产关闭 dev-auth，离职仍由本平台管理员停用账号；本地入口保留   |
 
 | 权限解析请求内去重 | ✅ 单测已覆盖，**未在真实 PG 上执行过任何一条权限查询** | 同一请求内主体只解析一次（
@@ -64,7 +64,7 @@ P0 1–4 已补齐归档文档例外 ACL 过滤、HTTP 错误状态、PATCH 跨�
 配置与兼容性变更见 [P0 修复与部署说明](docs/p0-hardening.md)。未显式选择 profile 时默认使用 `prod`，缺少生产配置会拒绝启动。
 
 AI 可通过 `kb.ai.chat-model` 显式启用通用 OpenAI-compatible 文本模型，服务端注入地址、密钥和模型名；既有部署方 `ChatModelClient` / `MultiTurnModel` 扩展仍分别优先。
-默认关闭且未注入模型时，旧单轮保留占位兼容；启用后的真实调用失败不会回退占位。多轮必须另有核验过的 `ChatTokenBudget`，本期不提供生产策略，因此仅配置协议仍返回 503。配置、严格流终结及回退见[模型接入说明](docs/chat-model-adapter.md)。文档解析统一通过第三方服务接入，当前服务尚未确定。
+默认关闭且未注入模型时，旧单轮保留占位兼容；启用后的真实调用失败不会回退占位。多轮预算默认 `verified`，需要匹配的 `ChatTokenBudget`；显式设置 `KB_CHAT_BUDGET_MODE=estimated` 和已知模型窗口后，可按 UTF-8 字节规则估算输入并保留安全余量。估算不代表真实上界或费用上限，真实模型兼容与参数校准仍待完成。有效材料被预算裁空时返回 `INPUT_BUDGET_EXCEEDED`，前端沿用通用失败提示；真实 usage 完整保存，超预留也不截断。配置、严格流终结及回退见[模型接入说明](docs/chat-model-adapter.md)。文档解析统一通过第三方服务接入，当前服务尚未确定。
 Worker 未装配第三方适配器时暂停领取解析任务，健康检查显示解析不可用；接入后由服务抽取内容，Worker 继续分块、生成向量并在租约有效时事务性发布。见[第三方文档解析接入](docs/third-party-document-parsing.md)。
 
 ---
@@ -728,7 +728,7 @@ kb-ai/
    （`POST` / `DELETE /api/admin/identity/users/{userId}/roles`）与首个管理员引导
    （`kb.bootstrap.*`，见第六节）、角色 CRUD 与权限集管理均已落地；文档密级调整也已实现，
    见[文档密级管理](docs/document-security-level.md)。本次仅执行无外部依赖验证，未实测数据库迁移、并发或端到端检索。
-6. **配置并核验真实 chat 服务**：通用文本适配已实现；供应商兼容与真实调用待验证，多轮生产预算策略另行接入，见[模型接入说明](docs/chat-model-adapter.md)。
+6. **配置并核验真实 chat 服务**：通用文本适配及显式多轮估算已实现；后续填写真实模型窗口并校准预算参数，验证供应商兼容与实际 usage；如需严格上界，另行提供已核验的扩展。见[模型接入说明](docs/chat-model-adapter.md)。
 7. **接认证**：本地用户名密码登录已落地（见"本地登录与账号管理"），生产仍需接入
    企业 SSO/OIDC 并由认证回调建立会话，同时关闭 dev-auth（第六节）。
 8. **对象存储对账**

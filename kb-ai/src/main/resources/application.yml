@@ -63,6 +63,13 @@ kb:
       max-event-bytes: ${KB_CHAT_MODEL_MAX_EVENT_BYTES:1048576}
       max-response-bytes: ${KB_CHAT_MODEL_MAX_RESPONSE_BYTES:4194304}
       max-answer-codepoints: ${KB_CHAT_MODEL_MAX_ANSWER_CODEPOINTS:64000}
+      budget:
+        mode: ${KB_CHAT_BUDGET_MODE:verified}
+        context-window-tokens: ${KB_CHAT_BUDGET_CONTEXT_WINDOW_TOKENS:0}
+        tokens-per-kib: ${KB_CHAT_BUDGET_TOKENS_PER_KIB:1024}
+        per-message-tokens: ${KB_CHAT_BUDGET_PER_MESSAGE_TOKENS:16}
+        request-overhead-tokens: ${KB_CHAT_BUDGET_REQUEST_OVERHEAD_TOKENS:64}
+        safety-margin-tokens: ${KB_CHAT_BUDGET_SAFETY_MARGIN_TOKENS:512}
 
 sa-token:
   token-name: satoken
@@ -116,7 +123,7 @@ management:
 #    区分二者请看 kb-app 的日志与 db/verify_permission.sql。
 #
 # kb-ai 不绑定厂商 SDK：显式启用 chat-model 可接入通用文本协议，自定义模型 Bean 分别优先。
-# 多轮还需经核验的 ChatTokenBudget；本期未提供生产策略，配置协议不等于多轮就绪。
+# 多轮预算默认 verified，需严格 ChatTokenBudget；显式 estimated 需填写窗口并接受估算误差。
 # kb-app 已提供查询 embedding、RRF、rerank 和 top-k；本服务只负责授权召回与编排。
 # 已包含：按部门的 Redis 请求配额、token 预算、可续期并发租约和幂等审计摘要；
 # 释放/续期/审计写入具备有界重试，Redis 不可用时请求拒绝或进入错误收尾。

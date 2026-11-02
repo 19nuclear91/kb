@@ -5,6 +5,7 @@ import com.zhishiku.kb.ai.chat.ChatQuotaAuditService;
 import com.zhishiku.kb.ai.chat.QuotaPrincipalRejectedException;
 import com.zhishiku.kb.ai.chat.RetrievalClient;
 import com.zhishiku.kb.ai.chat.RetrievalFailure;
+import com.zhishiku.kb.ai.budget.BudgetCapability;
 import com.zhishiku.kb.ai.conversation.config.ConversationProperties;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -143,7 +144,7 @@ public class MultiTurnChatService {
                         if (!materials.isEmpty() && versioned.isEmpty()) {
                             throw new RetrievalFailure(RetrievalFailure.Kind.PROTOCOL);
                         }
-                        return versioned.isEmpty() ? new ConversationBudget.Plan(null, List.of()) :
+                        return versioned.isEmpty() ? new ConversationBudget.Plan(null, List.of(), BudgetCapability.unavailable()) :
                                 budget.select(state.model, state.question, history, versioned);
                     })).flatMapMany(plan -> {
                         boolean noResults = plan.input() == null || plan.input().materials().isEmpty();
@@ -156,7 +157,13 @@ public class MultiTurnChatService {
                                     Flux<MultiTurnModel.Event> source = noResults
                                             ? Flux.just(new MultiTurnModel.Event(NO_RESULTS, false, null, null))
                                             :
-                                            app.dispatch(key).thenMany(Flux.defer(() -> state.model.generate(plan.input())));
+                                            app.dispatch(key).thenMany(Flux.defer(() -> {
+                                                if (!plan.capability().equals(state.model.budgetCapability())) {
+                                                    return Flux.error(new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                                                            "多轮模型能力暂不可用"));
+                                                }
+                                                return state.model.generate(plan.input());
+                                            }));
                                     return commands(state, source.timeout(Duration.ofSeconds(ai.upstreamTimeout())));
                                 }));
                     });
@@ -184,8 +191,10 @@ public class MultiTurnChatService {
             if (command.kind == 1) return flush(state).thenMany(Flux.empty());
             if (command.kind == 2)
                 return app.renew(state.result.execution()).then(state.lease.renewAsync()).thenMany(Flux.empty());
-            if (command.kind == 3)
-                return flush(state).then(finish(state, "COMPLETED")).thenMany(Flux.just(event("done", done(state))));
+            if (command.kind == 3) {
+                return flush(state).then(finish(state, "COMPLETED"))
+                        .thenMany(Flux.defer(() -> Flux.just(event("done", done(state)))));
+            }
             var incoming = command.data;
             String text = incoming.text() == null ? "" : incoming.text();
             synchronized (state) {
@@ -289,8 +298,8 @@ public class MultiTurnChatService {
         result.put("status", "COMPLETED");
         result.put("lastBatchSeq", state.position);
         result.put("usageStatus", state.intent == null ? "NOT_INVOKED" : state.intent.usageStatus());
-        result.put("promptTokens", state.intent == null ? 0L : state.intent.promptTokens());
-        result.put("completionTokens", state.intent == null ? 0L : state.intent.completionTokens());
+        result.put("promptTokens", state.intent == null ? Long.valueOf(0) : state.intent.promptTokens());
+        result.put("completionTokens", state.intent == null ? Long.valueOf(0) : state.intent.completionTokens());
         result.put("chargedTokens", state.intent == null ? 0L : state.intent.chargedTokens());
         return result;
     }
@@ -306,6 +315,9 @@ public class MultiTurnChatService {
         data.put("message", error instanceof RetrievalFailure ? RetrievalFailure.MESSAGE : "生成或保存暂未完成，请查看历史状态。");
         if (error instanceof RetrievalFailure) {
             data.put("code", RetrievalFailure.CODE);
+        } else if (error instanceof InputBudgetExceededException) {
+            data.put("code", InputBudgetExceededException.CODE);
+            data.put("message", InputBudgetExceededException.MESSAGE);
         }
         return data;
     }
