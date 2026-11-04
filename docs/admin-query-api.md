@@ -100,6 +100,11 @@ operation 为 `batch-grant`。可按 operationScope、targetType+targetId、requ
 `clearanceBlockedPrincipalCount`，最后一项按至少新增一条授权的主体计数。逐条主体、权限位及 `alreadyGranted`
 只保存在审计 `after_state.items[]` 快照中，不在审计查询摘要展开。
 
+空间批量撤销使用操作域 code `SPACE_ACL_BATCH_REVOKE`，targetType 为 `space-acl`，targetId 为目标空间 ID，
+operation 为 `batch-revoke`。一批只写一条成功事件，相同标识与内容重放不增加事件；沿用相同的检索条件。
+详情仅投影 `spaceId`（正整数 ID）、`removedCount` 与 `absentCount`（非负计数）。逐条主体、权限位与 `removed`
+只保存在审计 `after_state.items[]` 快照中，不在查询摘要展开；负数计数使摘要降级为不可用。
+
 首期只查询 `sys_identity_audit` 中生产者已经写入的管理及登录事件，包括成功、失败、目标为 null 和目标后来被删除的事件。
 
 - 覆盖用户生命周期、部门、角色权限、外部身份绑定、空间/文档管理与 ACL、管理端文档删除、文档密级、登录和解析死信等已记录事件。

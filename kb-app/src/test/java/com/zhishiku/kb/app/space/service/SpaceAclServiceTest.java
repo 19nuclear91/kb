@@ -11,6 +11,8 @@ import com.zhishiku.kb.app.auth.service.PermissionService;
 import com.zhishiku.kb.app.space.mapper.SpaceMapper;
 import com.zhishiku.kb.app.space.model.SpaceAclRecord;
 import com.zhishiku.kb.app.space.model.SpaceAclBatchGrantResult;
+import com.zhishiku.kb.app.space.model.SpaceAclBatchRevokeItem;
+import com.zhishiku.kb.app.space.model.SpaceAclBatchRevokeResult;
 import com.zhishiku.kb.app.space.model.SpaceAclPrincipal;
 import com.zhishiku.kb.common.security.IdentityException;
 import com.zhishiku.kb.common.security.PrincipalType;
@@ -283,8 +285,10 @@ class SpaceAclServiceTest {
                 List.of(new SpaceAclPrincipal(PrincipalType.ROLE, 2), new SpaceAclPrincipal(PrincipalType.ROLE, 3)),
                 List.of("view", "download"), "batch");
         assertThat(result.grantedCount()).isEqualTo(4);
-        var order = inOrder(authorizer, mapper);
+        var order = inOrder(authorizer, mapper, audit);
         order.verify(authorizer).requireSpaceManager(SPACE);
+        order.verify(mapper).lockBatchRequest("SPACE_ACL_BATCH_GRANT:batch");
+        order.verify(audit).existing(AuditScope.SPACE_ACL_BATCH_GRANT, "batch");
         order.verify(authorizer).requireRoleReference(2);
         order.verify(authorizer).requireRoleReference(3);
         order.verify(mapper).countAcl(SPACE, PrincipalType.ROLE.code(), 2, "view");
@@ -302,7 +306,8 @@ class SpaceAclServiceTest {
         var order = inOrder(authorizer);
         order.verify(authorizer).requireSpaceManager(SPACE);
         order.verify(authorizer).requireRoleReference(99);
-        verifyNoInteractions(mapper);
+        verify(mapper).lockBatchRequest("SPACE_ACL_BATCH_GRANT:batch");
+        verifyNoMoreInteractions(mapper);
         verify(audit).existing(AuditScope.SPACE_ACL_BATCH_GRANT, "batch");
         verifyNoMoreInteractions(audit);
     }
@@ -320,6 +325,10 @@ class SpaceAclServiceTest {
             for (var permissions : List.of(List.of("view", "download"), List.of("view", "manage"))) {
                 assertThatThrownBy(() -> subject.grantBatch(SPACE,
                         List.of(new SpaceAclPrincipal(PrincipalType.USER, 2)), permissions, "batch"))
+                        .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(403))
+                        .hasMessage(reason);
+                assertThatThrownBy(() -> subject.revokeBatch(SPACE, permissions.stream()
+                        .map(permission -> new SpaceAclBatchRevokeItem(PrincipalType.USER, 2, permission)).toList(), "batch"))
                         .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(403))
                         .hasMessage(reason);
             }
@@ -358,7 +367,7 @@ class SpaceAclServiceTest {
         verify(mapper).userIdsForPrincipal(PrincipalType.DEPT.code(), 3);
         verify(mapper, never()).userIdsForPrincipal(PrincipalType.USER.code(), 4);
         var after = ArgumentCaptor.forClass(String.class);
-        verify(audit).success(eq(AuditScope.SPACE_ACL_BATCH_GRANT), eq("batch"), eq(ADMIN), eq(SPACE),
+        verify(audit).appendSuccess(eq(AuditScope.SPACE_ACL_BATCH_GRANT), eq("batch"), eq(ADMIN), eq(SPACE),
                 eq("batch-grant"), eq("{}"), after.capture());
         var json = new ObjectMapper();
         var snapshot = json.readTree(after.getValue());
@@ -390,6 +399,7 @@ class SpaceAclServiceTest {
         verify(mapper, times(50)).userIdsForPrincipal(anyShort(), anyLong());
         verify(mapper, times(50)).findUserClearance(77);
         verify(mapper, times(50)).countDocumentsAboveClearance(SPACE, (short) 2);
+        verify(mapper).lockBatchRequest("SPACE_ACL_BATCH_GRANT:max-batch");
         verifyNoMoreInteractions(mapper);
     }
 
@@ -414,7 +424,8 @@ class SpaceAclServiceTest {
         verifyNoMoreInteractions(authorizer);
         verify(audit, times(bindings.length)).existing(AuditScope.SPACE_ACL_BATCH_GRANT, "bound-batch");
         verifyNoMoreInteractions(audit);
-        verifyNoInteractions(mapper);
+        verify(mapper, times(bindings.length)).lockBatchRequest("SPACE_ACL_BATCH_GRANT:bound-batch");
+        verifyNoMoreInteractions(mapper);
     }
 
     @Test
@@ -433,7 +444,8 @@ class SpaceAclServiceTest {
                 .hasMessage("请求标识已用于不同操作");
         verify(audit).existing(AuditScope.SPACE_ACL_BATCH_GRANT, "bound-batch");
         verifyNoMoreInteractions(audit);
-        verifyNoInteractions(mapper);
+        verify(mapper).lockBatchRequest("SPACE_ACL_BATCH_GRANT:bound-batch");
+        verifyNoMoreInteractions(mapper);
     }
 
     @Test
@@ -448,7 +460,7 @@ class SpaceAclServiceTest {
         var permissions = List.of("view", "download");
         var first = service.grantBatch(SPACE, principals, permissions, "replay-batch");
         var after = ArgumentCaptor.forClass(String.class);
-        verify(audit).success(eq(AuditScope.SPACE_ACL_BATCH_GRANT), eq("replay-batch"), eq(ADMIN), eq(SPACE),
+        verify(audit).appendSuccess(eq(AuditScope.SPACE_ACL_BATCH_GRANT), eq("replay-batch"), eq(ADMIN), eq(SPACE),
                 eq("batch-grant"), eq("{}"), after.capture());
         when(audit.existing(AuditScope.SPACE_ACL_BATCH_GRANT, "replay-batch")).thenReturn(new IdentityAuditRecord(
                 1L, UUID.randomUUID(), "SPACE_ACL_BATCH_GRANT", "replay-batch", ADMIN, "space-acl", SPACE,
@@ -457,8 +469,283 @@ class SpaceAclServiceTest {
         var replay = service.grantBatch(SPACE, principals, permissions, "replay-batch");
         assertThat(replay).isEqualTo(new SpaceAclBatchGrantResult(first.spaceId(), first.items(), first.grantedCount(),
                 first.alreadyGrantedCount(), first.clearanceBlockedPrincipalCount(), true));
-        verifyNoInteractions(mapper);
+        verify(mapper).lockBatchRequest("SPACE_ACL_BATCH_GRANT:replay-batch");
+        verifyNoMoreInteractions(mapper);
         verify(audit).existing(AuditScope.SPACE_ACL_BATCH_GRANT, "replay-batch");
         verifyNoMoreInteractions(audit);
+    }
+
+    @Test
+    void batchGrantUsesOneNormalizedRequestIdForLockAuditAndReplay() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ADMIN);
+        when(mapper.grantAcl(anyLong(), anyShort(), anyLong(), anyString())).thenReturn(1);
+        var principals = List.of(new SpaceAclPrincipal(PrincipalType.USER, 2));
+        var first = service.grantBatch(SPACE, principals, List.of("view"), " \tnormalized-grant \r\n");
+        var after = ArgumentCaptor.forClass(String.class);
+        var order = inOrder(mapper, audit);
+        order.verify(mapper).lockBatchRequest("SPACE_ACL_BATCH_GRANT:normalized-grant");
+        order.verify(audit).existing(AuditScope.SPACE_ACL_BATCH_GRANT, "normalized-grant");
+        order.verify(audit).appendSuccess(eq(AuditScope.SPACE_ACL_BATCH_GRANT), eq("normalized-grant"), eq(ADMIN), eq(SPACE),
+                eq("batch-grant"), eq("{}"), after.capture());
+        when(audit.existing(AuditScope.SPACE_ACL_BATCH_GRANT, "normalized-grant")).thenReturn(new IdentityAuditRecord(
+                1L, UUID.randomUUID(), "SPACE_ACL_BATCH_GRANT", "normalized-grant", ADMIN, "space-acl", SPACE,
+                "batch-grant", "SUCCESS", "{}", after.getValue(), null, Instant.EPOCH));
+        clearInvocations(mapper, audit);
+        for (String requestId : List.of("normalized-grant", " normalized-grant ", "\tnormalized-grant\r\n")) {
+            var replay = service.grantBatch(SPACE, principals, List.of("view"), requestId);
+            assertThat(replay).isEqualTo(new SpaceAclBatchGrantResult(SPACE, first.items(), first.grantedCount(),
+                    first.alreadyGrantedCount(), first.clearanceBlockedPrincipalCount(), true));
+        }
+        assertThatThrownBy(() -> service.grantBatch(SPACE, principals, List.of("download"), " normalized-grant "))
+                .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(409));
+        verify(mapper, times(4)).lockBatchRequest("SPACE_ACL_BATCH_GRANT:normalized-grant");
+        verify(audit, times(4)).existing(AuditScope.SPACE_ACL_BATCH_GRANT, "normalized-grant");
+        verifyNoMoreInteractions(mapper, audit);
+    }
+
+    @Test
+    void batchRevokeUsesOneNormalizedRequestIdForLockAuditAndReplay() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ADMIN);
+        when(mapper.revokeAcl(SPACE, PrincipalType.USER.code(), 2, "view")).thenReturn(1);
+        var items = List.of(new SpaceAclBatchRevokeItem(PrincipalType.USER, 2, "view"));
+        var first = service.revokeBatch(SPACE, items, " \tnormalized-revoke \r\n");
+        var after = ArgumentCaptor.forClass(String.class);
+        var order = inOrder(mapper, audit);
+        order.verify(mapper).lockBatchRequest("SPACE_ACL_BATCH_REVOKE:normalized-revoke");
+        order.verify(audit).existing(AuditScope.SPACE_ACL_BATCH_REVOKE, "normalized-revoke");
+        order.verify(audit).appendSuccess(eq(AuditScope.SPACE_ACL_BATCH_REVOKE), eq("normalized-revoke"), eq(ADMIN), eq(SPACE),
+                eq("batch-revoke"), eq("{}"), after.capture());
+        when(audit.existing(AuditScope.SPACE_ACL_BATCH_REVOKE, "normalized-revoke")).thenReturn(
+                revokeSnapshot("normalized-revoke", ADMIN, SPACE, after.getValue()));
+        clearInvocations(mapper, audit);
+        for (String requestId : List.of("normalized-revoke", " normalized-revoke ", "\tnormalized-revoke\r\n")) {
+            var replay = service.revokeBatch(SPACE, items, requestId);
+            assertThat(replay).isEqualTo(new SpaceAclBatchRevokeResult(SPACE, first.items(), first.removedCount(),
+                    first.absentCount(), true));
+        }
+        assertThatThrownBy(() -> service.revokeBatch(SPACE,
+                List.of(new SpaceAclBatchRevokeItem(PrincipalType.USER, 2, "download")), " normalized-revoke "))
+                .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(409));
+        verify(mapper, times(4)).lockBatchRequest("SPACE_ACL_BATCH_REVOKE:normalized-revoke");
+        verify(audit, times(4)).existing(AuditScope.SPACE_ACL_BATCH_REVOKE, "normalized-revoke");
+        verifyNoMoreInteractions(mapper, audit);
+    }
+
+    @Test
+    void batchRejectsIdsThatNormalizeToBlankBeforeAuthorization() {
+        var principals = List.of(new SpaceAclPrincipal(PrincipalType.USER, 2));
+        var items = List.of(new SpaceAclBatchRevokeItem(PrincipalType.USER, 2, "view"));
+        for (String requestId : Arrays.asList(null, "", " ", "\t\r\n", "\u2003", "\0", " \0 ")) {
+            assertThatThrownBy(() -> service.grantBatch(SPACE, principals, List.of("view"), requestId))
+                    .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(400));
+            assertThatThrownBy(() -> service.revokeBatch(SPACE, items, requestId))
+                    .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(400));
+        }
+        verifyNoInteractions(authorizer, mapper, audit);
+    }
+
+    @Test
+    void invalidRevokeBatchIsRejectedBeforeQualificationLocksAndWrites() {
+        var item = new SpaceAclBatchRevokeItem(PrincipalType.USER, 2, "view");
+        assertInvalidRevokeBatch(null);
+        assertInvalidRevokeBatch(List.of());
+        assertInvalidRevokeBatch(LongStream.rangeClosed(1, 301)
+                .mapToObj(id -> new SpaceAclBatchRevokeItem(PrincipalType.USER, id, "view")).toList());
+        assertInvalidRevokeBatch(List.of(item, item));
+        assertInvalidRevokeBatch(List.of(item, new SpaceAclBatchRevokeItem(PrincipalType.USER, 2, " view ")));
+        assertInvalidRevokeBatch(Arrays.asList(item, null));
+        assertInvalidRevokeBatch(List.of(item, new SpaceAclBatchRevokeItem(null, 3, "view")));
+        for (long id : List.of(0L, -1L)) {
+            assertInvalidRevokeBatch(List.of(item, new SpaceAclBatchRevokeItem(PrincipalType.DEPT, id, "view")));
+        }
+        for (String permission : Arrays.asList(null, "", " ", "share", "View")) {
+            assertInvalidRevokeBatch(List.of(item, new SpaceAclBatchRevokeItem(PrincipalType.DEPT, 3, permission)));
+        }
+        for (long spaceId : List.of(0L, -1L)) {
+            assertThatThrownBy(() -> service.revokeBatch(spaceId, List.of(item), "batch"))
+                    .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(400));
+        }
+        for (String requestId : Arrays.asList(null, "", " ")) {
+            assertThatThrownBy(() -> service.revokeBatch(SPACE, List.of(item), requestId))
+                    .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(400));
+        }
+        verifyNoInteractions(mapper, authorizer, audit);
+    }
+
+    private void assertInvalidRevokeBatch(List<SpaceAclBatchRevokeItem> items) {
+        assertThatThrownBy(() -> service.revokeBatch(SPACE, items, "batch"))
+                .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(400))
+                .hasMessageContaining("300");
+    }
+
+    @Test
+    void revokeBatchContainingManageRejectsSpaceManagerBeforeAnyLockOrWrite() {
+        when(authorizer.requireGrantManage()).thenThrow(IdentityException.forbidden("缺少 space:grant-manage"));
+        assertThatThrownBy(() -> service.revokeBatch(SPACE, List.of(
+                new SpaceAclBatchRevokeItem(PrincipalType.USER, 2, "view"),
+                new SpaceAclBatchRevokeItem(PrincipalType.USER, 2, "manage")), "batch"))
+                .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(403));
+        verify(authorizer).requireGrantManage();
+        verifyNoMoreInteractions(authorizer);
+        verifyNoInteractions(mapper, audit);
+    }
+
+    @Test
+    void revokeBatchOnlyRemovesExplicitEntriesIncludingDeletedRolesAndAuditsCounts() throws Exception {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ADMIN);
+        when(mapper.revokeAcl(SPACE, PrincipalType.DEPT.code(), 2, "view")).thenReturn(1);
+        when(mapper.revokeAcl(SPACE, PrincipalType.ROLE.code(), 99, "comment")).thenReturn(1);
+        var items = List.of(new SpaceAclBatchRevokeItem(PrincipalType.DEPT, 2, " view "),
+                new SpaceAclBatchRevokeItem(PrincipalType.DEPT, 3, "download"),
+                new SpaceAclBatchRevokeItem(PrincipalType.ROLE, 99, "comment"));
+        var result = service.revokeBatch(SPACE, items, "revoke-batch");
+        assertThat(result).isEqualTo(new SpaceAclBatchRevokeResult(SPACE, List.of(
+                new SpaceAclBatchRevokeResult.Item(PrincipalType.DEPT, 2, "view", true),
+                new SpaceAclBatchRevokeResult.Item(PrincipalType.DEPT, 3, "download", false),
+                new SpaceAclBatchRevokeResult.Item(PrincipalType.ROLE, 99, "comment", true)), 2, 1, false));
+        var order = inOrder(authorizer, mapper, audit);
+        order.verify(authorizer).requireSpaceManager(SPACE);
+        order.verify(mapper).lockBatchRequest("SPACE_ACL_BATCH_REVOKE:revoke-batch");
+        order.verify(audit).existing(AuditScope.SPACE_ACL_BATCH_REVOKE, "revoke-batch");
+        order.verify(mapper).revokeAcl(SPACE, PrincipalType.DEPT.code(), 2, "view");
+        order.verify(mapper).revokeAcl(SPACE, PrincipalType.DEPT.code(), 3, "download");
+        order.verify(mapper).revokeAcl(SPACE, PrincipalType.ROLE.code(), 99, "comment");
+        var after = ArgumentCaptor.forClass(String.class);
+        order.verify(audit).appendSuccess(eq(AuditScope.SPACE_ACL_BATCH_REVOKE), eq("revoke-batch"), eq(ADMIN), eq(SPACE),
+                eq("batch-revoke"), eq("{}"), after.capture());
+        verifyNoMoreInteractions(mapper, authorizer, audit);
+        var json = new ObjectMapper();
+        var snapshot = json.readTree(after.getValue());
+        assertThat(snapshot.size()).isEqualTo(4);
+        assertThat(snapshot.get("spaceId").longValue()).isEqualTo(SPACE);
+        assertThat(snapshot.get("removedCount").longValue()).isEqualTo(2);
+        assertThat(snapshot.get("absentCount").longValue()).isEqualTo(1);
+        assertThat(snapshot.get("items")).isEqualTo(json.readTree(json.writeValueAsString(result.items())));
+    }
+
+    @Test
+    void revokeBatchAllowsRemovingAllManageAndAcceptsThreeHundredEntries() {
+        when(authorizer.requireGrantManage()).thenReturn(ADMIN);
+        when(mapper.revokeAcl(anyLong(), anyShort(), anyLong(), anyString())).thenReturn(1);
+        var items = LongStream.rangeClosed(1, 300)
+                .mapToObj(id -> new SpaceAclBatchRevokeItem(PrincipalType.USER, id, "manage")).toList();
+        var result = service.revokeBatch(SPACE, items, "max-revoke");
+        assertThat(result.removedCount()).isEqualTo(300);
+        assertThat(result.absentCount()).isZero();
+        verify(authorizer).requireGrantManage();
+        verifyNoMoreInteractions(authorizer);
+        verify(mapper).lockBatchRequest("SPACE_ACL_BATCH_REVOKE:max-revoke");
+        verify(mapper, times(300)).revokeAcl(eq(SPACE), eq(PrincipalType.USER.code()), anyLong(), eq("manage"));
+        verifyNoMoreInteractions(mapper);
+    }
+
+    @Test
+    void revokeReplayKeepsFirstReceiptDespiteReorderedItemsOrRegrantedAcl() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ADMIN);
+        when(mapper.revokeAcl(SPACE, PrincipalType.USER.code(), Long.MAX_VALUE, "view")).thenReturn(1);
+        var items = List.of(new SpaceAclBatchRevokeItem(PrincipalType.USER, Long.MAX_VALUE, "view"),
+                new SpaceAclBatchRevokeItem(PrincipalType.DEPT, 3, "download"));
+        var first = service.revokeBatch(SPACE, items, "replay-revoke");
+        var after = ArgumentCaptor.forClass(String.class);
+        verify(audit).appendSuccess(eq(AuditScope.SPACE_ACL_BATCH_REVOKE), eq("replay-revoke"), eq(ADMIN), eq(SPACE),
+                eq("batch-revoke"), eq("{}"), after.capture());
+        when(audit.existing(AuditScope.SPACE_ACL_BATCH_REVOKE, "replay-revoke")).thenReturn(
+                revokeSnapshot("replay-revoke", ADMIN, SPACE, after.getValue()));
+        // 即使其他操作已重新授予，重放也不得再次调用撤销。
+        when(mapper.revokeAcl(anyLong(), anyShort(), anyLong(), anyString())).thenReturn(1);
+        clearInvocations(mapper, audit);
+        var replay = service.revokeBatch(SPACE, items.reversed(), "replay-revoke");
+        assertThat(replay).isEqualTo(new SpaceAclBatchRevokeResult(SPACE, first.items(), 1, 1, true));
+        verify(mapper).lockBatchRequest("SPACE_ACL_BATCH_REVOKE:replay-revoke");
+        verify(audit).existing(AuditScope.SPACE_ACL_BATCH_REVOKE, "replay-revoke");
+        verifyNoMoreInteractions(mapper, audit);
+    }
+
+    @Test
+    void revokeReplayRejectsMissingBindingsMalformedSnapshotsAndDifferentEntryCombinations() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ADMIN);
+        var items = List.of(new SpaceAclBatchRevokeItem(PrincipalType.USER, 2, "view"),
+                new SpaceAclBatchRevokeItem(PrincipalType.USER, 3, "download"));
+        Long[][] bindings = {{ADMIN + 1, SPACE}, {ADMIN, SPACE + 1}, {null, SPACE}, {ADMIN, null}};
+        for (Long[] binding : bindings) {
+            when(audit.existing(AuditScope.SPACE_ACL_BATCH_REVOKE, "bad-revoke"))
+                    .thenReturn(revokeSnapshot("bad-revoke", binding[0], binding[1], "{}"));
+            assertRevokeReplayConflict(items);
+        }
+        var snapshots = Arrays.asList(null, "{", "null", "{\"spaceId\":1}", "{\"spaceId\":2,\"items\":[]}",
+                "{\"spaceId\":1,\"items\":[null]}", """
+                {"spaceId":1,"items":[
+                 {"principalType":"USER","principalId":2,"permission":"download","removed":true},
+                 {"principalType":"USER","principalId":3,"permission":"view","removed":true}],
+                 "removedCount":2,"absentCount":0}
+                """);
+        for (String snapshot : snapshots) {
+            when(audit.existing(AuditScope.SPACE_ACL_BATCH_REVOKE, "bad-revoke"))
+                    .thenReturn(revokeSnapshot("bad-revoke", ADMIN, SPACE, snapshot));
+            assertRevokeReplayConflict(items);
+        }
+        verify(mapper, times(bindings.length + snapshots.size())).lockBatchRequest("SPACE_ACL_BATCH_REVOKE:bad-revoke");
+        verify(audit, times(bindings.length + snapshots.size())).existing(AuditScope.SPACE_ACL_BATCH_REVOKE, "bad-revoke");
+        verifyNoMoreInteractions(mapper, audit);
+    }
+
+    private void assertRevokeReplayConflict(List<SpaceAclBatchRevokeItem> items) {
+        assertThatThrownBy(() -> service.revokeBatch(SPACE, items, "bad-revoke"))
+                .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(409))
+                .hasMessage("请求标识已用于不同操作");
+    }
+
+    private static IdentityAuditRecord revokeSnapshot(String requestId, Long actor, Long space, String snapshot) {
+        return new IdentityAuditRecord(1L, UUID.randomUUID(), "SPACE_ACL_BATCH_REVOKE", requestId, actor,
+                "space-acl", space, "batch-revoke", "SUCCESS", "{}", snapshot, null, Instant.EPOCH);
+    }
+
+    @Test
+    void historicalBatchSnapshotRequiresSameContentButIgnoresOrdering() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ADMIN);
+        String snapshot = """
+                {"spaceId":1,"items":[
+                 {"principalType":"USER","principalId":2,"permission":"view","alreadyGranted":true},
+                 {"principalType":"USER","principalId":2,"permission":"download","alreadyGranted":false},
+                 {"principalType":"DEPT","principalId":3,"permission":"view","alreadyGranted":false},
+                 {"principalType":"DEPT","principalId":3,"permission":"download","alreadyGranted":true}],
+                 "grantedCount":2,"alreadyGrantedCount":2,"clearanceBlockedPrincipalCount":1}
+                """;
+        when(audit.existing(AuditScope.SPACE_ACL_BATCH_GRANT, "old-batch")).thenReturn(new IdentityAuditRecord(
+                1L, UUID.randomUUID(), "SPACE_ACL_BATCH_GRANT", "old-batch", ADMIN, "space-acl", SPACE,
+                "batch-grant", "SUCCESS", "{}", snapshot, null, Instant.EPOCH));
+        var principals = List.of(new SpaceAclPrincipal(PrincipalType.DEPT, 3), new SpaceAclPrincipal(PrincipalType.USER, 2));
+        var replay = service.grantBatch(SPACE, principals, List.of("download", "view"), "old-batch");
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.items()).hasSize(4);
+        assertThat(replay.grantedCount()).isEqualTo(2);
+        assertThat(replay.clearanceBlockedPrincipalCount()).isEqualTo(1);
+        assertThatThrownBy(() -> service.grantBatch(SPACE, principals, List.of("view"), "old-batch"))
+                .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(409));
+        assertThatThrownBy(() -> service.grantBatch(SPACE,
+                List.of(new SpaceAclPrincipal(PrincipalType.USER, 3)), List.of("download", "view"), "old-batch"))
+                .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(409));
+        verify(mapper, times(3)).lockBatchRequest("SPACE_ACL_BATCH_GRANT:old-batch");
+        verify(audit, times(3)).existing(AuditScope.SPACE_ACL_BATCH_GRANT, "old-batch");
+        verifyNoMoreInteractions(mapper, audit);
+    }
+
+    @Test
+    void unreadableOrIncompleteBatchSnapshotIsConflictWithoutAnyWrite() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ADMIN);
+        var snapshots = Arrays.asList(null, "{", "null", "{}", "{\"spaceId\":1}",
+                "{\"spaceId\":1,\"items\":[null]}", "{\"spaceId\":1,\"items\":[]}");
+        for (String snapshot : snapshots) {
+            when(audit.existing(AuditScope.SPACE_ACL_BATCH_GRANT, "bad-batch")).thenReturn(new IdentityAuditRecord(
+                    1L, UUID.randomUUID(), "SPACE_ACL_BATCH_GRANT", "bad-batch", ADMIN, "space-acl", SPACE,
+                    "batch-grant", "SUCCESS", "{}", snapshot, null, Instant.EPOCH));
+            assertThatThrownBy(() -> service.grantBatch(SPACE,
+                    List.of(new SpaceAclPrincipal(PrincipalType.USER, 2)), List.of("view"), "bad-batch"))
+                    .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(409))
+                    .hasMessage("请求标识已用于不同操作");
+        }
+        verify(mapper, times(snapshots.size())).lockBatchRequest("SPACE_ACL_BATCH_GRANT:bad-batch");
+        verify(audit, times(snapshots.size())).existing(AuditScope.SPACE_ACL_BATCH_GRANT, "bad-batch");
+        verifyNoMoreInteractions(mapper, audit);
     }
 }

@@ -49,6 +49,9 @@ class AuditSummaryProjectorTest {
                 case SPACE_ACL_BATCH_GRANT ->
                         "{\"spaceId\":2,\"grantedCount\":3,\"alreadyGrantedCount\":1,\"clearanceBlockedPrincipalCount\":1," +
                                 "\"items\":[{\"principalType\":\"USER\",\"principalId\":3,\"permission\":\"view\",\"alreadyGranted\":true}]}";
+                case SPACE_ACL_BATCH_REVOKE ->
+                        "{\"spaceId\":2,\"removedCount\":1,\"absentCount\":0," +
+                                "\"items\":[{\"principalType\":\"USER\",\"principalId\":3,\"permission\":\"view\",\"removed\":true}]}";
                 case DOC_ACL_GRANT, DOC_ACL_REVOKE ->
                         "{\"documentId\":2,\"principalKey\":\"3:3\",\"permission\":\"view\"}";
                 case DOCUMENT_RELOCATE ->
@@ -143,6 +146,29 @@ class AuditSummaryProjectorTest {
         assertThat(AuditScope.SPACE_ACL_BATCH_GRANT.targetType()).isEqualTo("space-acl");
         assertThat(projector.detail(row("SPACE_ACL_BATCH_GRANT", "{}", "{\"grantedCount\":-1}"))
                 .summaryAvailable()).isFalse();
+    }
+
+    @Test
+    void batchRevokeProjectsOnlySpaceAndNonnegativeCounts() {
+        var projector = new AuditSummaryProjector();
+        String after = """
+                {"spaceId":9223372036854775807,"removedCount":2,"absentCount":1,
+                 "items":[{"principalType":"USER","principalId":3,"permission":"manage","removed":true}]}
+                """;
+        var detail = projector.detail(row("SPACE_ACL_BATCH_REVOKE", "{}", after));
+        assertThat(detail.summaryAvailable()).isTrue();
+        assertThat(detail.changes()).containsExactly(
+                new Change("spaceId", null, Long.MAX_VALUE),
+                new Change("removedCount", null, 2L),
+                new Change("absentCount", null, 1L));
+        assertThat(AuditScope.SPACE_ACL_BATCH_REVOKE.targetType()).isEqualTo("space-acl");
+        for (String invalid : List.of("{\"removedCount\":-1}", "{\"absentCount\":-1}")) {
+            var unavailable = projector.detail(row("SPACE_ACL_BATCH_REVOKE", "{}", invalid));
+            assertThat(unavailable.summaryAvailable()).isFalse();
+            assertThat(unavailable.changes()).isEmpty();
+        }
+        assertThat(projector.detail(row("SPACE_ACL_BATCH_GRANT", "{}", after)).changes())
+                .containsExactly(new Change("spaceId", null, Long.MAX_VALUE));
     }
 
     @Test

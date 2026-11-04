@@ -1,9 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { decodeJson, encodeJson, readJson } from '../api';
+import { ApiError, decodeJson, encodeJson, readJson } from '../api';
 import { json } from '../test/fixtures';
 import { spacePaths, spaceWrites } from './spaceApi';
-import type { AclPermission, AdminSpace, BatchGrantResult, DeleteDocumentResult, GrantResult, RelocationResult, SecurityResult } from './spaceApi';
+import type { AclPermission, AdminSpace, BatchGrantResult, BatchRevokeItem, BatchRevokeResult, DeleteDocumentResult, GrantResult, RelocationResult, SecurityResult } from './spaceApi';
 describe('空间与文档管理契约', () => {
+  it('批量撤销仅发送显式组合并按完整条目去重，回执与大整数精确往返', async () => {
+    const first: BatchRevokeItem = { principalType: 'USER', principalId: '9223372036854775807', permission: 'view' };
+    const second: BatchRevokeItem = { principalType: 'DEPT', principalId: '3', permission: 'download' };
+    const third = { ...first, permission: 'comment' as const };
+    const intent = spaceWrites.revokeBatch('9007199254740993', [first, second, first, third]);
+    expect(intent).toEqual({ method: 'POST', path: '/api/admin/spaces/9007199254740993/acl/batch-revoke', body: { items: [
+      { ...first, principalId: 9223372036854775807n }, { ...second, principalId: 3n }, { ...third, principalId: 9223372036854775807n },
+    ] } });
+    expect(encodeJson(intent.body)).toContain('"principalId":9223372036854775807');
+    expect(intent.body).not.toHaveProperty('requestId');
+    const result = await readJson<BatchRevokeResult>(json({ spaceId: 9007199254740993n,
+      items: [{ ...first, principalId: 9223372036854775807n, removed: true }, { ...second, principalId: 3, removed: false }],
+      removedCount: 1, absentCount: 1, replayed: true }));
+    expect(result).toEqual({ spaceId: '9007199254740993', items: [{ ...first, removed: true }, { ...second, removed: false }], removedCount: 1, absentCount: 1, replayed: true });
+  });
+  it('批量撤销去重后检查 1–300 上限、权限白名单与主体 ID', () => {
+    const items: BatchRevokeItem[] = Array.from({ length: 301 }, (_, index) => ({ principalType: 'USER', principalId: String(index + 1), permission: 'view' }));
+    expect(() => spaceWrites.revokeBatch('7', [])).toThrow(/300/);
+    expect(() => spaceWrites.revokeBatch('7', items)).toThrow(/300/);
+    expect(() => spaceWrites.revokeBatch('7', items.slice(0, 300))).not.toThrow();
+    expect(() => spaceWrites.revokeBatch('7', Array(301).fill(items[0]))).not.toThrow();
+    expect(() => spaceWrites.revokeBatch('7', [{ ...items[0], permission: 'share' as AclPermission }])).toThrow('不支持');
+    expect(() => spaceWrites.revokeBatch('7', [{ ...items[0], permission: 'share' as AclPermission }])).toThrow(ApiError);
+    for (const permission of ['view', 'download', 'edit', 'review', 'comment', 'manage'] as AclPermission[]) {
+      expect(() => spaceWrites.revokeBatch('7', [{ ...items[0], permission }])).not.toThrow();
+    }
+    for (const id of ['0', '-1', 'abc', '9223372036854775808']) {
+      expect(() => spaceWrites.revokeBatch(id, [items[0]])).toThrow(ApiError);
+      expect(() => spaceWrites.revokeBatch('7', [{ ...items[0], principalId: id }])).toThrow(ApiError);
+    }
+  });
   it('批量授予构造单个意图，主体与权限去重，大整数不失真', async () => {
     const user = { principalType: 'USER' as const, principalId: '9223372036854775807', label: '甲' };
     const role = { ...user, principalType: 'ROLE' as const };

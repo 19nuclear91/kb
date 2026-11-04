@@ -19,6 +19,13 @@ import java.util.List;
 public interface SpaceMapper {
 
     /**
+     * 同一批量操作域与请求标识在事务内串行化。
+     */
+    @Select("SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(#{key}, 0))")
+    @Options(useCache = false, flushCache = Options.FlushCachePolicy.TRUE, timeout = 5)
+    int lockBatchRequest(@Param("key") String key);
+
+    /**
      * 列出调用者有资格的未归档空间。
      *
      * <p>{@code viewSpaceIds} / {@code manageSpaceIds} 由

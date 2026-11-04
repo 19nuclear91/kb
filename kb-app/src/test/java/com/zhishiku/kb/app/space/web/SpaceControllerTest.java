@@ -2,6 +2,8 @@ package com.zhishiku.kb.app.space.web;
 
 import com.zhishiku.kb.app.config.GlobalExceptionHandler;
 import com.zhishiku.kb.app.space.model.SpaceAclBatchGrantResult;
+import com.zhishiku.kb.app.space.model.SpaceAclBatchRevokeItem;
+import com.zhishiku.kb.app.space.model.SpaceAclBatchRevokeResult;
 import com.zhishiku.kb.app.space.model.SpaceAclPrincipal;
 import com.zhishiku.kb.app.space.service.SpaceAclService;
 import com.zhishiku.kb.app.space.service.SpaceAuthorizer;
@@ -235,6 +237,117 @@ class SpaceControllerTest {
                         .header("X-Request-Id", "batch").content(body.replace("USER", "UNKNOWN")))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(acls);
+    }
+
+    @Test
+    void revokeBatchBindsExplicitEntriesAndReturnsExactIdsAndRemovalReceipt() throws Exception {
+        var items = List.of(new SpaceAclBatchRevokeItem(PrincipalType.USER, Long.MAX_VALUE, "view"),
+                new SpaceAclBatchRevokeItem(PrincipalType.DEPT, 2, "download"));
+        when(acls.revokeBatch(1L, items, "header-id")).thenReturn(new SpaceAclBatchRevokeResult(1L, List.of(
+                new SpaceAclBatchRevokeResult.Item(PrincipalType.USER, Long.MAX_VALUE, "view", true),
+                new SpaceAclBatchRevokeResult.Item(PrincipalType.DEPT, 2, "download", false)), 1, 1, true));
+        mvc().perform(post("/api/admin/spaces/1/acl/batch-revoke").contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Request-Id", "header-id").content("""
+                                {"items":[{"principalType":"USER","principalId":9223372036854775807,"permission":"view"},
+                                 {"principalType":"DEPT","principalId":2,"permission":"download"}],"requestId":"body-id"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.spaceId").value(1))
+                .andExpect(jsonPath("$.data.items.length()").value(2))
+                .andExpect(jsonPath("$.data.items[0].principalId").value(Long.MAX_VALUE))
+                .andExpect(jsonPath("$.data.items[0].removed").value(true))
+                .andExpect(jsonPath("$.data.items[1].removed").value(false))
+                .andExpect(jsonPath("$.data.removedCount").value(1))
+                .andExpect(jsonPath("$.data.absentCount").value(1))
+                .andExpect(jsonPath("$.data.replayed").value(true));
+        verify(acls).revokeBatch(1L, items, "header-id");
+        verify(acls, never()).revoke(anyLong(), any(), anyLong(), anyString(), any(), anyString());
+    }
+
+    @Test
+    void revokeBatchRequiresHeaderEvenWhenBodyContainsRequestId() throws Exception {
+        var mvc = mvc();
+        String body = """
+                {"items":[{"principalType":"USER","principalId":2,"permission":"view"}],"requestId":"body"}
+                """;
+        mvc.perform(post("/api/admin/spaces/1/acl/batch-revoke").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/admin/spaces/1/acl/batch-revoke").contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Request-Id", " ").content(body)).andExpect(status().isBadRequest());
+        verifyNoInteractions(acls);
+    }
+
+    @Test
+    void revokeBatchRejectsInvalidPathAndMalformedBindingBeforeService() throws Exception {
+        var mvc = mvc();
+        String body = """
+                {"items":[{"principalType":"USER","principalId":2,"permission":"view"}]}
+                """;
+        for (String id : List.of("0", "-1", "abc", "1.5", "9223372036854775808")) {
+            mvc.perform(post("/api/admin/spaces/" + id + "/acl/batch-revoke").contentType(MediaType.APPLICATION_JSON)
+                            .header("X-Request-Id", "batch").content(body)).andExpect(status().isBadRequest());
+        }
+        mvc.perform(post("/api/admin/spaces/1/acl/batch-revoke").contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Request-Id", "batch").content(body.replace("USER", "UNKNOWN")))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(acls);
+    }
+
+    @Test
+    void revokeBatchRejectsPrincipalIdCoercionBeforeCallingService() throws Exception {
+        var mvc = mvc();
+        for (String id : List.of("2.9", "2.0", "2e0", "\"2\"", "true", "[]", "{}", "9223372036854775808")) {
+            mvc.perform(post("/api/admin/spaces/1/acl/batch-revoke").contentType(MediaType.APPLICATION_JSON)
+                            .header("X-Request-Id", "batch").content("{\"items\":[{\"principalType\":\"USER\","
+                                    + "\"principalId\":" + id + ",\"permission\":\"view\"}]}"))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(acls);
+    }
+
+    @Test
+    void revokeBatchRejectsNumericOrCoercedPrincipalTypesBeforeCallingService() throws Exception {
+        var mvc = mvc();
+        for (String type : List.of("0", "1", "2", "0.0", "\"0\"", "\"1\"", "\"2\"", "true", "[]", "{}", "\"user\"")) {
+            mvc.perform(post("/api/admin/spaces/1/acl/batch-revoke").contentType(MediaType.APPLICATION_JSON)
+                            .header("X-Request-Id", "batch").content("{\"items\":[{\"principalType\":" + type
+                                    + ",\"principalId\":2,\"permission\":\"view\"}]}"))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(acls);
+    }
+
+    @Test
+    void revokeBatchAcceptsEachNamedPrincipalTypeWithExactLongIds() throws Exception {
+        var mvc = mvc();
+        for (PrincipalType type : PrincipalType.values()) {
+            var items = List.of(new SpaceAclBatchRevokeItem(type, Long.MAX_VALUE, "view"));
+            when(acls.revokeBatch(1L, items, "batch")).thenReturn(new SpaceAclBatchRevokeResult(1L,
+                    List.of(new SpaceAclBatchRevokeResult.Item(type, Long.MAX_VALUE, "view", false)), 0, 1, false));
+            mvc.perform(post("/api/admin/spaces/1/acl/batch-revoke").contentType(MediaType.APPLICATION_JSON)
+                            .header("X-Request-Id", "batch").content("{\"items\":[{\"principalType\":\"" + type.name()
+                                    + "\",\"principalId\":9223372036854775807,\"permission\":\"view\"}]}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items[0].principalType").value(type.name()))
+                    .andExpect(jsonPath("$.data.items[0].principalId").value(Long.MAX_VALUE));
+            verify(acls).revokeBatch(1L, items, "batch");
+        }
+    }
+
+    @Test
+    void revokeBatchPreservesServiceErrorStatuses() throws Exception {
+        var mvc = mvc();
+        for (var error : List.of(IdentityException.badRequest("条目重复；上限为 300"),
+                IdentityException.forbidden("无权撤销 manage"), IdentityException.disabled("用户已停用"),
+                IdentityException.conflict(IdentityErrorCode.CONFLICT, "请求标识已用于不同操作"))) {
+            doThrow(error).when(acls).revokeBatch(eq(1L), any(), eq("batch"));
+            mvc.perform(post("/api/admin/spaces/1/acl/batch-revoke").contentType(MediaType.APPLICATION_JSON)
+                            .header("X-Request-Id", "batch").content("""
+                                    {"items":[{"principalType":"USER","principalId":2,"permission":"view"}]}
+                                    """))
+                    .andExpect(status().is(error.httpStatus()))
+                    .andExpect(jsonPath("$.data").doesNotExist());
+        }
     }
 
     @Test

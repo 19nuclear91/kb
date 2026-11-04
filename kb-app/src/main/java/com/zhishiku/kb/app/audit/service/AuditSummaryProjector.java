@@ -118,6 +118,8 @@ public class AuditSummaryProjector {
             case SPACE_ACL_BATCH_GRANT ->
                     fields("spaceId", Kind.ID, "grantedCount", Kind.COUNT, "alreadyGrantedCount", Kind.COUNT,
                             "clearanceBlockedPrincipalCount", Kind.COUNT);
+            case SPACE_ACL_BATCH_REVOKE ->
+                    fields("spaceId", Kind.ID, "removedCount", Kind.COUNT, "absentCount", Kind.COUNT);
             case DOC_ACL_GRANT, DOC_ACL_REVOKE ->
                     fields("documentId", Kind.ID, "principalKey", Kind.PRINCIPAL, "permission", Kind.ACL_PERMISSION);
             case DOCUMENT_RELOCATE ->

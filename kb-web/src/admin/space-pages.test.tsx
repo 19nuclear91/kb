@@ -409,6 +409,179 @@ describe('空间批量授予', () => {
   });
 });
 
+describe('空间批量撤销', () => {
+  const aclPath = '/api/admin/spaces/7/acl', endpoint = `POST ${aclPath}/batch-revoke`;
+  const other: Acl = { ...acl, id: '2', principalType: 'DEPT', principalId: '6', principalName: '研发', permission: 'download' };
+  const owner: Acl = { ...acl, id: '3', principalId: '1', principalName: '本人', permission: 'manage' };
+  const roleOwner: Acl = { ...owner, id: '4', principalType: 'ROLE', principalName: '管理角色' };
+  const result = { spaceId: '7', items: [
+    { principalType: 'USER', principalId: '5', permission: 'view', removed: true },
+    { principalType: 'DEPT', principalId: '6', permission: 'download', removed: false },
+  ], removedCount: 1, absentCount: 1, replayed: false };
+  const select = (item = acl) => fireEvent.click(screen.getByRole('checkbox', { name: `选择撤销 ${item.principalType} ${item.principalName} ${item.permission}` }));
+  const open = () => fireEvent.click(screen.getByRole('button', { name: '批量撤销' }));
+  const requestId = (index: number) => new Headers(writes()[index][1].headers).get('X-Request-Id');
+  async function close() {
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  }
+  async function mount(items = [acl, other], value = access()) {
+    answers.set(aclPath, items);
+    const view = show(<AclPanel kind="spaces" resourceId="7" onChanged={check} />, value);
+    await screen.findByRole('list', { name: '授权列表' });
+    return view;
+  }
+
+  it('manage 行按资格可选，普通条目按完整键保存并跨同身份重挂载保留', async () => {
+    const view = await mount([acl, owner]);
+    expect(screen.queryByRole('checkbox', { name: '选择撤销 USER 本人 manage' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '撤销 本人 manage' })).toBeNull();
+    select(); expect(screen.getByLabelText('已选撤销条数').textContent).toContain('1');
+    view.unmount(); await mount([{ ...acl, id: '99' }, owner]);
+    expect((screen.getByRole('checkbox', { name: '选择撤销 USER 小甲 view' }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByLabelText('已选撤销条数').textContent).toContain('1');
+  });
+
+  it('成功重读后移除消失的选择，条目再次出现也不会自动重选', async () => {
+    answers.set(aclPath, [acl, other]);
+    const panel = (factsKey: string) => <AdminAccessContext value={access({ factsKey })}><AclPanel kind="spaces" resourceId="7" onChanged={check} /></AdminAccessContext>;
+    const view = render(panel('first')); await screen.findByRole('list', { name: '授权列表' }); select(); select(other);
+    answers.set(aclPath, [acl]); view.rerender(panel('second'));
+    await waitFor(() => expect(screen.getByLabelText('已选撤销条数').textContent).toContain('1'));
+    answers.set(aclPath, [acl, other]); view.rerender(panel('third'));
+    await screen.findByRole('checkbox', { name: '选择撤销 DEPT 研发 download' });
+    expect((screen.getByRole('checkbox', { name: '选择撤销 DEPT 研发 download' }) as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByLabelText('已选撤销条数').textContent).toContain('1');
+  });
+
+  it('文档例外面板只保留单条撤销，不出现多选或批量入口', async () => {
+    show(<AclPanel kind="documents" resourceId="9" onChanged={check} />);
+    await screen.findByRole('button', { name: '撤销 小甲 view' });
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: '批量撤销' })).toBeNull();
+  });
+
+  it('仅提交所选组合，显示逐条结果和计数，成功清空选择与旧授予回执并重读', async () => {
+    answers.set('/api/admin/spaces/7/acl/principals?principalType=USER', page([{ principalType: 'USER', principalId: '5', label: '甲' }]));
+    answers.set(`POST ${aclPath}/batch`, { spaceId: '7', items: [{ principalType: 'USER', principalId: '5', permission: 'view', alreadyGranted: false }], grantedCount: 1, alreadyGrantedCount: 0, clearanceBlockedPrincipalCount: 0, replayed: false });
+    await mount([acl, other, owner]);
+    fireEvent.click(screen.getByRole('button', { name: '授予授权' }));
+    fireEvent.click(await screen.findByRole('button', { name: '添加 甲' })); submit();
+    await screen.findByRole('list', { name: '批量授予明细' });
+    await screen.findByRole('list', { name: '授权列表' }); select(); select(other); open();
+    expect(screen.getByLabelText('批量撤销摘要').textContent).toBe('共 2 条授权，其中 0 条 manage。');
+    expect(screen.queryByLabelText('本人直接 manage 提示')).toBeNull();
+    expect(screen.queryByLabelText('全部直接 manage 提示')).toBeNull();
+    const reads = f.json.mock.calls.filter(([path]) => path === aclPath).length;
+    answers.set(endpoint, () => { answers.set(aclPath, [owner]); return json(result); }); submit();
+    await screen.findByRole('list', { name: '批量撤销明细' });
+    expect(writes()).toHaveLength(2);
+    expect(writes()[1][0]).toBe(`${aclPath}/batch-revoke`); expect(writes()[1][1].method).toBe('POST');
+    expect(writes()[1][1].body).toBe('{"items":[{"principalType":"USER","principalId":5,"permission":"view"},{"principalType":"DEPT","principalId":6,"permission":"download"}]}');
+    expect(requestId(1)).toBeTruthy();
+    const rows = within(screen.getByRole('list', { name: '批量撤销明细' })).getAllByRole('listitem');
+    expect(rows[0].textContent).toContain('已移除'); expect(rows[1].textContent).toContain('原本不存在');
+    expect(screen.getByText('已移除 1 条，原本不存在 1 条')).toBeTruthy();
+    expect(screen.queryByRole('list', { name: '批量授予明细' })).toBeNull();
+    await waitFor(() => expect(f.json.mock.calls.filter(([path]) => path === aclPath).length).toBe(reads + 1));
+    expect(screen.getByLabelText('已选撤销条数').textContent).toContain('0'); expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  it('本人提示只认 USER 直接 manage，全部提示要求选中所有 manage，提示不阻止提交', async () => {
+    await mount([acl, owner, roleOwner], access({ has: code => code === perm.grantManage }));
+    select(owner); open();
+    expect(screen.getByLabelText('本人直接 manage 提示')).toBeTruthy();
+    expect(screen.queryByLabelText('全部直接 manage 提示')).toBeNull(); expect(confirmation().disabled).toBe(false);
+    await close(); select(owner); select(roleOwner); open();
+    expect(screen.queryByLabelText('本人直接 manage 提示')).toBeNull();
+    expect(screen.queryByLabelText('全部直接 manage 提示')).toBeNull();
+    await close(); select(owner); open();
+    expect(screen.getByLabelText('批量撤销摘要').textContent).toBe('共 2 条授权，其中 2 条 manage。');
+    expect(screen.getByLabelText('本人直接 manage 提示')).toBeTruthy();
+    expect(screen.getByLabelText('全部直接 manage 提示')).toBeTruthy(); expect(confirmation().disabled).toBe(false);
+  });
+
+  it('301 条禁用提交且不拆批，减少到 300 条后可确认', async () => {
+    const items: Acl[] = Array.from({ length: 301 }, (_, index) => ({ ...acl, id: String(index + 1), principalId: String(index + 1), principalName: `主体${index + 1}` }));
+    await mount(items);
+    const choices = within(screen.getByRole('list', { name: '授权列表' })).getAllByRole('checkbox');
+    for (const choice of choices) fireEvent.click(choice);
+    open(); expect(confirmation().disabled).toBe(true); submit(); expect(writes()).toHaveLength(0);
+    await close(); select(items[300]); open(); expect(confirmation().disabled).toBe(false);
+  }, 30000);
+
+  it.each([400, 403])('整体 %s 拒绝保留选择，不显示回执或补发请求', async status => {
+    answers.set(endpoint, json({ code: 500, data: null, message: '服务端拒绝详情' }, false, status));
+    await mount(); select(); select(other); open(); submit();
+    await screen.findByText(status === 400 ? '输入或请求不符合要求。' : '当前操作被拒绝。');
+    expect(screen.queryByRole('list', { name: '批量撤销明细' })).toBeNull(); expect(writes()).toHaveLength(1);
+    if (status === 403) expect(check).toHaveBeenCalledWith(true);
+    await close(); expect(screen.getByLabelText('已选撤销条数').textContent).toContain('2'); open();
+    expect(screen.queryByRole('button', { name: '按原内容重试' })).toBeNull(); expect(confirmation().disabled).toBe(false);
+  });
+
+  it.each([404, 405])('%s 仅禁用批量撤销，授予和单条撤销仍可执行', async status => {
+    answers.set(endpoint, new Response(null, { status })); answers.set(`DELETE ${aclPath}`, null);
+    answers.set('/api/admin/spaces/7/acl/principals?principalType=USER', page([{ principalType: 'USER', principalId: '5', label: '甲' }]));
+    answers.set(`POST ${aclPath}/batch`, { spaceId: '7', items: [], grantedCount: 0, alreadyGrantedCount: 1, clearanceBlockedPrincipalCount: 0, replayed: false });
+    await mount(); select(); open(); submit(); await screen.findByText('当前服务不支持批量撤销');
+    expect(confirmation().disabled).toBe(true); expect(writes()).toHaveLength(1); await close();
+    expect(screen.getByLabelText('已选撤销条数').textContent).toContain('1');
+    expect((screen.getByRole('button', { name: '批量撤销' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '撤销 小甲 view' })); submit(); await screen.findByText(/撤销请求已确认/);
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' }));
+    fireEvent.click(await screen.findByRole('button', { name: '添加 甲' })); submit(); await screen.findByRole('list', { name: '批量授予明细' });
+    expect(writes().map(([path, init]) => `${init.method} ${path}`)).toEqual([endpoint, `DELETE ${aclPath}`, `POST ${aclPath}/batch`]);
+  });
+
+  it('关闭重开仍待核对，选择变化和重读为空不改变原内容重试，核对不自动补发', async () => {
+    answers.set(endpoint, () => { throw new TypeError('offline'); }); await mount(); select(); open(); submit();
+    await screen.findByRole('button', { name: '按原内容重试' }); const first = writes()[0][1]; await close();
+    await screen.findByText('有批量撤销结果待核对，请打开批量撤销面板继续核对。');
+    select(); select(other); open(); expect(confirmation().disabled).toBe(true);
+    fireEvent.submit(confirmation().closest('form')!); expect(writes()).toHaveLength(1);
+    answers.set(aclPath, []); fireEvent.click(screen.getByRole('button', { name: '重新读取核对' }));
+    await waitFor(() => expect(screen.getByLabelText('批量撤销摘要').textContent).toBe('共 0 条授权，其中 0 条 manage。'));
+    expect(confirmation().disabled).toBe(true); expect(writes()).toHaveLength(1);
+    await close(); open(); await screen.findByRole('button', { name: '按原内容重试' });
+    answers.set(endpoint, { ...result, items: result.items.slice(0, 1), absentCount: 0, replayed: true });
+    fireEvent.click(screen.getByRole('button', { name: '按原内容重试' })); await screen.findByText(/已重放首次结果/);
+    expect(writes()).toHaveLength(2); expect(writes()[1][1].body).toBe(first.body); expect(requestId(1)).toBe(requestId(0));
+  });
+
+  it('显式放弃后保留选择，新批次使用新的请求标识', async () => {
+    answers.set(endpoint, () => { throw new TypeError('offline'); }); await mount(); select(); open(); submit();
+    fireEvent.click(await screen.findByRole('button', { name: '放弃核对' })); expect(writes()).toHaveLength(1);
+    await close(); open(); expect(screen.queryByRole('button', { name: '按原内容重试' })).toBeNull();
+    expect(confirmation().disabled).toBe(false); submit(); await screen.findByRole('button', { name: '按原内容重试' });
+    expect(writes()).toHaveLength(2); expect(requestId(1)).not.toBe(requestId(0));
+  });
+
+  it('403 资格重核卸载后恢复原选择，身份切换清空草稿和未决绑定', async () => {
+    answers.set(endpoint, failure('FORBIDDEN', 403)); answers.set(aclPath, [acl]);
+    answers.set('/api/auth/permissions', []); answers.set('/api/admin/spaces', [space]);
+    const view = render(<AdminAccessProvider><AdminGuard title="空间" spaces><AclPanel kind="spaces" resourceId="7" onChanged={check} /></AdminGuard></AdminAccessProvider>);
+    await screen.findByRole('list', { name: '授权列表' }); select(); open();
+    const checking = deferred<Response>(); answers.set('/api/auth/permissions', () => checking.promise); submit();
+    await waitFor(() => expect(screen.queryByLabelText('批量撤销摘要')).toBeNull());
+    await act(async () => checking.resolve(json([])));
+    await screen.findByRole('list', { name: '授权列表' }); expect(screen.getByLabelText('已选撤销条数').textContent).toContain('1');
+    answers.set(endpoint, () => { throw new TypeError('offline'); }); open(); submit();
+    await screen.findByRole('button', { name: '按原内容重试' }); view.unmount(); f.epoch++;
+    await mount(); expect(screen.getByLabelText('已选撤销条数').textContent).toContain('0');
+    select(); open(); expect(screen.queryByRole('button', { name: '按原内容重试' })).toBeNull(); expect(confirmation().disabled).toBe(false);
+  });
+
+  it('撤销本人唯一 manage 成功后重读资格与空间，失去管理资格清除详情', async () => {
+    answers.set(aclPath, [owner]);
+    answers.set(endpoint, () => { answers.set('/api/admin/spaces/7', { ...space, manageable: false }); return json({ spaceId: '7', items: [{ principalType: 'USER', principalId: '1', permission: 'manage', removed: true }], removedCount: 1, absentCount: 0, replayed: false }); });
+    show(<SpaceDetailPage />, access({ has: code => code === perm.grantManage }));
+    await screen.findByRole('list', { name: '授权列表' }); select(owner); open(); submit();
+    await screen.findByText('无管理资格或目标不可访问'); expect(check).toHaveBeenCalledWith(true);
+    expect(screen.queryByRole('heading', { name: '空间授权' })).toBeNull(); expect(writes()).toHaveLength(1);
+  });
+});
+
 describe('文档面板、搬迁与密级', () => {
   it('密级单区块拒绝后重新挂载，归属及标题仍独立可读', async () => {
     answers.set('/api/admin/documents/9/security-level', new Response(null, { status: 403 }));

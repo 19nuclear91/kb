@@ -28,14 +28,31 @@
 请求标识只取 `X-Request-Id`。缺失标识、非正整数空间 ID、主体列表不在 1–50 范围、权限列表不在 1–6 范围、
 重复主体/权限位、无效主体形状或不支持的权限位均返回 400；有资格后发现角色不存在同样返回 400。
 未通过空间管理资格、含 manage 却无 `space:grant-manage`、操作者或主部门停用均返回 403。
-请求标识已绑定其他操作者或空间、审计绑定缺失，或快照空间与目标空间不一致时返回通用 409，不返回原批次明细。
+请求标识已绑定其他操作者或空间、审计绑定缺失、快照无法读取或缺少条目、快照空间与目标空间不一致，
+或快照条目中的主体集合与权限位集合与本次请求不同，均返回通用 409「请求标识已用于不同操作」，不返回原批次明细。
 资格先于角色存在性检查；整批全部校验通过后在一个事务中写入，校验失败不写任何条目或成功审计。
 
 批量回执包含 `spaceId`、`items[]`（principalType、principalId、permission、alreadyGranted）、`grantedCount`、
 `alreadyGrantedCount`、`clearanceBlockedPrincipalCount` 与 `replayed`。已存在条目跳过，仍返回成功；受阻数按主体而非
 权限条目计算，仅统计本批至少有一条新授权的主体：该主体有有效成员，且空间内存在密级高于成员最高密级的已发布文档时计为受阻；无有效成员不计入。这表示至少有一篇文档因密级不可访问，不表示所有文档均不可访问，不修改任何密级。
-同一操作者、同一空间以相同标识重试，从首次成功的审计快照恢复逐条结果与全部计数，`replayed=true`，不重新查询 ACL 或计算受阻数，也不新增审计。
+同一操作者、同一空间以相同标识和相同内容重试，从首次成功的审计快照恢复逐条结果与全部计数，`replayed=true`，不重新查询 ACL 或计算受阻数，也不新增审计。
+内容按主体集合与权限位集合比较，仅顺序不同视为相同。资格判定后先按操作域与请求标识取得事务锁，再查询并核对快照。
+两个批量入口均先按 `String.trim()` 规范化 `X-Request-Id`，规范化后为空白返回 400；请求锁、审计查询与写入使用同一规范化标识。
+该核对同样适用于上线前已有的逐条快照；同标识不同内容由原先返回首次回执收紧为 409。部署时先发布后端；前端内容变化会生成新标识。
 既有单条授予与撤销接口的请求、回执及错误契约保持不变。
+
+`POST /api/admin/spaces/{spaceId}/acl/batch-revoke` 接受 `items: [{principalType, principalId, permission}]`，
+请求标识只取 `X-Request-Id`。仅撤销显式列出的组合，上限 300 条，不展开主体与权限位的笛卡尔积。
+缺少标识、非正空间/主体 ID、空列表、超过 300 条、重复组合、缺字段或不支持的权限位返回 400，整批不写入。
+撤销条目的 `principalType` 仅接受字符串 `USER`、`ROLE`、`DEPT`，`principalId` 仅接受 64 位范围内的 JSON 整数；小数、数字字符串和数字主体类型均返回 400，不做截断或枚举序号转换。
+条目含 manage 时要求 `space:grant-manage`，否则要求目标空间 manage 或 `space:manage-all`；资格不足、操作者或主部门停用返回 403。
+不校验角色存在性，已删除角色的残留授权可撤销；服务端允许撤销空间全部直接 manage。
+
+撤销回执包含 `spaceId`、`items[]`（principalType、principalId、permission、removed）、`removedCount`、`absentCount` 与 `replayed`。
+`removed=true` 表示实际移除，`false` 表示原本不存在，两者均成功；两类计数按条目汇总。
+整批在同一事务内写入，一批一条 `SPACE_ACL_BATCH_REVOKE` 审计。资格判定后按操作域与请求标识加锁，
+核对操作者、目标空间、快照空间和完整条目集合；绑定缺失、快照不可读或内容不同返回 409，不返回原快照。
+仅顺序不同视为同一内容，重放返回首次逐条结果与计数且 `replayed=true`，即使授权后来重新授予也不会再次撤销。
 
 空间摘要携带 code、name、description、archived、version 及独立的 viewable/manageable；管理文档清单只含 documentId、spaceId、spaceArchived，采用游标而非总数。授权回执区分 alreadyGranted 与 clearanceBlockedPrincipalCount；搬迁回执包含 clearedExceptionCount、clearedExceptionsTruncated 与目标空间密级受阻数。管理端删除回执只含 documentId、spaceId（删除时所属空间）与 replayed，不含标题、文件名或正文；同一 `X-Request-Id` 重复提交返回首次回执且 replayed 为 true，不再写入。
 
@@ -69,6 +86,18 @@ ID、主体 ID、空间版本和 securityVersion 按精确整数回传，保持 
 
 文档例外继续使用单选主体、单权限位与单条接口；类型或搜索条件变化、候选读取失败都会清空旧选择，不展示批量确认摘要，也不调用空间批量接口。
 
+空间授权列表的可撤销行带复选框，manage 行需 `space:grant-manage` 才可选择。选择按主体类型、主体 ID 和权限位保存，
+不依赖 ACL 行 ID；成功重读后消失的条目从选择中移除，同身份资格重核保留草稿，身份切换清空。
+“批量撤销”确认显示总条数与 manage 条数，0 条或超过 300 条禁用提交，不自动拆批。
+选中当前用户 USER 类型的直接 manage 时提示本人可能失去管理资格；选中列表全部直接 manage 且至少一条时提示空间将没有直接 manage。
+仅依据直接授权，不识别角色或部门带来的资格，两类提示均不阻止提交。
+
+批量撤销成功后逐条显示已移除/原本不存在及两类计数，清空选择与旧批量授予回执，再重读授权列表、空间摘要与本人资格。
+400/403 整批拒绝保留选择；结果不确定时只提供按原内容重试、重新读取核对或放弃核对。关闭重开仍待核对，
+草稿变化或重读为空都不改变原重试内容与标识；显式放弃后可发起新批次。
+404/405 显示“当前服务不支持批量撤销”，保留选择并只禁用批量撤销，不逐条补发，单条撤销、授予与列表继续可用。
+文档例外列表不显示多选，继续只提供单条撤销。后端先发布，再发布前端；回退后端时新前端按路由不可用处理，审计行保留。
+
 授权回执的 alreadyGranted=true 表示已有授权，不应显示新增。密级受阻数非零表示当前部分主体不生效，不代表请求失败，授权不修改主体密级。撤销不存在的授权同样幂等成功，回执不证明授权此前一定存在。本人失去唯一管理资格后，重核会清除相应详情。
 
 空间内文档按游标显示 ID 与空间归档状态，没有总数或标题批量补查；尚未发布首版、无正文阅读资格的文档仍可以 ID 呈现。清单不授予阅读、预览或下载资格。
@@ -91,9 +120,37 @@ ID、主体 ID、空间版本和 securityVersion 按精确整数回传，保持 
 
 ## 首期限制
 
-只有密级权限却无文档 view 的操作者，以及已归档空间中的文档，难以从用户端详情发现管理入口；可经 `/admin/documents` 索引页手填文档 ID 直达面板。批量授予仅支持同一空间，不提供批量撤销、跨空间授权或文档例外批量；不提供批量删除、单版本删除、回收站或恢复。文档授权及搬迁的 404/403 先后语义保持现状。
+只有密级权限却无文档 view 的操作者，以及已归档空间中的文档，难以从用户端详情发现管理入口；可经 `/admin/documents` 索引页手填文档 ID 直达面板。批量授予与撤销仅支持同一空间，不提供跨空间授权或文档例外批量；不提供批量删除、单版本删除、回收站或恢复。文档授权及搬迁的 404/403 先后语义保持现状。
 
 ## 验证记录
+
+2026-11-04（批量撤销核验问题修复）：增加批量撤销条目的严格 JSON 类型绑定；批量授予与撤销共用请求标识规范化，
+保证加锁、审计查询和追加事件使用相同的键。新增回归覆盖小数/字符串 ID、数字主体类型拒绝、三种合法主体类型的最大整数 ID、
+带首尾空白标识的首次写入与重放、同标识不同内容的 409，以及规范化为空白时在鉴权与加锁前拒绝。
+按下述后端定向命令执行 `SpaceAclServiceTest`（33）、`SpaceControllerTest`（20）、`AuditSummaryProjectorTest`（10）与
+`ModuleBoundaryTest`（9），共 72 项通过，失败、错误、跳过均为 0；跳过测试的后端打包通过。验证使用隔离单测。
+
+2026-11-04（空间批量撤销）：后端定向执行 `SpaceAclServiceTest`（30）、`SpaceControllerTest`（17）、
+`AuditSummaryProjectorTest`（10）与 `ModuleBoundaryTest`（9），共 66 项通过，失败、错误、跳过均为 0；跳过测试的后端打包通过。
+覆盖完整条目撤销、300 条边界、manage 资格、停用主体、历史批量授予快照内容核对、绑定冲突、重放不写入与审计计数投影。
+
+```powershell
+mvn -o -pl kb-app -am test '-Dtest=SpaceAclServiceTest,SpaceControllerTest,AuditSummaryProjectorTest,ModuleBoundaryTest' '-Dsurefire.failIfNoSpecifiedTests=false'
+mvn -o -pl kb-app -am package '-DskipTests'
+```
+
+前端 `spaceApi.test.ts`（8）、`space-pages.test.tsx`（90）、`hooks.test.tsx`（14）共 112 项通过，
+`npm run typecheck` 与 `npm run build` 通过。覆盖多选、资格重核保留、消失条目移除、manage 提示、400/403 保留、
+404/405 降级、原内容重试、空列表时恢复未决请求、显式放弃与身份切换，以及成功后清除旧回执并重新读取资格。
+构建仍提示主包超过 1200 kB。命令在 `kb-web` 目录执行：
+
+```powershell
+npx vitest run src/admin/spaceApi.test.ts src/admin/space-pages.test.tsx src/admin/hooks.test.tsx
+npm run typecheck
+npm run build
+```
+
+以上均为本地隔离测试与构建；真实锁互斥、事务原子性和并发时序仍未验证。
 
 2026-11-04（核验修复）：审计重放增加操作者、目标空间与快照空间校验，不匹配返回通用 409；批量未决绑定在弹窗关闭及资格重核后保留，按身份与空间隔离；密级受阻的规格和注释统一为存在高于有效成员最高密级的已发布文档。
 

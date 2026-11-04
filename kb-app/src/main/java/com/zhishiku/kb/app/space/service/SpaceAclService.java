@@ -7,6 +7,8 @@ import com.zhishiku.kb.app.auth.service.IdentityAuditService;
 import com.zhishiku.kb.app.auth.service.PermissionService;
 import com.zhishiku.kb.app.space.mapper.SpaceMapper;
 import com.zhishiku.kb.app.space.model.SpaceAclBatchGrantResult;
+import com.zhishiku.kb.app.space.model.SpaceAclBatchRevokeItem;
+import com.zhishiku.kb.app.space.model.SpaceAclBatchRevokeResult;
 import com.zhishiku.kb.app.space.model.SpaceAclPrincipal;
 import com.zhishiku.kb.app.space.model.SpaceAclRecord;
 import com.zhishiku.kb.common.security.IdentityErrorCode;
@@ -119,12 +121,11 @@ public class SpaceAclService {
         if (spaceId <= 0) {
             throw IdentityException.badRequest("spaceId 必须为正整数");
         }
-        if (requestId == null || requestId.isBlank()) {
-            throw IdentityException.badRequest("缺少请求标识 X-Request-Id");
-        }
+        String request = normalizeBatchRequestId(requestId);
         long actor = normalized.contains(PermissionService.PERM_MANAGE)
                 ? authorizer.requireGrantManage() : authorizer.requireSpaceManager(spaceId);
-        var previous = audit.existing(AuditScope.SPACE_ACL_BATCH_GRANT, requestId);
+        mapper.lockBatchRequest(AuditScope.SPACE_ACL_BATCH_GRANT.name() + ":" + request);
+        var previous = audit.existing(AuditScope.SPACE_ACL_BATCH_GRANT, request);
         if (previous != null) {
             if (!Objects.equals(previous.getActorUserId(), actor)
                     || !Objects.equals(previous.getTargetId(), spaceId)) {
@@ -132,13 +133,14 @@ public class SpaceAclService {
             }
             try {
                 var saved = JSON.readValue(previous.getAfterState(), SpaceAclBatchGrantResult.class);
-                if (saved.spaceId() != spaceId) {
+                if (saved == null || saved.spaceId() != spaceId
+                        || !matchesGrantContent(saved, principals, normalized)) {
                     throw IdentityException.conflict(IdentityErrorCode.CONFLICT, "请求标识已用于不同操作");
                 }
                 return new SpaceAclBatchGrantResult(saved.spaceId(), saved.items(), saved.grantedCount(),
                         saved.alreadyGrantedCount(), saved.clearanceBlockedPrincipalCount(), true);
-            } catch (JsonProcessingException e) {
-                throw new IllegalStateException("批量授权审计快照无法读取", e);
+            } catch (JsonProcessingException | IllegalArgumentException e) {
+                throw IdentityException.conflict(IdentityErrorCode.CONFLICT, "请求标识已用于不同操作");
             }
         }
         // 整批角色引用先校验完毕，避免后续无效主体导致先前条目提前写入。
@@ -176,11 +178,29 @@ public class SpaceAclService {
             String after = JSON.writeValueAsString(Map.of("spaceId", spaceId, "items", result.items(),
                     "grantedCount", result.grantedCount(), "alreadyGrantedCount", result.alreadyGrantedCount(),
                     "clearanceBlockedPrincipalCount", blocked));
-            audit.success(AuditScope.SPACE_ACL_BATCH_GRANT, requestId, actor, spaceId, "batch-grant", "{}", after);
+            audit.appendSuccess(AuditScope.SPACE_ACL_BATCH_GRANT, request, actor, spaceId, "batch-grant", "{}", after);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("批量授权审计快照无法序列化", e);
         }
         return result;
+    }
+
+    private static boolean matchesGrantContent(SpaceAclBatchGrantResult saved,
+                                               List<SpaceAclPrincipal> principals, List<String> permissions) {
+        if (saved.items() == null) {
+            return false;
+        }
+        Set<SpaceAclPrincipal> savedPrincipals = new HashSet<>();
+        Set<String> savedPermissions = new HashSet<>();
+        for (var item : saved.items()) {
+            if (item == null || item.principalType() == null || item.permission() == null) {
+                return false;
+            }
+            savedPrincipals.add(new SpaceAclPrincipal(item.principalType(), item.principalId()));
+            savedPermissions.add(item.permission());
+        }
+        return savedPrincipals.equals(new HashSet<>(principals))
+                && savedPermissions.equals(new HashSet<>(permissions));
     }
 
     private static List<String> validateBatch(List<SpaceAclPrincipal> principals, List<String> permissions) {
@@ -214,6 +234,101 @@ public class SpaceAclService {
             normalized.add(value);
         }
         return normalized;
+    }
+
+    @Transactional
+    public SpaceAclBatchRevokeResult revokeBatch(long spaceId, List<SpaceAclBatchRevokeItem> items, String requestId) {
+        List<SpaceAclBatchRevokeItem> normalized = validateRevokeBatch(items);
+        if (spaceId <= 0) {
+            throw IdentityException.badRequest("spaceId 必须为正整数");
+        }
+        String request = normalizeBatchRequestId(requestId);
+        long actor = normalized.stream().anyMatch(item -> PermissionService.PERM_MANAGE.equals(item.permission()))
+                ? authorizer.requireGrantManage() : authorizer.requireSpaceManager(spaceId);
+        mapper.lockBatchRequest(AuditScope.SPACE_ACL_BATCH_REVOKE.name() + ":" + request);
+        var previous = audit.existing(AuditScope.SPACE_ACL_BATCH_REVOKE, request);
+        if (previous != null) {
+            if (!Objects.equals(previous.getActorUserId(), actor) || !Objects.equals(previous.getTargetId(), spaceId)) {
+                throw IdentityException.conflict(IdentityErrorCode.CONFLICT, "请求标识已用于不同操作");
+            }
+            try {
+                var saved = JSON.readValue(previous.getAfterState(), SpaceAclBatchRevokeResult.class);
+                if (saved == null || saved.spaceId() != spaceId || !matchesRevokeContent(saved, normalized)) {
+                    throw IdentityException.conflict(IdentityErrorCode.CONFLICT, "请求标识已用于不同操作");
+                }
+                return new SpaceAclBatchRevokeResult(saved.spaceId(), saved.items(), saved.removedCount(),
+                        saved.absentCount(), true);
+            } catch (JsonProcessingException | IllegalArgumentException e) {
+                throw IdentityException.conflict(IdentityErrorCode.CONFLICT, "请求标识已用于不同操作");
+            }
+        }
+        List<SpaceAclBatchRevokeResult.Item> results = new ArrayList<>();
+        long removedCount = 0;
+        for (var item : normalized) {
+            boolean removed = mapper.revokeAcl(spaceId, item.principalType().code(), item.principalId(), item.permission()) > 0;
+            if (removed) {
+                removedCount++;
+            }
+            results.add(new SpaceAclBatchRevokeResult.Item(item.principalType(), item.principalId(), item.permission(), removed));
+        }
+        var result = new SpaceAclBatchRevokeResult(spaceId, List.copyOf(results), removedCount,
+                results.size() - removedCount, false);
+        try {
+            String after = JSON.writeValueAsString(Map.of("spaceId", spaceId, "items", result.items(),
+                    "removedCount", result.removedCount(), "absentCount", result.absentCount()));
+            audit.appendSuccess(AuditScope.SPACE_ACL_BATCH_REVOKE, request, actor, spaceId, "batch-revoke", "{}", after);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("批量撤销审计快照无法序列化", e);
+        }
+        return result;
+    }
+
+    private static String normalizeBatchRequestId(String requestId) {
+        // 与审计键使用相同的 trim 规则，锁和审计必须绑定到同一个标识。
+        String normalized = requestId == null ? "" : requestId.trim();
+        if (normalized.isBlank()) {
+            throw IdentityException.badRequest("缺少请求标识 X-Request-Id");
+        }
+        return normalized;
+    }
+
+    private static List<SpaceAclBatchRevokeItem> validateRevokeBatch(List<SpaceAclBatchRevokeItem> items) {
+        if (items == null || items.isEmpty() || items.size() > 300) {
+            throw IdentityException.badRequest("撤销条目不能为空，须包含 1 至 300 条，上限为 300");
+        }
+        List<SpaceAclBatchRevokeItem> normalized = new ArrayList<>();
+        Set<SpaceAclBatchRevokeItem> seen = new HashSet<>();
+        for (var item : items) {
+            if (item == null || item.principalType() == null || item.principalId() <= 0) {
+                throw IdentityException.badRequest("主体类型必须为 USER、ROLE、DEPT，主体 ID 必须为正整数；条目上限为 300");
+            }
+            String permission;
+            try {
+                permission = normalizePermission(item.permission());
+            } catch (IdentityException error) {
+                throw IdentityException.badRequest(error.getMessage() + "；条目上限为 300");
+            }
+            var value = new SpaceAclBatchRevokeItem(item.principalType(), item.principalId(), permission);
+            if (!seen.add(value)) {
+                throw IdentityException.badRequest("撤销条目重复；条目上限为 300");
+            }
+            normalized.add(value);
+        }
+        return List.copyOf(normalized);
+    }
+
+    private static boolean matchesRevokeContent(SpaceAclBatchRevokeResult saved, List<SpaceAclBatchRevokeItem> items) {
+        if (saved.items() == null) {
+            return false;
+        }
+        Set<SpaceAclBatchRevokeItem> savedItems = new HashSet<>();
+        for (var item : saved.items()) {
+            if (item == null || item.principalType() == null || item.permission() == null) {
+                return false;
+            }
+            savedItems.add(new SpaceAclBatchRevokeItem(item.principalType(), item.principalId(), item.permission()));
+        }
+        return savedItems.equals(new HashSet<>(items));
     }
 
     @Transactional

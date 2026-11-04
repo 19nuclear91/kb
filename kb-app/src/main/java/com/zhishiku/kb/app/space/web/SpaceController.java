@@ -1,12 +1,14 @@
 package com.zhishiku.kb.app.space.web;
 
 import com.zhishiku.kb.app.space.model.SpaceAclBatchGrantResult;
+import com.zhishiku.kb.app.space.model.SpaceAclBatchRevokeResult;
 import com.zhishiku.kb.app.space.service.SpaceAclService;
 import com.zhishiku.kb.app.space.service.SpaceAuthorizer;
 import com.zhishiku.kb.app.space.service.SpaceQueryService;
 import com.zhishiku.kb.app.space.service.SpaceWriteService;
 import com.zhishiku.kb.app.space.web.dto.SpaceAclGrantRequest;
 import com.zhishiku.kb.app.space.web.dto.SpaceAclBatchGrantRequest;
+import com.zhishiku.kb.app.space.web.dto.SpaceAclBatchRevokeRequest;
 import com.zhishiku.kb.app.space.web.dto.SpaceAclRevokeRequest;
 import com.zhishiku.kb.app.space.web.dto.SpaceArchiveRequest;
 import com.zhishiku.kb.app.space.web.dto.SpaceCreateRequest;
@@ -219,6 +221,18 @@ public class SpaceController {
                                                      @RequestBody SpaceAclBatchGrantRequest request,
                                                      @RequestHeader(value = "X-Request-Id", required = false) String header) {
         return R.ok(acls.grantBatch(spaceId, request.principals(), request.permissions(), requestId(null, header)));
+    }
+
+    @PostMapping("/{spaceId}/acl/batch-revoke")
+    @Operation(summary = "批量撤销空间访问权",
+            description = "同一事务内仅撤销显式列出的 1 至 300 条授权，主体与权限位组合不得重复。"
+                    + "包含 manage 时整批要求 space:grant-manage，否则要求空间 manage 或 space:manage-all。"
+                    + "请求标识只取 X-Request-Id，相同标识与内容重放首次回执，不同内容返回 409。"
+                    + "撤销不存在条目视为成功；允许撤销全部直接 manage。")
+    public R<SpaceAclBatchRevokeResult> revokeAclBatch(@PathVariable @Positive long spaceId,
+                                                      @RequestBody SpaceAclBatchRevokeRequest request,
+                                                      @RequestHeader(value = "X-Request-Id", required = false) String header) {
+        return R.ok(acls.revokeBatch(spaceId, request.items(), requestId(null, header)));
     }
 
     @DeleteMapping("/{spaceId}/acl")

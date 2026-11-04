@@ -13,6 +13,8 @@ export interface Acl { id: string; spaceId: string; principalType: PrincipalType
 export interface GrantResult { acl: Acl; alreadyGranted: boolean; clearanceBlockedPrincipalCount: number | bigint }
 export interface BatchGrantItem { principalType: PrincipalType; principalId: string; permission: AclPermission; alreadyGranted: boolean }
 export interface BatchGrantResult { spaceId: string; items: BatchGrantItem[]; grantedCount: number; alreadyGrantedCount: number; clearanceBlockedPrincipalCount: number | bigint; replayed: boolean }
+export interface BatchRevokeItem { principalType: PrincipalType; principalId: string; permission: AclPermission }
+export interface BatchRevokeResult { spaceId: string; items: (BatchRevokeItem & { removed: boolean })[]; removedCount: number; absentCount: number; replayed: boolean }
 export interface ManagedDocument { documentId: string; spaceId: string; spaceArchived: boolean }
 export interface SecurityState { documentId: string; securityLevel: number; securityVersion: Version }
 export interface SecurityResult extends SecurityState { previousSecurityLevel: number; previousSecurityVersion: Version; requestId: string; changedAt: string; replayed: boolean }
@@ -97,6 +99,14 @@ export const spaceWrites = {
         const { principalType, principalId } = aclBody('spaces', principal, bits[0]);
         return { principalType, principalId };
       }), permissions: bits,
+    } };
+  },
+  revokeBatch: (spaceId: string, items: BatchRevokeItem[]): WriteIntent => {
+    const unique = [...new Map(items.map(item => [`${item.principalType}:${positiveId(item.principalId)}:${item.permission}`, item])).values()];
+    if (!unique.length || unique.length > 300) batchInputError('请选择 1 至 300 条授权，条目上限为 300。');
+    if (unique.some(item => !['view', 'download', 'edit', 'review', 'comment', 'manage'].includes(item.permission))) batchInputError('包含不支持的权限位。');
+    return { method: 'POST', path: `${spacePaths.acl('spaces', spaceId)}/batch-revoke`, body: {
+      items: unique.map(item => aclBody('spaces', { ...item, label: '' }, item.permission)),
     } };
   },
   revoke: (kind: ResourceKind, id: string, principal: Principal, permission: AclPermission): WriteIntent => ({ method: 'DELETE', path: spacePaths.acl(kind, id), body: aclBody(kind, principal, permission) }),

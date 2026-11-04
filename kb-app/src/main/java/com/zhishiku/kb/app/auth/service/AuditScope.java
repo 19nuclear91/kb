@@ -94,6 +94,7 @@ public enum AuditScope {
     SPACE_ACL_GRANT("space-acl"),
     SPACE_ACL_BATCH_GRANT("space-acl"),
     SPACE_ACL_REVOKE("space-acl"),
+    SPACE_ACL_BATCH_REVOKE("space-acl"),
 
     DOC_ACL_GRANT("doc-acl"),
     DOC_ACL_REVOKE("doc-acl"),
