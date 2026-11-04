@@ -11,6 +11,8 @@ export type AclPermission = 'view' | 'download' | 'edit' | 'review' | 'comment' 
 export interface Principal { principalType: PrincipalType; principalId: string; label: string }
 export interface Acl { id: string; spaceId: string; principalType: PrincipalType; principalId: string; principalKey: string; principalName: string; permission: AclPermission }
 export interface GrantResult { acl: Acl; alreadyGranted: boolean; clearanceBlockedPrincipalCount: number | bigint }
+export interface BatchGrantItem { principalType: PrincipalType; principalId: string; permission: AclPermission; alreadyGranted: boolean }
+export interface BatchGrantResult { spaceId: string; items: BatchGrantItem[]; grantedCount: number; alreadyGrantedCount: number; clearanceBlockedPrincipalCount: number | bigint; replayed: boolean }
 export interface ManagedDocument { documentId: string; spaceId: string; spaceArchived: boolean }
 export interface SecurityState { documentId: string; securityLevel: number; securityVersion: Version }
 export interface SecurityResult extends SecurityState { previousSecurityLevel: number; previousSecurityVersion: Version; requestId: string; changedAt: string; replayed: boolean }
@@ -73,6 +75,9 @@ function aclBody(kind: ResourceKind, principal: Principal, permission: AclPermis
     || !['view', 'download', 'edit', 'comment', ...(kind === 'spaces' ? ['review', 'manage'] : [])].includes(permission)) throw new ApiError(400);
   return { principalType: principal.principalType, principalId: numericId(principal.principalId), permission };
 }
+function batchInputError(message: string): never {
+  const error = new ApiError(400); error.message = message; throw error;
+}
 export const spaceWrites = {
   create: (code: string, name: string, description: string): WriteIntent => ({ method: 'POST', path: spacePaths.spaces, body: { code: spaceText(code, 64), ...metadata(name, description) } }),
   update: (id: string, name: string, description: string, version: Version): WriteIntent => ({ method: 'PATCH', path: spacePaths.space(id), body: { ...metadata(name, description), version: exactVersion(version) } }),
@@ -81,6 +86,19 @@ export const spaceWrites = {
   /** 管理端整文档删除：无请求体，请求标识只在 X-Request-Id；资格由服务端按当前所属空间 manage 判定。 */
   deleteDocument: (id: string): WriteIntent => ({ method: 'DELETE', path: resource('documents', id) }),
   grant: (kind: ResourceKind, id: string, principal: Principal, permission: AclPermission): WriteIntent => ({ method: 'POST', path: spacePaths.acl(kind, id), body: aclBody(kind, principal, permission) }),
+  grantBatch: (spaceId: string, principals: Principal[], permissions: AclPermission[]): WriteIntent => {
+    const unique = [...new Map(principals.map(principal => [`${principal.principalType}:${positiveId(principal.principalId)}`, principal])).values()];
+    const bits = [...new Set(permissions)];
+    if (!unique.length || unique.length > 50) batchInputError('请选择 1 至 50 个主体，主体上限为 50。');
+    if (!bits.length || bits.length > 6) batchInputError('请选择 1 至 6 个权限位，权限位上限为 6。');
+    if (bits.some(bit => !['view', 'download', 'edit', 'review', 'comment', 'manage'].includes(bit))) batchInputError('包含不支持的权限位。');
+    return { method: 'POST', path: `${spacePaths.acl('spaces', spaceId)}/batch`, body: {
+      principals: unique.map(principal => {
+        const { principalType, principalId } = aclBody('spaces', principal, bits[0]);
+        return { principalType, principalId };
+      }), permissions: bits,
+    } };
+  },
   revoke: (kind: ResourceKind, id: string, principal: Principal, permission: AclPermission): WriteIntent => ({ method: 'DELETE', path: spacePaths.acl(kind, id), body: aclBody(kind, principal, permission) }),
   relocate: (id: string, from: string, to: string, targetCategoryId: string | null, expectedMetadataVersion: Version): WriteIntent => {
     if (positiveId(from) === positiveId(to)) throw new ApiError(400);

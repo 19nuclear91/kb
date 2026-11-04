@@ -46,6 +46,9 @@ class AuditSummaryProjectorTest {
                 case SPACE_PUBLICATION_POLICY -> "{\"publicationPolicy\":\"REVIEW_REQUIRED\",\"version\":1}";
                 case SPACE_ACL_GRANT, SPACE_ACL_REVOKE ->
                         "{\"spaceId\":2,\"principalKey\":\"1:3\",\"permission\":\"manage\"}";
+                case SPACE_ACL_BATCH_GRANT ->
+                        "{\"spaceId\":2,\"grantedCount\":3,\"alreadyGrantedCount\":1,\"clearanceBlockedPrincipalCount\":1," +
+                                "\"items\":[{\"principalType\":\"USER\",\"principalId\":3,\"permission\":\"view\",\"alreadyGranted\":true}]}";
                 case DOC_ACL_GRANT, DOC_ACL_REVOKE ->
                         "{\"documentId\":2,\"principalKey\":\"3:3\",\"permission\":\"view\"}";
                 case DOCUMENT_RELOCATE ->
@@ -116,6 +119,30 @@ class AuditSummaryProjectorTest {
     private static IdentityAuditRecord row(String scope, String before, String after) {
         return new IdentityAuditRecord(1L, UUID.randomUUID(), scope, "request", null, "user", null,
                 "operation", "SUCCESS", before, after, "private-reason", Instant.EPOCH);
+    }
+
+    @Test
+    void batchGrantProjectsCountsWithoutPrincipalsAndKeepsSingleGrantRules() {
+        var projector = new AuditSummaryProjector();
+        String after = """
+                {"spaceId":9223372036854775807,"grantedCount":3,"alreadyGrantedCount":1,
+                 "clearanceBlockedPrincipalCount":1,"principalKey":"1:3","permission":"view",
+                 "items":[{"principalType":"USER","principalId":3,"permission":"view","alreadyGranted":true}]}
+                """;
+        var detail = projector.detail(row("SPACE_ACL_BATCH_GRANT", "{}", after));
+        assertThat(detail.summaryAvailable()).isTrue();
+        assertThat(detail.changes()).containsExactly(
+                new Change("spaceId", null, Long.MAX_VALUE),
+                new Change("grantedCount", null, 3L),
+                new Change("alreadyGrantedCount", null, 1L),
+                new Change("clearanceBlockedPrincipalCount", null, 1L));
+        assertThat(projector.detail(row("SPACE_ACL_GRANT", "{}", after)).changes()).containsExactly(
+                new Change("spaceId", null, Long.MAX_VALUE),
+                new Change("principalKey", null, "1:3"),
+                new Change("permission", null, "view"));
+        assertThat(AuditScope.SPACE_ACL_BATCH_GRANT.targetType()).isEqualTo("space-acl");
+        assertThat(projector.detail(row("SPACE_ACL_BATCH_GRANT", "{}", "{\"grantedCount\":-1}"))
+                .summaryAvailable()).isFalse();
     }
 
     @Test

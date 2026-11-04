@@ -155,11 +155,12 @@ describe('上下文候选与授权', () => {
   it('没有 grant-manage 时 manage 只读，其余权限可授予并如实显示回执', async () => {
     answers.set('/api/admin/spaces/7/acl', [acl, { ...acl, id: '2', permission: 'manage' }]);
     answers.set('/api/admin/spaces/7/acl/principals?principalType=USER', page([{ principalType: 'USER', principalId: '5', label: '甲' }]));
-    answers.set('POST /api/admin/spaces/7/acl', { acl, alreadyGranted: true, clearanceBlockedPrincipalCount: 1 });
+    answers.set('POST /api/admin/spaces/7/acl/batch', { spaceId: '7', items: [{ principalType: 'USER', principalId: '5', permission: 'view', alreadyGranted: true }], grantedCount: 0, alreadyGrantedCount: 1, clearanceBlockedPrincipalCount: 1, replayed: false });
     show(<AclPanel kind="spaces" resourceId="7" onChanged={check} />);
-    fireEvent.click(await screen.findByRole('button', { name: '授予授权' })); await screen.findByRole('option', { name: '甲' });
-    expect(screen.queryByRole('button', { name: '撤销 小甲 manage' })).toBeNull(); expect(screen.queryByRole('option', { name: 'manage' })).toBeNull();
-    fill('授权主体', '5'); submit(); await screen.findByText(/授权已存在；因密级当前不生效的主体数量：1/);
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' }));
+    expect(screen.queryByRole('button', { name: '撤销 小甲 manage' })).toBeNull(); expect(screen.queryByRole('checkbox', { name: 'manage' })).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: '添加 甲' })); submit();
+    await screen.findByText('新写入 0 条，已存在 1 条'); await screen.findByText(/有 1 个主体因密级/);
     expect(check).toHaveBeenCalled();
   });
   it('空间保留 review 并新增 comment；文档例外提供 comment 而不出现 review，候选主体只来自资源上下文', async () => {
@@ -168,8 +169,8 @@ describe('上下文候选与授权', () => {
     answers.set('POST /api/admin/documents/9/acl', { acl: { ...acl, permission: 'comment' }, alreadyGranted: false, clearanceBlockedPrincipalCount: 0 });
     const options = () => within(screen.getByLabelText('权限位')).getAllByRole('option').map(item => item.getAttribute('value'));
     const space = show(<AclPanel kind="spaces" resourceId="7" onChanged={check} />);
-    fireEvent.click(await screen.findByRole('button', { name: '授予授权' })); await screen.findByRole('option', { name: '甲' });
-    expect(options()).toEqual(['view', 'download', 'edit', 'review', 'comment']);
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' })); await screen.findByRole('button', { name: '添加 甲' });
+    expect(within(screen.getByLabelText('权限位')).getAllByRole('checkbox').map(item => item.parentElement?.textContent)).toEqual(['view', 'download', 'edit', 'review', 'comment']);
     space.unmount();
     show(<AclPanel kind="documents" resourceId="9" onChanged={check} />, access({ has: () => true }));
     fireEvent.click(await screen.findByRole('button', { name: '授予授权' })); await screen.findByRole('option', { name: '甲' });
@@ -184,6 +185,227 @@ describe('上下文候选与授权', () => {
     answers.set('DELETE /api/admin/documents/9/acl', null); show(<AclPanel kind="documents" resourceId="9" archived onChanged={check} />, access({ has: () => true }));
     await screen.findByText(/例外授权只扩权/); fireEvent.click(await screen.findByRole('button', { name: '撤销 小甲 view' })); submit();
     await screen.findByText(/撤销不存在的授权同样成功/); expect(writes()[0][1].body).toContain('"principalId":5');
+  });
+});
+
+describe('空间批量授予', () => {
+  const endpoint = 'POST /api/admin/spaces/7/acl/batch';
+  const people = [
+    { principalType: 'USER', principalId: '9223372036854775807', label: '甲' },
+    { principalType: 'USER', principalId: '6', label: '乙' },
+    { principalType: 'USER', principalId: '7', label: '丙' },
+  ];
+  async function openBatch(value = access()) {
+    answers.set('/api/admin/spaces/7/acl/principals?principalType=USER', page(people));
+    const view = show(<AclPanel kind="spaces" resourceId="7" onChanged={check} />, value);
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' }));
+    await screen.findByRole('button', { name: '添加 甲' });
+    return view;
+  }
+  const add = (label = '甲') => fireEvent.click(screen.getByRole('button', { name: `添加 ${label}` }));
+  const toggle = (permission: string) => fireEvent.click(screen.getByRole('checkbox', { name: permission }));
+  const result = { spaceId: '7', items: [
+    { principalType: 'USER', principalId: '9223372036854775807', permission: 'view', alreadyGranted: true },
+    { principalType: 'USER', principalId: '9223372036854775807', permission: 'download', alreadyGranted: false },
+    { principalType: 'USER', principalId: '6', permission: 'view', alreadyGranted: false },
+    { principalType: 'USER', principalId: '6', permission: 'download', alreadyGranted: false },
+    { principalType: 'USER', principalId: '7', permission: 'view', alreadyGranted: false },
+    { principalType: 'USER', principalId: '7', permission: 'download', alreadyGranted: false },
+  ], grantedCount: 5, alreadyGrantedCount: 1, clearanceBlockedPrincipalCount: 1, replayed: false };
+
+  it('3×2 确认只发送一个批量请求，逐条显示已存在与新增并汇总受阻主体', async () => {
+    answers.set(endpoint, result); await openBatch();
+    expect(confirmation().disabled).toBe(true);
+    add(); add('乙'); add('丙'); toggle('download');
+    expect(screen.getByLabelText('批量确认摘要').textContent).toBe('3 个主体、2 个权限位、共 6 条授权。');
+    submit(); await screen.findByText('新写入 5 条，已存在 1 条');
+    expect(writes()).toHaveLength(1);
+    const [path, init] = writes()[0]; expect(path).toBe('/api/admin/spaces/7/acl/batch');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe('{"principals":[{"principalType":"USER","principalId":9223372036854775807},{"principalType":"USER","principalId":6},{"principalType":"USER","principalId":7}],"permissions":["view","download"]}');
+    expect(new Headers(init.headers).get('X-Request-Id')).toBeTruthy();
+    const rows = within(screen.getByRole('list', { name: '批量授予明细' })).getAllByRole('listitem');
+    expect(rows).toHaveLength(6); expect(rows[0].textContent).toContain('已存在');
+    expect(rows.slice(1).every(row => row.textContent?.includes('新增'))).toBe(true);
+    expect(screen.getByText(/有 1 个主体因密级/)).toBeTruthy();
+    expect(check).toHaveBeenCalled();
+  });
+
+  it('零权限或 51 个主体禁用提交，不拆分；移除多余主体后恢复', async () => {
+    const view = await openBatch(); add(); toggle('view');
+    expect(confirmation().disabled).toBe(true); submit(); expect(writes()).toHaveLength(0);
+    toggle('view'); expect(confirmation().disabled).toBe(false); view.unmount();
+    // 换身份清除上一轮草稿，模拟一次独立的超限选择。
+    f.epoch++;
+    const many = Array.from({ length: 51 }, (_, index) => ({ principalType: 'USER', principalId: String(index + 1), label: `主体${index + 1}` }));
+    answers.set('/api/admin/spaces/7/acl/principals?principalType=USER', page(many));
+    show(<AclPanel kind="spaces" resourceId="7" onChanged={check} />);
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' })); await screen.findByRole('button', { name: '添加 主体51' });
+    const candidates = within(screen.getByRole('list', { name: '候选主体' })).getAllByRole('button');
+    for (const candidate of candidates) fireEvent.click(candidate);
+    expect(confirmation().disabled).toBe(true); expect(screen.getByLabelText('批量确认摘要').textContent).toContain('51 个主体');
+    submit(); expect(writes()).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: '移除 USER 主体51' }));
+    expect(confirmation().disabled).toBe(false);
+  }, 15000);
+
+  it.each([400, 403])('整体 %s 拒绝保留主体和权限，不显示成功、不拆批重发', async status => {
+    answers.set(endpoint, json({ code: 500, data: null, message: '服务端拒绝详情' }, false, status));
+    await openBatch(access({ has: code => code === perm.grantManage })); add(); toggle('manage'); submit();
+    await screen.findByText(status === 400 ? '输入或请求不符合要求。' : '当前操作被拒绝。');
+    expect(within(screen.getByRole('list', { name: '已选主体' })).getAllByRole('listitem')).toHaveLength(1);
+    expect((screen.getByRole('checkbox', { name: 'manage' }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByRole('list', { name: '批量授予明细' })).toBeNull(); expect(writes()).toHaveLength(1);
+    if (status === 403) expect(check).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' }));
+    expect(screen.queryByRole('button', { name: '按原内容重试' })).toBeNull();
+    expect(confirmation().disabled).toBe(false);
+  });
+
+  it('403 的真实资格重核与页面重挂载保留草稿，换身份清空', async () => {
+    answers.set(endpoint, failure('FORBIDDEN', 403));
+    answers.set('/api/auth/permissions', [perm.grantManage]); answers.set('/api/admin/spaces', [space]);
+    answers.set('/api/admin/spaces/7/acl/principals?principalType=USER', page(people));
+    const mounted = render(<AdminAccessProvider><AdminGuard title="空间" spaces><AclPanel kind="spaces" resourceId="7" onChanged={check} /></AdminGuard></AdminAccessProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' }));
+    fireEvent.click(await screen.findByRole('button', { name: '添加 甲' })); toggle('download');
+    const checking = deferred<Response>();
+    answers.set('/api/auth/permissions', () => checking.promise);
+    submit();
+    await waitFor(() => expect(f.json.mock.calls.filter(([path]) => path === '/api/auth/permissions').length).toBe(2));
+    await waitFor(() => expect(screen.queryByLabelText('批量确认摘要')).toBeNull());
+    await act(async () => checking.resolve(json([perm.grantManage])));
+    await screen.findByText('当前操作被拒绝，正在重新确认管理权限。');
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' }));
+    expect(screen.getByLabelText('批量确认摘要').textContent).toContain('1 个主体、2 个权限位');
+    expect(within(screen.getByRole('list', { name: '已选主体' })).getByText(/甲/)).toBeTruthy();
+    mounted.unmount(); f.epoch++; await openBatch();
+    expect(screen.getByLabelText('批量确认摘要').textContent).toContain('0 个主体');
+  });
+
+  it.each([404, 405])('%s 显示批量不可用并保留已选，列表和单条撤销仍可用', async status => {
+    answers.set(endpoint, new Response(null, { status })); answers.set('DELETE /api/admin/spaces/7/acl', null);
+    await openBatch(); add(); toggle('download'); submit();
+    await screen.findByText('当前服务不支持批量授予');
+    expect(confirmation().disabled).toBe(true);
+    expect(screen.getByLabelText('批量确认摘要').textContent).toContain('1 个主体、2 个权限位');
+    expect(within(screen.getByRole('list', { name: '已选主体' })).getAllByRole('listitem')).toHaveLength(1);
+    expect(writes()).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByLabelText('批量确认摘要')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: '撤销 小甲 view' })); submit();
+    await screen.findByText(/撤销请求已确认/);
+    expect(writes().map(([path, init]) => `${init.method} ${path}`)).toEqual([endpoint, 'DELETE /api/admin/spaces/7/acl']);
+  });
+
+  it('结果不确定只按原内容和原标识重试；读取核对不重发，编辑表单不改变原绑定', async () => {
+    answers.set(endpoint, () => { throw new TypeError('offline'); }); await openBatch(); add(); toggle('download'); submit();
+    await screen.findByRole('button', { name: '按原内容重试' }); expect(writes()).toHaveLength(1);
+    const first = writes()[0][1], before = f.json.mock.calls.filter(([path]) => path === '/api/admin/spaces/7/acl').length;
+    fireEvent.click(screen.getByRole('button', { name: '重新读取核对' }));
+    await waitFor(() => expect(f.json.mock.calls.filter(([path]) => path === '/api/admin/spaces/7/acl').length).toBe(before + 1));
+    expect(writes()).toHaveLength(1); expect(confirmation().disabled).toBe(true);
+    toggle('download'); add('乙');
+    answers.set(endpoint, { ...result, items: result.items.slice(0, 2), grantedCount: 1, replayed: true });
+    await waitFor(() => expect((screen.getByRole('button', { name: '按原内容重试' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: '按原内容重试' })); await screen.findByText(/已重放首次结果/);
+    expect(writes()).toHaveLength(2);
+    expect(writes()[1][1].body).toBe(first.body);
+    expect(new Headers(writes()[1][1].headers).get('X-Request-Id')).toBe(new Headers(first.headers).get('X-Request-Id'));
+  });
+
+  it('放弃核对不发请求，保留选择供人工决定，后续确认使用新标识', async () => {
+    answers.set(endpoint, () => { throw new TypeError('offline'); }); await openBatch(); add(); submit();
+    fireEvent.click(await screen.findByRole('button', { name: '放弃核对' })); expect(writes()).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' }));
+    expect(screen.queryByRole('button', { name: '按原内容重试' })).toBeNull();
+    expect(confirmation().disabled).toBe(false); expect(screen.getByLabelText('批量确认摘要').textContent).toContain('1 个主体');
+    submit(); await screen.findByRole('button', { name: '按原内容重试' }); expect(writes()).toHaveLength(2);
+    expect(new Headers(writes()[1][1].headers).get('X-Request-Id')).not.toBe(new Headers(writes()[0][1].headers).get('X-Request-Id'));
+  });
+
+  it('待核对时关闭重开保留原绑定，不能提交新内容，确认成功后清除绑定', async () => {
+    answers.set(endpoint, () => { throw new TypeError('offline'); }); await openBatch(); add(); toggle('download'); submit();
+    await screen.findByRole('button', { name: '按原内容重试' });
+    const first = writes()[0][1];
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await screen.findByText('有批量授权结果待核对，请打开授予面板继续核对。');
+    fireEvent.click(screen.getByRole('button', { name: '授予授权' }));
+    await screen.findByRole('button', { name: '按原内容重试' });
+    expect(confirmation().disabled).toBe(true); expect(writes()).toHaveLength(1);
+    await screen.findByRole('button', { name: '添加 乙' }); add('乙'); toggle('download');
+    fireEvent.submit(confirmation().closest('form')!); expect(writes()).toHaveLength(1);
+    answers.set(endpoint, { ...result, items: result.items.slice(0, 2), grantedCount: 1, replayed: true });
+    fireEvent.click(screen.getByRole('button', { name: '按原内容重试' }));
+    await screen.findByText(/已重放首次结果/);
+    expect(writes()).toHaveLength(2); expect(writes()[1][1].body).toBe(first.body);
+    expect(new Headers(writes()[1][1].headers).get('X-Request-Id')).toBe(new Headers(first.headers).get('X-Request-Id'));
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' }));
+    expect(screen.queryByRole('button', { name: '按原内容重试' })).toBeNull();
+    expect(screen.getByLabelText('批量确认摘要').textContent).toContain('0 个主体');
+  });
+
+  it('待核对期间候选 403 引发真实资格重核，重挂载后仍按原标识重试', async () => {
+    answers.set(endpoint, () => { throw new TypeError('offline'); });
+    answers.set('/api/auth/permissions', []); answers.set('/api/admin/spaces', [space]);
+    answers.set('/api/admin/spaces/7/acl/principals?principalType=USER', page(people));
+    answers.set('/api/admin/spaces/7/acl/principals?principalType=ROLE', new Response(null, { status: 403 }));
+    render(<AdminAccessProvider><AdminGuard title="空间" spaces><AclPanel kind="spaces" resourceId="7" onChanged={check} /></AdminGuard></AdminAccessProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' }));
+    fireEvent.click(await screen.findByRole('button', { name: '添加 甲' })); toggle('download'); submit();
+    await screen.findByRole('button', { name: '按原内容重试' });
+    const first = writes()[0][1], checking = deferred<Response>();
+    answers.set('/api/auth/permissions', () => checking.promise); fill('主体类型', 'ROLE');
+    await waitFor(() => expect(f.json.mock.calls.filter(([path]) => path === '/api/auth/permissions').length).toBe(2));
+    await waitFor(() => expect(screen.queryByLabelText('批量确认摘要')).toBeNull());
+    await act(async () => checking.resolve(json([])));
+    await screen.findByText('有批量授权结果待核对，请打开授予面板继续核对。');
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' }));
+    expect(confirmation().disabled).toBe(true); expect(writes()).toHaveLength(1);
+    expect(screen.getByLabelText('批量确认摘要').textContent).toContain('1 个主体、2 个权限位');
+    answers.set(endpoint, { ...result, items: result.items.slice(0, 2), grantedCount: 1, replayed: true });
+    fireEvent.click(await screen.findByRole('button', { name: '按原内容重试' }));
+    await screen.findByText(/已重放首次结果/);
+    expect(writes()).toHaveLength(2); expect(writes()[1][1].body).toBe(first.body);
+    expect(new Headers(writes()[1][1].headers).get('X-Request-Id')).toBe(new Headers(first.headers).get('X-Request-Id'));
+  });
+
+  it('未决批次按空间隔离，回到原空间可恢复，身份变化清空旧绑定', async () => {
+    answers.set(endpoint, () => { throw new TypeError('offline'); });
+    let mounted = await openBatch(); add(); submit(); await screen.findByRole('button', { name: '按原内容重试' });
+    const first = writes()[0][1]; mounted.unmount();
+    answers.set('/api/admin/spaces/8/acl', []);
+    answers.set('/api/admin/spaces/8/acl/principals?principalType=USER', page(people));
+    mounted = show(<AclPanel kind="spaces" resourceId="8" onChanged={check} />, access(), '/admin/spaces/8');
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' }));
+    expect(screen.queryByRole('button', { name: '按原内容重试' })).toBeNull();
+    expect(screen.getByLabelText('批量确认摘要').textContent).toContain('0 个主体'); mounted.unmount();
+    mounted = await openBatch();
+    await screen.findByRole('button', { name: '按原内容重试' }); expect(confirmation().disabled).toBe(true);
+    mounted.unmount(); f.epoch++; await openBatch();
+    expect(screen.queryByRole('button', { name: '按原内容重试' })).toBeNull();
+    expect(screen.getByLabelText('批量确认摘要').textContent).toContain('0 个主体');
+    add(); submit(); await screen.findByRole('button', { name: '按原内容重试' });
+    expect(writes()).toHaveLength(2); expect(writes()[1][1].body).toBe(first.body);
+    expect(new Headers(writes()[1][1].headers).get('X-Request-Id')).not.toBe(new Headers(first.headers).get('X-Request-Id'));
+  });
+
+  it('文档例外保持单选单条，候选失败清空选择，不显示批量摘要', async () => {
+    answers.set('/api/admin/documents/9/acl/principals?principalType=USER', page(people));
+    answers.set('/api/admin/documents/9/acl/principals?principalType=ROLE', new Response(null, { status: 503 }));
+    answers.set('POST /api/admin/documents/9/acl', { acl, alreadyGranted: false, clearanceBlockedPrincipalCount: 0 });
+    show(<AclPanel kind="documents" resourceId="9" onChanged={check} />);
+    fireEvent.click(await screen.findByRole('button', { name: '授予授权' })); await screen.findByRole('option', { name: '甲' });
+    fill('授权主体', '9223372036854775807'); expect(confirmation().disabled).toBe(false);
+    expect(screen.queryByLabelText('批量确认摘要')).toBeNull(); expect(screen.queryByRole('list', { name: '已选主体' })).toBeNull();
+    fill('主体类型', 'ROLE'); await screen.findByText('服务暂不可用，请稍后重试。');
+    expect((screen.getByLabelText('授权主体') as HTMLSelectElement).value).toBe(''); expect(confirmation().disabled).toBe(true);
+    fill('主体类型', 'USER'); await screen.findByRole('option', { name: '甲' }); fill('授权主体', '9223372036854775807'); submit();
+    await screen.findByText(/授权已授予/);
+    expect(writes()).toHaveLength(1); expect(writes()[0][0]).toBe('/api/admin/documents/9/acl');
+    expect(writes()[0][1].body).toBe('{"principalType":"USER","principalId":9223372036854775807,"permission":"view"}');
   });
 });
 

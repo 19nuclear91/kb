@@ -1,10 +1,15 @@
 package com.zhishiku.kb.app.space.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhishiku.kb.app.auth.service.AuditScope;
 import com.zhishiku.kb.app.auth.service.IdentityAuditService;
 import com.zhishiku.kb.app.auth.service.PermissionService;
 import com.zhishiku.kb.app.space.mapper.SpaceMapper;
+import com.zhishiku.kb.app.space.model.SpaceAclBatchGrantResult;
+import com.zhishiku.kb.app.space.model.SpaceAclPrincipal;
 import com.zhishiku.kb.app.space.model.SpaceAclRecord;
+import com.zhishiku.kb.common.security.IdentityErrorCode;
 import com.zhishiku.kb.common.security.IdentityException;
 import com.zhishiku.kb.common.security.PermissionScope;
 import com.zhishiku.kb.common.security.PrincipalType;
@@ -16,7 +21,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -34,6 +43,7 @@ import java.util.Set;
 public class SpaceAclService {
 
     private static final Logger log = LoggerFactory.getLogger(SpaceAclService.class);
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     /**
      * 可经本接口授予的权限位。manage 单独判定，不在此列。
@@ -103,6 +113,110 @@ public class SpaceAclService {
     }
 
     @Transactional
+    public SpaceAclBatchGrantResult grantBatch(long spaceId, List<SpaceAclPrincipal> principals,
+                                               List<String> permissions, String requestId) {
+        List<String> normalized = validateBatch(principals, permissions);
+        if (spaceId <= 0) {
+            throw IdentityException.badRequest("spaceId 必须为正整数");
+        }
+        if (requestId == null || requestId.isBlank()) {
+            throw IdentityException.badRequest("缺少请求标识 X-Request-Id");
+        }
+        long actor = normalized.contains(PermissionService.PERM_MANAGE)
+                ? authorizer.requireGrantManage() : authorizer.requireSpaceManager(spaceId);
+        var previous = audit.existing(AuditScope.SPACE_ACL_BATCH_GRANT, requestId);
+        if (previous != null) {
+            if (!Objects.equals(previous.getActorUserId(), actor)
+                    || !Objects.equals(previous.getTargetId(), spaceId)) {
+                throw IdentityException.conflict(IdentityErrorCode.CONFLICT, "请求标识已用于不同操作");
+            }
+            try {
+                var saved = JSON.readValue(previous.getAfterState(), SpaceAclBatchGrantResult.class);
+                if (saved.spaceId() != spaceId) {
+                    throw IdentityException.conflict(IdentityErrorCode.CONFLICT, "请求标识已用于不同操作");
+                }
+                return new SpaceAclBatchGrantResult(saved.spaceId(), saved.items(), saved.grantedCount(),
+                        saved.alreadyGrantedCount(), saved.clearanceBlockedPrincipalCount(), true);
+            } catch (JsonProcessingException e) {
+                throw new IllegalStateException("批量授权审计快照无法读取", e);
+            }
+        }
+        // 整批角色引用先校验完毕，避免后续无效主体导致先前条目提前写入。
+        for (SpaceAclPrincipal principal : principals) {
+            if (principal.principalType() == PrincipalType.ROLE) {
+                authorizer.requireRoleReference(principal.principalId());
+            }
+        }
+        List<SpaceAclBatchGrantResult.Item> items = new ArrayList<>();
+        long granted = 0;
+        long blocked = 0;
+        for (SpaceAclPrincipal principal : principals) {
+            boolean newlyGranted = false;
+            for (String permission : normalized) {
+                boolean already = mapper.countAcl(spaceId, principal.principalType().code(),
+                        principal.principalId(), permission) > 0;
+                if (!already) {
+                    already = mapper.grantAcl(spaceId, principal.principalType().code(),
+                            principal.principalId(), permission) == 0;
+                }
+                if (!already) {
+                    granted++;
+                    newlyGranted = true;
+                }
+                items.add(new SpaceAclBatchGrantResult.Item(principal.principalType(), principal.principalId(),
+                        permission, already));
+            }
+            if (newlyGranted) {
+                blocked += countClearanceBlocked(spaceId, principal.principalType(), principal.principalId());
+            }
+        }
+        var result = new SpaceAclBatchGrantResult(spaceId, List.copyOf(items), granted, items.size() - granted,
+                blocked, false);
+        try {
+            String after = JSON.writeValueAsString(Map.of("spaceId", spaceId, "items", result.items(),
+                    "grantedCount", result.grantedCount(), "alreadyGrantedCount", result.alreadyGrantedCount(),
+                    "clearanceBlockedPrincipalCount", blocked));
+            audit.success(AuditScope.SPACE_ACL_BATCH_GRANT, requestId, actor, spaceId, "batch-grant", "{}", after);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("批量授权审计快照无法序列化", e);
+        }
+        return result;
+    }
+
+    private static List<String> validateBatch(List<SpaceAclPrincipal> principals, List<String> permissions) {
+        if (principals == null || principals.isEmpty() || principals.size() > 50) {
+            throw IdentityException.badRequest("主体列表不能为空，须包含 1 至 50 个主体，上限为 50");
+        }
+        if (permissions == null || permissions.isEmpty() || permissions.size() > 6) {
+            throw IdentityException.badRequest("权限位列表不能为空，须包含 1 至 6 个权限位，上限为 6");
+        }
+        Set<SpaceAclPrincipal> uniquePrincipals = new HashSet<>();
+        for (SpaceAclPrincipal principal : principals) {
+            if (principal == null || principal.principalType() == null || principal.principalId() <= 0) {
+                throw IdentityException.badRequest("主体类型必须为 USER、ROLE、DEPT，主体 ID 必须为正整数；主体上限为 50");
+            }
+            if (!uniquePrincipals.add(principal)) {
+                throw IdentityException.badRequest("主体重复：" + principal.principalType() + ":"
+                        + principal.principalId() + "；主体上限为 50");
+            }
+        }
+        List<String> normalized = new ArrayList<>();
+        for (String permission : permissions) {
+            String value;
+            try {
+                value = normalizePermission(permission);
+            } catch (IdentityException error) {
+                throw IdentityException.badRequest(error.getMessage() + "；权限位上限为 6");
+            }
+            if (normalized.contains(value)) {
+                throw IdentityException.badRequest("权限位重复：" + value + "；权限位上限为 6");
+            }
+            normalized.add(value);
+        }
+        return normalized;
+    }
+
+    @Transactional
     public void revoke(long spaceId, PrincipalType principalType, long principalId, String permission,
                        Long actorUserId, String requestId) {
         String normalizedPermission = normalizePermission(permission);
@@ -138,10 +252,9 @@ public class SpaceAclService {
     /**
      * 统计这次授予中"因密级而当前不生效"的主体数（0 或 1——本接口一次只授一个主体）。
      *
-     * <p>口径：主体在该空间内<b>没有任何一个有效成员</b>能看到任何一篇 published
-     * 文档时，才算对该主体当前无效。对单个用户即"其 clearance 低于空间内最高文档密级"；
-     * 对部门或角色，只要有成员具备足够密级就算生效——否则一个混合密级的部门
-     * 会被整条判为无效，回执就失去了参考价值。
+     * <p>口径：主体有有效成员，且空间内存在密级高于这些成员最高 clearance 的 published
+     * 文档时，计为一个受阻主体。这表示至少有一篇文档因密级无法访问，
+     * 不表示所有文档都不可访问；无有效成员时不计入。部门或角色取成员的最高密级。
      */
     private long countClearanceBlocked(long spaceId, PrincipalType principalType, long principalId) {
         List<Long> userIds = mapper.userIdsForPrincipal(principalType.code(), principalId);

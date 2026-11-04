@@ -94,6 +94,12 @@ changes 只可出现 spaceId（删除时所属空间）与 spaceArchived（该�
 
 ### 数据源覆盖
 
+空间批量授予使用操作域 code `SPACE_ACL_BATCH_GRANT`，targetType 为 `space-acl`，targetId 为目标空间 ID，
+operation 为 `batch-grant`。可按 operationScope、targetType+targetId、requestId 与时间窗口检索；一批只写一条成功事件，
+相同 `X-Request-Id` 重放不增加事件。详情仅投影 `spaceId`、`grantedCount`、`alreadyGrantedCount`、
+`clearanceBlockedPrincipalCount`，最后一项按至少新增一条授权的主体计数。逐条主体、权限位及 `alreadyGranted`
+只保存在审计 `after_state.items[]` 快照中，不在审计查询摘要展开。
+
 首期只查询 `sys_identity_audit` 中生产者已经写入的管理及登录事件，包括成功、失败、目标为 null 和目标后来被删除的事件。
 
 - 覆盖用户生命周期、部门、角色权限、外部身份绑定、空间/文档管理与 ACL、管理端文档删除、文档密级、登录和解析死信等已记录事件。

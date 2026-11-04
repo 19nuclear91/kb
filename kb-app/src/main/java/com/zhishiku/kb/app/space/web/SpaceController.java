@@ -1,10 +1,12 @@
 package com.zhishiku.kb.app.space.web;
 
+import com.zhishiku.kb.app.space.model.SpaceAclBatchGrantResult;
 import com.zhishiku.kb.app.space.service.SpaceAclService;
 import com.zhishiku.kb.app.space.service.SpaceAuthorizer;
 import com.zhishiku.kb.app.space.service.SpaceQueryService;
 import com.zhishiku.kb.app.space.service.SpaceWriteService;
 import com.zhishiku.kb.app.space.web.dto.SpaceAclGrantRequest;
+import com.zhishiku.kb.app.space.web.dto.SpaceAclBatchGrantRequest;
 import com.zhishiku.kb.app.space.web.dto.SpaceAclRevokeRequest;
 import com.zhishiku.kb.app.space.web.dto.SpaceArchiveRequest;
 import com.zhishiku.kb.app.space.web.dto.SpaceCreateRequest;
@@ -206,6 +208,17 @@ public class SpaceController {
                                            @RequestHeader(value = "X-Request-Id", required = false) String header) {
         return R.ok(acls.grant(spaceId, request.principalType(), request.principalId(),
                 request.permission(), null, requestId(request.requestId(), header)));
+    }
+
+    @PostMapping("/{spaceId}/acl/batch")
+    @Operation(summary = "批量授予空间访问权",
+            description = "同一事务内授予最多 50 个主体与 6 个权限位的笛卡尔积；全部校验通过才写入。"
+                    + "包含 manage 时整批要求 space:grant-manage，否则要求空间 manage 或 space:manage-all。"
+                    + "必须携带 X-Request-Id，重放返回首次逐条回执；授权不修改主体密级。")
+    public R<SpaceAclBatchGrantResult> grantAclBatch(@PathVariable @Positive long spaceId,
+                                                     @RequestBody SpaceAclBatchGrantRequest request,
+                                                     @RequestHeader(value = "X-Request-Id", required = false) String header) {
+        return R.ok(acls.grantBatch(spaceId, request.principals(), request.permissions(), requestId(null, header)));
     }
 
     @DeleteMapping("/{spaceId}/acl")

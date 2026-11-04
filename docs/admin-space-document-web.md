@@ -24,6 +24,19 @@
 
 ## 请求与结果核对
 
+`POST /api/admin/spaces/{spaceId}/acl/batch` 接受 `principals: [{principalType, principalId}]` 与 `permissions: [...]`，
+请求标识只取 `X-Request-Id`。缺失标识、非正整数空间 ID、主体列表不在 1–50 范围、权限列表不在 1–6 范围、
+重复主体/权限位、无效主体形状或不支持的权限位均返回 400；有资格后发现角色不存在同样返回 400。
+未通过空间管理资格、含 manage 却无 `space:grant-manage`、操作者或主部门停用均返回 403。
+请求标识已绑定其他操作者或空间、审计绑定缺失，或快照空间与目标空间不一致时返回通用 409，不返回原批次明细。
+资格先于角色存在性检查；整批全部校验通过后在一个事务中写入，校验失败不写任何条目或成功审计。
+
+批量回执包含 `spaceId`、`items[]`（principalType、principalId、permission、alreadyGranted）、`grantedCount`、
+`alreadyGrantedCount`、`clearanceBlockedPrincipalCount` 与 `replayed`。已存在条目跳过，仍返回成功；受阻数按主体而非
+权限条目计算，仅统计本批至少有一条新授权的主体：该主体有有效成员，且空间内存在密级高于成员最高密级的已发布文档时计为受阻；无有效成员不计入。这表示至少有一篇文档因密级不可访问，不表示所有文档均不可访问，不修改任何密级。
+同一操作者、同一空间以相同标识重试，从首次成功的审计快照恢复逐条结果与全部计数，`replayed=true`，不重新查询 ACL 或计算受阻数，也不新增审计。
+既有单条授予与撤销接口的请求、回执及错误契约保持不变。
+
 空间摘要携带 code、name、description、archived、version 及独立的 viewable/manageable；管理文档清单只含 documentId、spaceId、spaceArchived，采用游标而非总数。授权回执区分 alreadyGranted 与 clearanceBlockedPrincipalCount；搬迁回执包含 clearedExceptionCount、clearedExceptionsTruncated 与目标空间密级受阻数。管理端删除回执只含 documentId、spaceId（删除时所属空间）与 replayed，不含标题、文件名或正文；同一 `X-Request-Id` 重复提交返回首次回执且 replayed 为 true，不再写入。
 
 ID、主体 ID、空间版本和 securityVersion 按精确整数回传，保持 JSON 数值类型。所有写入请求标识只在 X-Request-Id 请求头携带；删除空间与删除文档都不发送请求体，撤销授权发送主体及权限位。
@@ -46,7 +59,15 @@ ID、主体 ID、空间版本和 securityVersion 按精确整数回传，保持 
 
 ## 授权与管理文档清单
 
-空间与文档授权候选只来自对应资源的 `/acl/principals`，可按 USER/ROLE/DEPT 搜索、游标续页。资源、类型或搜索条件变化后清除旧选择，失败时不使用旧候选；不读取或回退至身份目录，也不提供手填内部 ID。部门授权对子部门生效。空间权限提供 view、download、edit；manage 授出与撤销另需 `space:grant-manage`，否则已有 manage 行只读。
+空间与文档授权候选只来自对应资源的 `/acl/principals`，可按 USER/ROLE/DEPT 搜索、游标续页；不读取或回退至身份目录，也不提供手填内部 ID。部门授权对子部门生效。
+
+空间面板支持多主体与多权限位：已选清单跨类型和搜索条件保留，同一主体不能重复加入，可逐个移除；候选读取失败时保留已选，但不能从故障候选新增。权限复选提供 view、download、edit、review、comment，manage 授出与撤销另需 `space:grant-manage`，否则已有 manage 行只读。确认前展示主体数、权限位数与乘积总条目数；超过 50 个主体或总条目为 0 禁用提交，不自动拆批。整批只使用一次请求和一个请求标识，400/403 整体拒绝后保留选择；403 资格重核期间草稿仍保存在当前身份的内存，切换身份清空。成功按逐条回执显示新增/已存在并分别汇总计数，密级受阻提示按主体计数。
+
+待核对的批次在当前会话内按身份与空间保留原内容、请求标识；关闭弹窗或资格重核导致页面重挂载后，重开仍待核对，不能直接确认成新批次。仅原内容重试确认成功、明确拒绝或显式放弃核对后清除该绑定；身份变化清空旧身份绑定，不同空间互不混用。
+
+批量路由返回 404/405 时显示“当前服务不支持批量授予”，保留已选内容并禁用授予；即使只选一个主体和一个权限位，也不回退单条调用。授权列表与单条撤销继续可用。部署时先发布后端再发布前端；回退前端可恢复原单条授予交互，不需要数据库迁移。
+
+文档例外继续使用单选主体、单权限位与单条接口；类型或搜索条件变化、候选读取失败都会清空旧选择，不展示批量确认摘要，也不调用空间批量接口。
 
 授权回执的 alreadyGranted=true 表示已有授权，不应显示新增。密级受阻数非零表示当前部分主体不生效，不代表请求失败，授权不修改主体密级。撤销不存在的授权同样幂等成功，回执不证明授权此前一定存在。本人失去唯一管理资格后，重核会清除相应详情。
 
@@ -70,9 +91,32 @@ ID、主体 ID、空间版本和 securityVersion 按精确整数回传，保持 
 
 ## 首期限制
 
-只有密级权限却无文档 view 的操作者，以及已归档空间中的文档，难以从用户端详情发现管理入口；可经 `/admin/documents` 索引页手填文档 ID 直达面板。没有批量授权、批量删除、单版本删除、回收站或恢复、审计、外部身份或 Embedding/死信运维页。文档授权及搬迁的 404/403 先后语义保持现状。
+只有密级权限却无文档 view 的操作者，以及已归档空间中的文档，难以从用户端详情发现管理入口；可经 `/admin/documents` 索引页手填文档 ID 直达面板。批量授予仅支持同一空间，不提供批量撤销、跨空间授权或文档例外批量；不提供批量删除、单版本删除、回收站或恢复。文档授权及搬迁的 404/403 先后语义保持现状。
 
 ## 验证记录
+
+2026-11-04（核验修复）：审计重放增加操作者、目标空间与快照空间校验，不匹配返回通用 409；批量未决绑定在弹窗关闭及资格重核后保留，按身份与空间隔离；密级受阻的规格和注释统一为存在高于有效成员最高密级的已发布文档。
+
+后端按白名单执行 `SpaceAclServiceTest`（22）、`SpaceControllerTest`（13）、`AuditSummaryProjectorTest`（8）、`RecordOpenApiSchemaTest`（2）与 `ModuleBoundaryTest`（9），54 项全部通过。前端 `space-pages.test.tsx`（76）、`spaceApi.test.ts`（6）、`MultiPrincipalPicker.test.tsx`（4）与 `hooks.test.tsx`（14）共 100 项最终全部通过。新增回归覆盖跨操作者/空间的重放拒绝、快照空间不一致、弹窗关闭重开、候选 403 触发真实资格重核、空间及身份隔离，另验证确认、拒绝及显式放弃后的绑定清除。
+
+`npm run typecheck`、`npm run build` 与跳过测试的后端打包通过，前端仍有主包超过 1200 kB 的既有提示；两个主规格 `space-authorization`、`admin-web-spaces` 的严格校验通过。验证仍限本地隔离单元测试，真实事务与并发行为未验证。
+
+2026-11-04（空间批量授予首次实施）：按白名单执行 `SpaceAclServiceTest`（20）、`SpaceControllerTest`（13）、
+`AuditSummaryProjectorTest`（8）与 `ModuleBoundaryTest`（9），共 50 项通过，失败、错误、跳过均为 0；
+另已定向执行 `RecordOpenApiSchemaTest`（2 项通过），覆盖新增请求、主体与逐条回执的字段说明。跳过测试的后端打包通过。
+
+```powershell
+mvn -o -pl kb-app -am test '-Dtest=SpaceAclServiceTest,SpaceControllerTest,AuditSummaryProjectorTest,ModuleBoundaryTest' '-Dsurefire.failIfNoSpecifiedTests=false'
+mvn -o -pl kb-app -am package '-DskipTests'
+```
+
+前端按文件执行 `src/admin/spaceApi.test.ts`（6）、`src/admin/space-pages.test.tsx`（73）与
+`src/admin/MultiPrincipalPicker.test.tsx`（4），共 83 项通过；`npm run typecheck` 与 `npm run build` 通过。
+构建仍提示主包超过 1200 kB 的体积阈值。覆盖多选跨类型保留、故障保留、精确整数、50/6 上限、整批提交、逐条回执、
+403 重核后草稿恢复、404/405 不回退、结果不确定的原标识重试，以及文档例外单选回归。
+`git diff --check` 与 `openspec validate admin-space-batch-acl-grant --strict` 通过。
+未新增迁移、权限位、批量撤销、跨空间批量或文档例外批量；未运行集成测试、真实数据库或外部服务。
+事务原子性与并发写入仅依赖实现约束，未由本轮隔离单元测试验证。
 
 2026-10-21：后端以明确白名单执行 `IdentityManagementFeedbackTest`、`SpaceWriteServiceTest`、`DocumentRelocationServiceTest`、`DocumentSecurityLevelServiceTest` 与 `ModuleBoundaryTest`，158 项通过，失败、错误与跳过均为 0；跳过测试的打包通过。命令：
 

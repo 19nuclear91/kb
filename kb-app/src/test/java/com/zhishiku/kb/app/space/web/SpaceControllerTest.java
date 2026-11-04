@@ -1,6 +1,8 @@
 package com.zhishiku.kb.app.space.web;
 
 import com.zhishiku.kb.app.config.GlobalExceptionHandler;
+import com.zhishiku.kb.app.space.model.SpaceAclBatchGrantResult;
+import com.zhishiku.kb.app.space.model.SpaceAclPrincipal;
 import com.zhishiku.kb.app.space.service.SpaceAclService;
 import com.zhishiku.kb.app.space.service.SpaceAuthorizer;
 import com.zhishiku.kb.app.space.service.SpaceQueryService;
@@ -18,6 +20,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
+import java.util.List;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -26,6 +30,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -173,8 +178,77 @@ class SpaceControllerTest {
                 .andExpect(status().isForbidden());
     }
 
-    // 注：缺少 principalType 这类 Bean Validation 失败目前会被
-    // GlobalExceptionHandler 的兜底分支折叠成 500——这是项目既有的全局缺口
-    // （见《架构决策记录》里"业务错误码统一折叠"的待办），不属于本变更范围。
-    // 这里不假装它返回 400；显式抛出的 IdentityException 才携带真实状态码。
+    @Test
+    void batchRouteBindsExactIdsAndReturnsItemizedReceiptIgnoringClearanceFields() throws Exception {
+        var principals = List.of(new SpaceAclPrincipal(PrincipalType.USER, Long.MAX_VALUE),
+                new SpaceAclPrincipal(PrincipalType.DEPT, 2));
+        var permissions = List.of("view", "download");
+        var result = new SpaceAclBatchGrantResult(1L,
+                List.of(new SpaceAclBatchGrantResult.Item(PrincipalType.USER, Long.MAX_VALUE, "view", true),
+                        new SpaceAclBatchGrantResult.Item(PrincipalType.USER, Long.MAX_VALUE, "download", false),
+                        new SpaceAclBatchGrantResult.Item(PrincipalType.DEPT, 2, "view", false),
+                        new SpaceAclBatchGrantResult.Item(PrincipalType.DEPT, 2, "download", false)), 3, 1, 1, false);
+        when(acls.grantBatch(1L, principals, permissions, "batch")).thenReturn(result);
+        mvc().perform(post("/api/admin/spaces/1/acl/batch")
+                        .contentType(MediaType.APPLICATION_JSON).header("X-Request-Id", "batch")
+                        .content("""
+                                {"principals":[{"principalType":"USER","principalId":9223372036854775807,"clearanceLevel":9},
+                                {"principalType":"DEPT","principalId":2}],"permissions":["view","download"],"clearanceLevel":9}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(4))
+                .andExpect(jsonPath("$.data.items[0].principalId").value(Long.MAX_VALUE))
+                .andExpect(jsonPath("$.data.items[0].alreadyGranted").value(true))
+                .andExpect(jsonPath("$.data.items[1].alreadyGranted").value(false))
+                .andExpect(jsonPath("$.data.grantedCount").value(3))
+                .andExpect(jsonPath("$.data.alreadyGrantedCount").value(1))
+                .andExpect(jsonPath("$.data.clearanceBlockedPrincipalCount").value(1))
+                .andExpect(jsonPath("$.data.replayed").value(false));
+        verify(acls).grantBatch(1L, principals, permissions, "batch");
+        verify(acls, never()).grant(anyLong(), any(), anyLong(), anyString(), any(), anyString());
+    }
+
+    @Test
+    void batchMissingOrBlankHeaderCannotBeReplacedByBodyRequestId() throws Exception {
+        var mvc = mvc();
+        String body = """
+                {"principals":[{"principalType":"USER","principalId":2}],"permissions":["view"],"requestId":"body"}
+                """;
+        mvc.perform(post("/api/admin/spaces/1/acl/batch").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/admin/spaces/1/acl/batch").contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Request-Id", " ").content(body)).andExpect(status().isBadRequest());
+        verifyNoInteractions(acls);
+    }
+
+    @Test
+    void batchInvalidPathAndMalformedBindingAreBadRequests() throws Exception {
+        var mvc = mvc();
+        String body = """
+                {"principals":[{"principalType":"USER","principalId":2}],"permissions":["view"]}
+                """;
+        for (String id : List.of("0", "-1", "abc", "1.5", "9223372036854775808")) {
+            mvc.perform(post("/api/admin/spaces/" + id + "/acl/batch").contentType(MediaType.APPLICATION_JSON)
+                            .header("X-Request-Id", "batch").content(body)).andExpect(status().isBadRequest());
+        }
+        mvc.perform(post("/api/admin/spaces/1/acl/batch").contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Request-Id", "batch").content(body.replace("USER", "UNKNOWN")))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(acls);
+    }
+
+    @Test
+    void batchPreservesServiceErrorStatuses() throws Exception {
+        var mvc = mvc();
+        for (var error : List.of(IdentityException.badRequest("主体重复"), IdentityException.forbidden("无权授予 manage"),
+                IdentityException.disabled("用户已停用"), IdentityException.notFound("空间不可访问"),
+                IdentityException.conflict(IdentityErrorCode.CONFLICT, "审计冲突"))) {
+            doThrow(error).when(acls).grantBatch(eq(1L), any(), any(), eq("batch"));
+            mvc.perform(post("/api/admin/spaces/1/acl/batch").contentType(MediaType.APPLICATION_JSON)
+                            .header("X-Request-Id", "batch").content("""
+                                    {"principals":[{"principalType":"USER","principalId":2}],"permissions":["view"]}
+                                    """))
+                    .andExpect(status().is(error.httpStatus()));
+        }
+    }
 }

@@ -1,18 +1,30 @@
 package com.zhishiku.kb.app.space.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhishiku.kb.app.auth.mapper.PermissionMapper;
+import com.zhishiku.kb.app.auth.model.IdentityAuditRecord;
 import com.zhishiku.kb.app.auth.service.AuditScope;
 import com.zhishiku.kb.app.auth.service.IdentityAuditService;
+import com.zhishiku.kb.app.auth.service.IdentityManagementAuthorizer;
+import com.zhishiku.kb.app.auth.service.IdentityService;
 import com.zhishiku.kb.app.auth.service.PermissionService;
 import com.zhishiku.kb.app.space.mapper.SpaceMapper;
 import com.zhishiku.kb.app.space.model.SpaceAclRecord;
+import com.zhishiku.kb.app.space.model.SpaceAclBatchGrantResult;
+import com.zhishiku.kb.app.space.model.SpaceAclPrincipal;
 import com.zhishiku.kb.common.security.IdentityException;
 import com.zhishiku.kb.common.security.PrincipalType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
+import org.mockito.ArgumentCaptor;
 
+import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
+import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,8 +33,14 @@ import static org.mockito.ArgumentMatchers.anyShort;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class SpaceAclServiceTest {
@@ -211,5 +229,236 @@ class SpaceAclServiceTest {
         assertThat(listed).hasSize(1);
         assertThat(listed.get(0).principalKey()).isEqualTo("3:2");
         assertThat(listed.get(0).principalType()).isEqualTo(PrincipalType.DEPT);
+    }
+
+    @Test
+    void invalidBatchShapeIsRejectedBeforeAuthorizationOrWrites() {
+        var principal = new SpaceAclPrincipal(PrincipalType.USER, 2L);
+        assertInvalidBatch(null, List.of("view"), "50");
+        assertInvalidBatch(List.of(), List.of("view"), "50");
+        assertInvalidBatch(LongStream.rangeClosed(1, 51)
+                .mapToObj(id -> new SpaceAclPrincipal(PrincipalType.USER, id)).toList(), List.of("view"), "50");
+        assertInvalidBatch(List.of(principal, principal), List.of("view"), "重复");
+        assertInvalidBatch(Arrays.asList(principal, null), List.of("view"), "主体");
+        assertInvalidBatch(List.of(new SpaceAclPrincipal(null, 2)), List.of("view"), "主体类型");
+        assertInvalidBatch(List.of(new SpaceAclPrincipal(PrincipalType.USER, 0)), List.of("view"), "正整数");
+        assertInvalidBatch(List.of(principal), null, "6");
+        assertInvalidBatch(List.of(principal), List.of(), "6");
+        assertInvalidBatch(List.of(principal), List.of("view", "download", "edit", "review", "comment", "manage", "share"), "6");
+        assertInvalidBatch(List.of(principal), List.of("view", "view"), "重复");
+        assertInvalidBatch(List.of(principal), List.of("view", " view "), "重复");
+        assertInvalidBatch(List.of(principal), Arrays.asList("view", null), "不能为空");
+        assertInvalidBatch(List.of(principal), List.of("view", " "), "不能为空");
+        for (String unsupported : List.of("share", "approve", "Comment")) {
+            assertInvalidBatch(List.of(principal), List.of("view", unsupported), "不被支持");
+        }
+        verifyNoInteractions(mapper, authorizer, audit);
+    }
+
+    private void assertInvalidBatch(List<SpaceAclPrincipal> principals, List<String> permissions, String message) {
+        assertThatThrownBy(() -> service.grantBatch(SPACE, principals, permissions, "batch"))
+                .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(400))
+                .hasMessageContaining(message);
+        verify(mapper, never()).grantAcl(anyLong(), anyShort(), anyLong(), anyString());
+    }
+
+    @Test
+    void batchWithManageIsRejectedBeforeRoleLookupAndAnyWrite() {
+        when(authorizer.requireGrantManage()).thenThrow(IdentityException.forbidden("缺少 space:grant-manage"));
+        assertThatThrownBy(() -> service.grantBatch(SPACE,
+                List.of(new SpaceAclPrincipal(PrincipalType.USER, 2), new SpaceAclPrincipal(PrincipalType.ROLE, 99)),
+                List.of("view", "manage"), "batch"))
+                .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(403));
+        verify(authorizer).requireGrantManage();
+        verify(authorizer, never()).requireSpaceManager(anyLong());
+        verify(authorizer, never()).requireRoleReference(anyLong());
+        verifyNoInteractions(mapper, audit);
+    }
+
+    @Test
+    void batchWithoutManageUsesSpaceQualificationAndValidatesEveryRoleBeforeWriting() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ADMIN);
+        when(mapper.grantAcl(anyLong(), anyShort(), anyLong(), anyString())).thenReturn(1);
+        var result = service.grantBatch(SPACE,
+                List.of(new SpaceAclPrincipal(PrincipalType.ROLE, 2), new SpaceAclPrincipal(PrincipalType.ROLE, 3)),
+                List.of("view", "download"), "batch");
+        assertThat(result.grantedCount()).isEqualTo(4);
+        var order = inOrder(authorizer, mapper);
+        order.verify(authorizer).requireSpaceManager(SPACE);
+        order.verify(authorizer).requireRoleReference(2);
+        order.verify(authorizer).requireRoleReference(3);
+        order.verify(mapper).countAcl(SPACE, PrincipalType.ROLE.code(), 2, "view");
+        verify(authorizer, never()).requireGrantManage();
+    }
+
+    @Test
+    void missingRoleRejectsWholeBatchBeforeEarlierValidPrincipalIsWritten() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ADMIN);
+        doThrow(IdentityException.badRequest("角色不存在")).when(authorizer).requireRoleReference(99);
+        assertThatThrownBy(() -> service.grantBatch(SPACE,
+                List.of(new SpaceAclPrincipal(PrincipalType.USER, 2), new SpaceAclPrincipal(PrincipalType.ROLE, 99)),
+                List.of("view", "download"), "batch"))
+                .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(400));
+        var order = inOrder(authorizer);
+        order.verify(authorizer).requireSpaceManager(SPACE);
+        order.verify(authorizer).requireRoleReference(99);
+        verifyNoInteractions(mapper);
+        verify(audit).existing(AuditScope.SPACE_ACL_BATCH_GRANT, "batch");
+        verifyNoMoreInteractions(audit);
+    }
+
+    @Test
+    void disabledUserOrPrimaryDepartmentRejectsBothBatchQualificationPaths() {
+        var identity = mock(IdentityService.class);
+        var identityAuthorizer = mock(IdentityManagementAuthorizer.class);
+        when(identityAuthorizer.requireLogin()).thenReturn(ADMIN);
+        var realAuthorizer = new SpaceAuthorizer(identityAuthorizer, identity,
+                new PermissionService(mock(PermissionMapper.class), identity));
+        var subject = new SpaceAclService(mapper, realAuthorizer, audit);
+        for (String reason : List.of("用户已停用", "用户主部门已停用")) {
+            doThrow(IdentityException.disabled(reason)).when(identity).resolvePrincipal(ADMIN);
+            for (var permissions : List.of(List.of("view", "download"), List.of("view", "manage"))) {
+                assertThatThrownBy(() -> subject.grantBatch(SPACE,
+                        List.of(new SpaceAclPrincipal(PrincipalType.USER, 2)), permissions, "batch"))
+                        .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(403))
+                        .hasMessage(reason);
+            }
+        }
+        verifyNoInteractions(mapper, audit);
+    }
+
+    @Test
+    void batchReceiptAndAuditCountNewAndExistingEntriesAndBlockedPrincipals() throws Exception {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ADMIN);
+        when(mapper.grantAcl(anyLong(), anyShort(), anyLong(), anyString())).thenReturn(1);
+        when(mapper.countAcl(SPACE, PrincipalType.DEPT.code(), 2, "view")).thenReturn(1L);
+        when(mapper.countAcl(eq(SPACE), eq(PrincipalType.USER.code()), eq(4L), anyString())).thenReturn(1L);
+        when(mapper.userIdsForPrincipal(PrincipalType.DEPT.code(), 2)).thenReturn(List.of(20L));
+        when(mapper.userIdsForPrincipal(PrincipalType.DEPT.code(), 3)).thenReturn(List.of(30L));
+        when(mapper.findUserClearance(20)).thenReturn((short) 1);
+        when(mapper.findUserClearance(30)).thenReturn((short) 1);
+        when(mapper.countDocumentsAboveClearance(SPACE, (short) 1)).thenReturn(2L);
+        var result = service.grantBatch(SPACE, List.of(new SpaceAclPrincipal(PrincipalType.DEPT, 2),
+                        new SpaceAclPrincipal(PrincipalType.DEPT, 3), new SpaceAclPrincipal(PrincipalType.USER, 4)),
+                List.of("view", "download"), "batch");
+        assertThat(result.spaceId()).isEqualTo(SPACE);
+        assertThat(result.replayed()).isFalse();
+        assertThat(result.items()).containsExactly(
+                new SpaceAclBatchGrantResult.Item(PrincipalType.DEPT, 2, "view", true),
+                new SpaceAclBatchGrantResult.Item(PrincipalType.DEPT, 2, "download", false),
+                new SpaceAclBatchGrantResult.Item(PrincipalType.DEPT, 3, "view", false),
+                new SpaceAclBatchGrantResult.Item(PrincipalType.DEPT, 3, "download", false),
+                new SpaceAclBatchGrantResult.Item(PrincipalType.USER, 4, "view", true),
+                new SpaceAclBatchGrantResult.Item(PrincipalType.USER, 4, "download", true));
+        assertThat(result.grantedCount()).isEqualTo(3);
+        assertThat(result.alreadyGrantedCount()).isEqualTo(3);
+        assertThat(result.clearanceBlockedPrincipalCount()).isEqualTo(2);
+        verify(mapper, times(3)).grantAcl(anyLong(), anyShort(), anyLong(), anyString());
+        verify(mapper).userIdsForPrincipal(PrincipalType.DEPT.code(), 2);
+        verify(mapper).userIdsForPrincipal(PrincipalType.DEPT.code(), 3);
+        verify(mapper, never()).userIdsForPrincipal(PrincipalType.USER.code(), 4);
+        var after = ArgumentCaptor.forClass(String.class);
+        verify(audit).success(eq(AuditScope.SPACE_ACL_BATCH_GRANT), eq("batch"), eq(ADMIN), eq(SPACE),
+                eq("batch-grant"), eq("{}"), after.capture());
+        var json = new ObjectMapper();
+        var snapshot = json.readTree(after.getValue());
+        assertThat(snapshot.size()).isEqualTo(5);
+        assertThat(snapshot.get("items")).isEqualTo(json.readTree(json.writeValueAsString(result.items())));
+        assertThat(snapshot.get("spaceId").longValue()).isEqualTo(SPACE);
+        assertThat(snapshot.get("grantedCount").longValue()).isEqualTo(3);
+        assertThat(snapshot.get("alreadyGrantedCount").longValue()).isEqualTo(3);
+        assertThat(snapshot.get("clearanceBlockedPrincipalCount").longValue()).isEqualTo(2);
+        verify(authorizer, never()).requireRoleReference(anyLong());
+    }
+
+    @Test
+    void batchAtMaximumSizeAcceptsAllSixBitsAndOnlyReadsClearance() {
+        when(authorizer.requireGrantManage()).thenReturn(ADMIN);
+        when(mapper.grantAcl(anyLong(), anyShort(), anyLong(), anyString())).thenReturn(1);
+        when(mapper.userIdsForPrincipal(anyShort(), anyLong())).thenReturn(List.of(77L));
+        when(mapper.findUserClearance(77)).thenReturn((short) 2);
+        var principals = LongStream.rangeClosed(1, 50)
+                .mapToObj(id -> new SpaceAclPrincipal(PrincipalType.USER, id)).toList();
+        var result = service.grantBatch(SPACE, principals,
+                List.of("view", "download", "edit", "review", "comment", "manage"), "max-batch");
+        assertThat(result.items()).hasSize(300);
+        assertThat(result.grantedCount()).isEqualTo(300);
+        verify(authorizer).requireGrantManage();
+        verify(authorizer, never()).requireSpaceManager(anyLong());
+        verify(mapper, times(300)).countAcl(anyLong(), anyShort(), anyLong(), anyString());
+        verify(mapper, times(300)).grantAcl(anyLong(), anyShort(), anyLong(), anyString());
+        verify(mapper, times(50)).userIdsForPrincipal(anyShort(), anyLong());
+        verify(mapper, times(50)).findUserClearance(77);
+        verify(mapper, times(50)).countDocumentsAboveClearance(SPACE, (short) 2);
+        verifyNoMoreInteractions(mapper);
+    }
+
+    @Test
+    void batchReplayRejectsOtherOrMissingActorAndSpaceBeforeReadingSnapshot() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ADMIN);
+        Long[][] bindings = {
+                {ADMIN + 1, SPACE}, {ADMIN, SPACE + 1}, {ADMIN + 1, SPACE + 1},
+                {null, SPACE}, {ADMIN, null}
+        };
+        for (Long[] binding : bindings) {
+            when(audit.existing(AuditScope.SPACE_ACL_BATCH_GRANT, "bound-batch")).thenReturn(
+                    new IdentityAuditRecord(1L, UUID.randomUUID(), "SPACE_ACL_BATCH_GRANT", "bound-batch",
+                            binding[0], "space-acl", binding[1], "batch-grant", "SUCCESS", "{}",
+                            "unreadable snapshot", null, Instant.EPOCH));
+            assertThatThrownBy(() -> service.grantBatch(SPACE,
+                    List.of(new SpaceAclPrincipal(PrincipalType.ROLE, 99)), List.of("view"), "bound-batch"))
+                    .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(409))
+                    .hasMessage("请求标识已用于不同操作");
+        }
+        verify(authorizer, times(bindings.length)).requireSpaceManager(SPACE);
+        verifyNoMoreInteractions(authorizer);
+        verify(audit, times(bindings.length)).existing(AuditScope.SPACE_ACL_BATCH_GRANT, "bound-batch");
+        verifyNoMoreInteractions(audit);
+        verifyNoInteractions(mapper);
+    }
+
+    @Test
+    void batchReplayRejectsSnapshotForAnotherSpaceEvenWhenAuditBindingMatches() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ADMIN);
+        String snapshot = """
+                {"spaceId":2,"items":[{"principalType":"USER","principalId":999,"permission":"manage","alreadyGranted":false}],
+                 "grantedCount":1,"alreadyGrantedCount":0,"clearanceBlockedPrincipalCount":0}
+                """;
+        when(audit.existing(AuditScope.SPACE_ACL_BATCH_GRANT, "bound-batch")).thenReturn(
+                new IdentityAuditRecord(1L, UUID.randomUUID(), "SPACE_ACL_BATCH_GRANT", "bound-batch",
+                        ADMIN, "space-acl", SPACE, "batch-grant", "SUCCESS", "{}", snapshot, null, Instant.EPOCH));
+        assertThatThrownBy(() -> service.grantBatch(SPACE,
+                List.of(new SpaceAclPrincipal(PrincipalType.USER, 2)), List.of("view"), "bound-batch"))
+                .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(409))
+                .hasMessage("请求标识已用于不同操作");
+        verify(audit).existing(AuditScope.SPACE_ACL_BATCH_GRANT, "bound-batch");
+        verifyNoMoreInteractions(audit);
+        verifyNoInteractions(mapper);
+    }
+
+    @Test
+    void replayRebuildsFirstReceiptWithoutReadingOrWritingAclOrClearance() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ADMIN);
+        when(mapper.grantAcl(anyLong(), anyShort(), anyLong(), anyString())).thenReturn(1);
+        when(mapper.countAcl(SPACE, PrincipalType.USER.code(), Long.MAX_VALUE, "view")).thenReturn(1L);
+        when(mapper.userIdsForPrincipal(PrincipalType.USER.code(), Long.MAX_VALUE)).thenReturn(List.of(2L));
+        when(mapper.findUserClearance(2)).thenReturn((short) 1);
+        when(mapper.countDocumentsAboveClearance(SPACE, (short) 1)).thenReturn(2L);
+        var principals = List.of(new SpaceAclPrincipal(PrincipalType.USER, Long.MAX_VALUE));
+        var permissions = List.of("view", "download");
+        var first = service.grantBatch(SPACE, principals, permissions, "replay-batch");
+        var after = ArgumentCaptor.forClass(String.class);
+        verify(audit).success(eq(AuditScope.SPACE_ACL_BATCH_GRANT), eq("replay-batch"), eq(ADMIN), eq(SPACE),
+                eq("batch-grant"), eq("{}"), after.capture());
+        when(audit.existing(AuditScope.SPACE_ACL_BATCH_GRANT, "replay-batch")).thenReturn(new IdentityAuditRecord(
+                1L, UUID.randomUUID(), "SPACE_ACL_BATCH_GRANT", "replay-batch", ADMIN, "space-acl", SPACE,
+                "batch-grant", "SUCCESS", "{}", after.getValue(), null, Instant.EPOCH));
+        clearInvocations(mapper, audit);
+        var replay = service.grantBatch(SPACE, principals, permissions, "replay-batch");
+        assertThat(replay).isEqualTo(new SpaceAclBatchGrantResult(first.spaceId(), first.items(), first.grantedCount(),
+                first.alreadyGrantedCount(), first.clearanceBlockedPrincipalCount(), true));
+        verifyNoInteractions(mapper);
+        verify(audit).existing(AuditScope.SPACE_ACL_BATCH_GRANT, "replay-batch");
+        verifyNoMoreInteractions(audit);
     }
 }

@@ -2,8 +2,37 @@ import { describe, expect, it } from 'vitest';
 import { decodeJson, encodeJson, readJson } from '../api';
 import { json } from '../test/fixtures';
 import { spacePaths, spaceWrites } from './spaceApi';
-import type { AdminSpace, DeleteDocumentResult, GrantResult, RelocationResult, SecurityResult } from './spaceApi';
+import type { AclPermission, AdminSpace, BatchGrantResult, DeleteDocumentResult, GrantResult, RelocationResult, SecurityResult } from './spaceApi';
 describe('空间与文档管理契约', () => {
+  it('批量授予构造单个意图，主体与权限去重，大整数不失真', async () => {
+    const user = { principalType: 'USER' as const, principalId: '9223372036854775807', label: '甲' };
+    const role = { ...user, principalType: 'ROLE' as const };
+    const intent = spaceWrites.grantBatch('9007199254740993', [user, role, user], ['view', 'download', 'view']);
+    expect(intent).toEqual({ method: 'POST', path: '/api/admin/spaces/9007199254740993/acl/batch', body: {
+      principals: [{ principalType: 'USER', principalId: 9223372036854775807n }, { principalType: 'ROLE', principalId: 9223372036854775807n }],
+      permissions: ['view', 'download'],
+    } });
+    expect(encodeJson(intent.body)).toContain('"principalId":9223372036854775807');
+    expect(intent.body).not.toHaveProperty('requestId');
+    const result = await readJson<BatchGrantResult>(json({ spaceId: 9007199254740993n,
+      items: [{ principalType: 'USER', principalId: 9223372036854775807n, permission: 'view', alreadyGranted: true }],
+      grantedCount: 0, alreadyGrantedCount: 1, clearanceBlockedPrincipalCount: 0, replayed: true }));
+    expect(result).toMatchObject({ spaceId: '9007199254740993', grantedCount: 0, alreadyGrantedCount: 1, replayed: true });
+    expect(result.items[0]).toEqual({ principalType: 'USER', principalId: '9223372036854775807', permission: 'view', alreadyGranted: true });
+  });
+  it('批量去重后检查 50/6 上限，空列表与无效权限在发送前拒绝', () => {
+    const principals = Array.from({ length: 51 }, (_, index) => ({ principalType: 'DEPT' as const, principalId: String(index + 1), label: '部门' }));
+    const bits: AclPermission[] = ['view', 'download', 'edit', 'review', 'comment', 'manage'];
+    expect(() => spaceWrites.grantBatch('7', principals, ['view'])).toThrow('50');
+    expect(() => spaceWrites.grantBatch('7', principals.slice(0, 50), bits)).not.toThrow();
+    expect(() => spaceWrites.grantBatch('7', Array(51).fill(principals[0]), [...bits, 'view'])).not.toThrow();
+    expect(() => spaceWrites.grantBatch('7', [], ['view'])).toThrow('50');
+    expect(() => spaceWrites.grantBatch('7', [principals[0]], [])).toThrow('6');
+    expect(() => spaceWrites.grantBatch('7', [principals[0]], [...bits, 'share'] as AclPermission[])).toThrow('6');
+    expect(() => spaceWrites.grantBatch('7', [principals[0]], ['share'] as unknown as AclPermission[])).toThrow('不支持');
+    expect(() => spaceWrites.grantBatch('0', [principals[0]], ['view'])).toThrow();
+    expect(() => spaceWrites.grantBatch('7', [{ ...principals[0], principalId: '9223372036854775808' }], ['view'])).toThrow();
+  });
   it('读取字段、空响应及大整数不失真', async () => {
     const spaces = await readJson<AdminSpace[]>(json([{ spaceId: 9007199254740993n, version: 9007199254740995n, code: 's', manageable: true }]));
     expect(spaces[0]).toMatchObject({ spaceId: '9007199254740993', version: 9007199254740995n, manageable: true });

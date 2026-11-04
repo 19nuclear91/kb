@@ -1,21 +1,53 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button } from 'antd';
+import { ApiError, decodeJson, encodeJson } from '../api';
 import { useSession } from '../SessionProvider';
 import { useDocumentOperations } from '../documents/OperationContext';
 import { perm, useAdminAccess } from './access';
 import { useAdminResource } from './hooks';
+import { adminWrite } from './api';
+import { MultiPrincipalPicker } from './MultiPrincipalPicker';
 import { PrincipalPicker } from './PrincipalPicker';
-import { spacePaths, spaceWrites, type Acl, type AclPermission, type GrantResult, type Principal, type ResourceKind } from './spaceApi';
-import { fieldValue, ResourceStatus, ResourceWriteDialog, useResourceReceipt } from './spaceUi';
+import { spacePaths, spaceWrites, type Acl, type AclPermission, type BatchGrantResult, type GrantResult, type Principal, type ResourceKind } from './spaceApi';
+import { fieldValue, ResourceStatus, ResourceWriteDialog, useResourceNotice, useResourceReceipt, useResourceWriteBindings } from './spaceUi';
 
-export function AclPanel({ kind, resourceId, archived = false, onChanged, onData }: {
+type AclPanelProps = {
   kind: ResourceKind; resourceId: string; archived?: boolean; onChanged: () => void; onData?: (items: Acl[] | undefined) => void;
-}) {
-  const { session } = useSession(), access = useAdminAccess(), { state: documentState } = useDocumentOperations();
+};
+type BatchDraft = { principals: Principal[]; permissions: AclPermission[]; rejected?: string; unsupported?: boolean };
+
+const batchWrite: typeof adminWrite = async (session, intent, requestId, signal) => {
+  try { return await adminWrite(session, intent, requestId, signal); }
+  catch (error) {
+    if (error instanceof ApiError && (error.status === 404 || error.status === 405)) error.message = '当前服务不支持批量授予';
+    throw error;
+  }
+};
+
+export function AclPanel(props: AclPanelProps) {
+  const { state } = useSession();
+  return <AclPanelContent key={`${state.epoch}:${props.kind}:${props.resourceId}`} {...props} />;
+}
+
+function AclPanelContent({ kind, resourceId, archived = false, onChanged, onData }: AclPanelProps) {
+  const { session, state } = useSession(), access = useAdminAccess(), { state: documentState } = useDocumentOperations();
   const query = useAdminResource<Acl[]>(signal => session.json(spacePaths.acl(kind, resourceId), { signal }), `${kind}:${resourceId}`);
   const [dialog, setDialog] = useState<'grant' | Acl | null>(null), [principal, setPrincipal] = useState<Principal | null>(null);
   const [receipt, setReceipt] = useResourceReceipt(`acl:${kind}:${resourceId}`);
+  const [batchJson, setBatchJson] = useResourceReceipt(`acl-batch:${kind}:${resourceId}`);
+  const batchReceipt = batchJson ? decodeJson<BatchGrantResult>(batchJson) : null;
+  const batchBindings = useResourceWriteBindings(), batchScope = `spaces:${resourceId}:grant-batch`;
+  const pendingBatch = kind === 'spaces' && batchBindings.has(`${state.epoch}|${batchScope}`);
+  // 403 重核会卸载页面；草稿按身份和空间保存在当前内存，恢复后仍可修改重提。
+  const [draftJson, setDraftJson] = useResourceNotice(`acl-batch-draft:${kind}:${resourceId}`);
+  const draft: BatchDraft = draftJson ? decodeJson<BatchDraft>(draftJson) : { principals: [], permissions: ['view'] };
+  const { principals, permissions, unsupported: batchUnsupported } = draft;
+  const saveDraft = (next: BatchDraft) => setDraftJson(encodeJson(next));
+  const setPrincipals = (next: Principal[]) => saveDraft({ ...draft, principals: next });
+  const setPermissions = (next: AclPermission[]) => saveDraft({ ...draft, permissions: next });
   const manage = kind === 'spaces' && access.has(perm.grantManage);
+  const selectedPermissions = permissions.filter(permission => permission !== 'manage' || manage);
+  const total = principals.length * selectedPermissions.length;
   const refresh = () => query.reload();
   const confirmed = query.loading || query.error ? undefined : query.data;
   useEffect(() => { onData?.(confirmed); }, [confirmed, onData]);
@@ -23,21 +55,48 @@ export function AclPanel({ kind, resourceId, archived = false, onChanged, onData
   return <section className="panel"><h2>{kind === 'spaces' ? '空间授权' : '文档例外授权'}</h2>
     {kind === 'documents' && <p>例外授权只扩权，不收紧空间授权。{archived && '所属空间已归档，取消归档前例外不会使文档可见。'}</p>}
     <ResourceStatus {...query} retry={query.reload} />{receipt && <Alert type="success" title={receipt} />}
-    {!query.loading && !query.error && query.data && <><Button disabled={documentState.exclusive} onClick={() => { setPrincipal(null); setDialog('grant'); }}>授予授权</Button>
+    {batchReceipt && <div>
+      <Alert type="success" title={`新写入 ${batchReceipt.grantedCount} 条，已存在 ${batchReceipt.alreadyGrantedCount} 条${batchReceipt.replayed ? '；已重放首次结果' : ''}`} />
+      {batchReceipt.clearanceBlockedPrincipalCount > 0 && <p>有 {String(batchReceipt.clearanceBlockedPrincipalCount)} 个主体因密级当前不能看到受限文档。授权不修改主体密级。</p>}
+      <ul aria-label="批量授予明细">{batchReceipt.items.map(item => <li key={`${item.principalType}:${item.principalId}:${item.permission}`}>
+        {item.principalType} · {item.principalId} · {item.permission} · {item.alreadyGranted ? '已存在' : '新增'}
+      </li>)}</ul>
+    </div>}
+    {draft.rejected && dialog !== 'grant' && <Alert type="warning" title={draft.rejected} />}
+    {pendingBatch && dialog !== 'grant' && <Alert type="warning" title="有批量授权结果待核对，请打开授予面板继续核对。" />}
+    {!query.loading && !query.error && query.data && <><Button disabled={documentState.exclusive || batchUnsupported} onClick={() => { setPrincipal(null); setDialog('grant'); if (kind === 'spaces') saveDraft({ ...draft, rejected: undefined }); }}>授予授权</Button>
       <ul className="admin-list">{query.data.map(acl => <li key={acl.id}><span>{acl.principalType} · {acl.principalName} · {acl.permission}</span>
         {(acl.permission !== 'manage' || manage) && <Button aria-label={`撤销 ${acl.principalName} ${acl.permission}`} disabled={documentState.exclusive} onClick={() => setDialog(acl)}>撤销</Button>}</li>)}</ul></>}
-    {dialog === 'grant' && <ResourceWriteDialog<GrantResult> title="授予授权" scope={`${kind}:${resourceId}:grant`} onClose={() => setDialog(null)} onRefresh={refresh} disabled={!principal || query.loading || !!query.error}
-      build={data => spaceWrites.grant(kind, resourceId, principal!, fieldValue(data, 'permission') as AclPermission)}
-      onDone={result => { setReceipt(`${result.alreadyGranted ? '授权已存在' : '授权已授予'}；因密级当前不生效的主体数量：${result.clearanceBlockedPrincipalCount}。授权不修改主体密级。`); setDialog(null); refresh(); onChanged(); }}>
-      <PrincipalPicker kind={kind} resourceId={resourceId} onChange={setPrincipal} />
-      <label>权限位<select name="permission" aria-label="权限位"><option value="view">view</option><option value="download">download</option><option value="edit">edit</option>{kind === 'spaces' && <option value="review">review</option>}<option value="comment">comment</option>{manage && <option value="manage">manage</option>}</select></label>
-      {kind === 'spaces' && <p>review 仅加入空间审核人池，不自动授予 view、download、足够密级或自审资格。</p>}
+    {dialog === 'grant' && kind === 'spaces' && <ResourceWriteDialog<BatchGrantResult> title="批量授予空间授权" scope={batchScope} bindings={batchBindings}
+      onClose={() => setDialog(null)} onRefresh={refresh} execute={batchWrite}
+      disabled={total === 0 || principals.length > 50 || query.loading || !!query.error || batchUnsupported}
+      retryDisabled={query.loading || !!query.error || batchUnsupported}
+      build={() => spaceWrites.grantBatch(resourceId, principals, selectedPermissions)}
+      onRejected={error => { saveDraft({ ...draft, rejected: error.message, unsupported: error.status === 404 || error.status === 405 }); if (error.status === 409) refresh(); }}
+      onDone={result => { setReceipt(''); setBatchJson(encodeJson(result)); setDialog(null); setDraftJson(''); refresh(); onChanged(); }}>
+      <MultiPrincipalPicker resourceId={resourceId} selected={principals} onChange={setPrincipals} />
+      <fieldset aria-label="权限位"><legend>权限位（可多选）</legend>
+        {(['view', 'download', 'edit', 'review', 'comment', ...(manage ? ['manage'] : [])] as AclPermission[]).map(permission =>
+          <label key={permission} style={{ marginRight: 12 }}><input type="checkbox" checked={selectedPermissions.includes(permission)}
+            onChange={event => setPermissions(event.target.checked ? [...selectedPermissions, permission] : selectedPermissions.filter(bit => bit !== permission))} />{permission}</label>)}
+      </fieldset>
+      <p aria-label="批量确认摘要">{principals.length} 个主体、{selectedPermissions.length} 个权限位、共 {total} 条授权。</p>
+      <p>已存在的授权将被跳过，不视为失败。</p>
+      {principals.length > 50 && <Alert type="warning" title="主体上限为 50，请移除多余主体后提交。" />}
+      <p>review 仅加入空间审核人池，不自动授予 view、download、足够密级或自审资格。</p>
       <p>comment 仅允许在可查看的已发布版本上发表评论与回复，不授予 view、足够密级或审核资格，也不会自动补授给已有授权。</p>
       {manage && <p>选择 manage 将委派空间管理资格，请在提交前确认。</p>}
     </ResourceWriteDialog>}
+    {dialog === 'grant' && kind === 'documents' && <ResourceWriteDialog<GrantResult> title="授予授权" scope={`${kind}:${resourceId}:grant`} onClose={() => setDialog(null)} onRefresh={refresh} disabled={!principal || query.loading || !!query.error}
+      build={data => spaceWrites.grant(kind, resourceId, principal!, fieldValue(data, 'permission') as AclPermission)}
+      onDone={result => { setReceipt(`${result.alreadyGranted ? '授权已存在' : '授权已授予'}；因密级当前不生效的主体数量：${result.clearanceBlockedPrincipalCount}。授权不修改主体密级。`); setDialog(null); refresh(); onChanged(); }}>
+      <PrincipalPicker kind={kind} resourceId={resourceId} onChange={setPrincipal} />
+      <label>权限位<select name="permission" aria-label="权限位"><option value="view">view</option><option value="download">download</option><option value="edit">edit</option><option value="comment">comment</option></select></label>
+      <p>comment 仅允许在可查看的已发布版本上发表评论与回复，不授予 view、足够密级或审核资格，也不会自动补授给已有授权。</p>
+    </ResourceWriteDialog>}
     {dialog && dialog !== 'grant' && (dialog.permission !== 'manage' || manage) && <ResourceWriteDialog title="撤销授权" scope={`${kind}:${resourceId}:revoke:${dialog.id}`} onClose={() => setDialog(null)} onRefresh={refresh}
       build={() => spaceWrites.revoke(kind, resourceId, { principalType: dialog.principalType, principalId: dialog.principalId, label: dialog.principalName }, dialog.permission)}
-      onDone={() => { setReceipt('撤销请求已确认；撤销不存在的授权同样成功，不代表该授权此前一定存在。'); setDialog(null); refresh(); onChanged(); }}>
+      onDone={() => { setBatchJson(''); setReceipt('撤销请求已确认；撤销不存在的授权同样成功，不代表该授权此前一定存在。'); setDialog(null); refresh(); onChanged(); }}>
       <p>确认撤销 {dialog.principalName} 的 {dialog.permission}？{dialog.permission === 'manage' && '撤销后相关主体可能失去空间管理资格。'}</p>
     </ResourceWriteDialog>}
   </section>;
