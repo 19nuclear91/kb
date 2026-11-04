@@ -146,6 +146,23 @@ class AuditSummaryProjectorTest {
     }
 
     @Test
+    void commentPermissionIsProjectedForSpaceAndDocumentAclEvents() {
+        var projector = new AuditSummaryProjector();
+        for (String scope : List.of("SPACE_ACL_GRANT", "SPACE_ACL_REVOKE")) {
+            var detail = projector.detail(row(scope, "{}", "{\"spaceId\":2,\"principalKey\":\"3:4\",\"permission\":\"comment\"}"));
+            assertThat(detail.summaryAvailable()).as(scope).isTrue();
+            assertThat(detail.changes()).as(scope).contains(new Change("permission", null, "comment"));
+        }
+        for (String scope : List.of("DOC_ACL_GRANT", "DOC_ACL_REVOKE")) {
+            var detail = projector.detail(row(scope, "{}", "{\"documentId\":2,\"principalKey\":\"1:3\",\"permission\":\"comment\"}"));
+            assertThat(detail.summaryAvailable()).as(scope).isTrue();
+            assertThat(detail.changes()).as(scope).contains(new Change("permission", null, "comment"));
+        }
+        assertThat(projector.detail(row("SPACE_ACL_GRANT", "{}", "{\"spaceId\":2,\"principalKey\":\"1:3\",\"permission\":\"share\"}"))
+                .summaryAvailable()).isFalse();
+    }
+
+    @Test
     void metadataCollectionsAreBoundedExactAndDoNotExposeContent() throws Exception {
         var projector = new AuditSummaryProjector();
         var detail = projector.detail(row("DOCUMENT_METADATA_UPDATE",

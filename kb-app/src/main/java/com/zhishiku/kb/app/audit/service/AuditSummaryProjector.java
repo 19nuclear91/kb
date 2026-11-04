@@ -189,7 +189,7 @@ public class AuditSummaryProjector {
             String text = value.textValue();
             if (kind == Kind.PUBLICATION_POLICY && Set.of("AUTO", "REVIEW_REQUIRED").contains(text)) return text;
             if (kind == Kind.FUNCTIONAL_PERMISSION && PERMISSIONS.contains(text)) return text;
-            if (kind == Kind.ACL_PERMISSION && Set.of("view", "download", "edit", "review", "manage").contains(text)) return text;
+            if (kind == Kind.ACL_PERMISSION && Set.of("view", "download", "edit", "review", "comment", "manage").contains(text)) return text;
             if (kind == Kind.DEAD_LETTER_STATUS && Set.of("OPEN", "REPLAYED", "RESOLVED").contains(text)) return text;
             if (kind == Kind.SSO_PLATFORM && SsoSettings.PLATFORMS.contains(text)) return text;
             if (kind == Kind.SSO_RESULT && SsoAudit.RESULTS.contains(text)) return text;

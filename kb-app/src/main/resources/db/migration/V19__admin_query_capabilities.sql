@@ -15,7 +15,7 @@ CREATE INDEX idx_identity_audit_request_page
 CREATE FUNCTION kb_audit_login_username(state jsonb) RETURNS text
     LANGUAGE sql IMMUTABLE STRICT AS $$
 SELECT CASE
-           WHEN jsonb_typeof(state - > 'username') = 'string'
+           WHEN jsonb_typeof(state -> 'username') = 'string'
                AND length(state ->> 'username') BETWEEN 1 AND 128
                THEN state ->> 'username'
            ELSE NULL
