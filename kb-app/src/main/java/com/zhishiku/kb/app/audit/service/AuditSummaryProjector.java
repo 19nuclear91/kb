@@ -120,6 +120,7 @@ public class AuditSummaryProjector {
             case DOCUMENT_RELOCATE ->
                     fields("spaceId", Kind.ID, "clearedExceptionCount", Kind.COUNT, "clearanceBlockedPrincipalCount",
                             Kind.COUNT, "categoryId", Kind.NULLABLE_ID, "metadataVersion", Kind.COUNT);
+            case DOCUMENT_ADMIN_DELETE -> fields("spaceId", Kind.ID, "spaceArchived", Kind.BOOL);
             case DOCUMENT_METADATA_UPDATE -> fields("categoryId", Kind.NULLABLE_ID, "tagIds", Kind.IDS,
                     "metadataVersion", Kind.COUNT, "changedFields", Kind.CHANGED_FIELDS);
             case DOCUMENT_CATEGORY_CREATE, DOCUMENT_CATEGORY_UPDATE, DOCUMENT_CATEGORY_DELETE ->

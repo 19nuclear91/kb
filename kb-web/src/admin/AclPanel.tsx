@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button } from 'antd';
 import { useSession } from '../SessionProvider';
+import { useDocumentOperations } from '../documents/OperationContext';
 import { perm, useAdminAccess } from './access';
 import { useAdminResource } from './hooks';
 import { PrincipalPicker } from './PrincipalPicker';
@@ -10,7 +11,7 @@ import { fieldValue, ResourceStatus, ResourceWriteDialog, useResourceReceipt } f
 export function AclPanel({ kind, resourceId, archived = false, onChanged, onData }: {
   kind: ResourceKind; resourceId: string; archived?: boolean; onChanged: () => void; onData?: (items: Acl[] | undefined) => void;
 }) {
-  const { session } = useSession(), access = useAdminAccess();
+  const { session } = useSession(), access = useAdminAccess(), { state: documentState } = useDocumentOperations();
   const query = useAdminResource<Acl[]>(signal => session.json(spacePaths.acl(kind, resourceId), { signal }), `${kind}:${resourceId}`);
   const [dialog, setDialog] = useState<'grant' | Acl | null>(null), [principal, setPrincipal] = useState<Principal | null>(null);
   const [receipt, setReceipt] = useResourceReceipt(`acl:${kind}:${resourceId}`);
@@ -22,9 +23,9 @@ export function AclPanel({ kind, resourceId, archived = false, onChanged, onData
   return <section className="panel"><h2>{kind === 'spaces' ? '空间授权' : '文档例外授权'}</h2>
     {kind === 'documents' && <p>例外授权只扩权，不收紧空间授权。{archived && '所属空间已归档，取消归档前例外不会使文档可见。'}</p>}
     <ResourceStatus {...query} retry={query.reload} />{receipt && <Alert type="success" title={receipt} />}
-    {!query.loading && !query.error && query.data && <><Button onClick={() => { setPrincipal(null); setDialog('grant'); }}>授予授权</Button>
+    {!query.loading && !query.error && query.data && <><Button disabled={documentState.exclusive} onClick={() => { setPrincipal(null); setDialog('grant'); }}>授予授权</Button>
       <ul className="admin-list">{query.data.map(acl => <li key={acl.id}><span>{acl.principalType} · {acl.principalName} · {acl.permission}</span>
-        {(acl.permission !== 'manage' || manage) && <Button aria-label={`撤销 ${acl.principalName} ${acl.permission}`} onClick={() => setDialog(acl)}>撤销</Button>}</li>)}</ul></>}
+        {(acl.permission !== 'manage' || manage) && <Button aria-label={`撤销 ${acl.principalName} ${acl.permission}`} disabled={documentState.exclusive} onClick={() => setDialog(acl)}>撤销</Button>}</li>)}</ul></>}
     {dialog === 'grant' && <ResourceWriteDialog<GrantResult> title="授予授权" scope={`${kind}:${resourceId}:grant`} onClose={() => setDialog(null)} onRefresh={refresh} disabled={!principal || query.loading || !!query.error}
       build={data => spaceWrites.grant(kind, resourceId, principal!, fieldValue(data, 'permission') as AclPermission)}
       onDone={result => { setReceipt(`${result.alreadyGranted ? '授权已存在' : '授权已授予'}；因密级当前不生效的主体数量：${result.clearanceBlockedPrincipalCount}。授权不修改主体密级。`); setDialog(null); refresh(); onChanged(); }}>

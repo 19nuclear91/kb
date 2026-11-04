@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeJson, encodeJson, readJson } from '../api';
 import { json } from '../test/fixtures';
 import { spacePaths, spaceWrites } from './spaceApi';
-import type { AdminSpace, GrantResult, RelocationResult, SecurityResult } from './spaceApi';
+import type { AdminSpace, DeleteDocumentResult, GrantResult, RelocationResult, SecurityResult } from './spaceApi';
 describe('空间与文档管理契约', () => {
   it('读取字段、空响应及大整数不失真', async () => {
     const spaces = await readJson<AdminSpace[]>(json([{ spaceId: 9007199254740993n, version: 9007199254740995n, code: 's', manageable: true }]));
@@ -43,5 +43,14 @@ describe('空间与文档管理契约', () => {
     expect(() => spaceWrites.security('8', 2, 0, '😀'.repeat(501))).toThrow();
     expect(() => spaceWrites.create('', '空间', '')).toThrow(); expect(() => spaceWrites.create('x'.repeat(65), '空间', '')).toThrow();
     expect(() => spaceWrites.relocate('8', '7', '7', null, 0)).toThrow();
+  });
+  it('管理端删除文档：DELETE 到文档资源、无请求体、回执精确整数', async () => {
+    const intent = spaceWrites.deleteDocument('8');
+    expect(intent).toEqual({ method: 'DELETE', path: '/api/admin/documents/8' });
+    expect(intent.body).toBeUndefined();
+    expect(intent).not.toHaveProperty('body.requestId');
+    for (const bad of ['0', '-1', 'abc', '', '9223372036854775808']) expect(() => spaceWrites.deleteDocument(bad)).toThrow();
+    const receipt = await readJson<DeleteDocumentResult>(json({ documentId: 9007199254740993n, spaceId: 9007199254740995n, replayed: true }));
+    expect(receipt).toEqual({ documentId: '9007199254740993', spaceId: '9007199254740995', replayed: true });
   });
 });

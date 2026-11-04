@@ -18,9 +18,11 @@ import com.zhishiku.kb.app.space.service.SpaceWriteService;
 import com.zhishiku.kb.app.space.service.SpaceAclService;
 import com.zhishiku.kb.app.space.service.SpaceAuthorizer;
 import com.zhishiku.kb.app.space.service.DocumentAclService;
+import com.zhishiku.kb.app.space.service.DocumentAdminDeletionService;
 import com.zhishiku.kb.app.space.service.DocumentRelocationService;
 import com.zhishiku.kb.app.space.web.SpaceController;
 import com.zhishiku.kb.app.space.web.DocumentAclController;
+import com.zhishiku.kb.app.space.web.DocumentAdminDeletionController;
 import com.zhishiku.kb.app.space.web.DocumentRelocationController;
 import com.zhishiku.kb.app.document.service.DocumentSecurityLevelService;
 import com.zhishiku.kb.app.document.web.DocumentSecurityLevelController;
@@ -220,7 +222,7 @@ class IdentityManagementFeedbackTest {
 
     @Test
     void whitelistIsExactlyTheDesignedAdminWriteRoutes() {
-        assertThat(IdentityManagementFeedbackAdvice.WRITES).hasSize(26)
+        assertThat(IdentityManagementFeedbackAdvice.WRITES).hasSize(27)
                 .allSatisfy(route -> assertThat(route).matches("(POST|PATCH|PUT|DELETE) /api/admin/(identity/.+|spaces.*|documents/.+)"))
                 .noneMatch(route -> route.contains("external-identities"));
         assertThat(writes().map(Write::toString)).hasSize(15).doesNotHaveDuplicates();
@@ -441,6 +443,7 @@ class IdentityManagementFeedbackTest {
                 new Write("DELETE", "/api/admin/spaces/2/acl", acl),
                 new Write("POST", "/api/admin/documents/7/acl", acl),
                 new Write("DELETE", "/api/admin/documents/7/acl", acl),
+                new Write("DELETE", "/api/admin/documents/7", null),
                 new Write("PATCH", "/api/admin/documents/7/space", "{\"fromSpaceId\":2,\"toSpaceId\":3,\"targetCategoryId\":null,\"expectedMetadataVersion\":0}"),
                 new Write("PATCH", "/api/admin/documents/7/security-level", "{\"securityLevel\":2,\"securityVersion\":1,\"reason\":\"定级\"}"));
     }
@@ -500,6 +503,7 @@ class IdentityManagementFeedbackTest {
         var documentAcls = mock(DocumentAclService.class);
         var relocate = mock(DocumentRelocationService.class);
         var security = mock(DocumentSecurityLevelService.class);
+        var deletions = mock(DocumentAdminDeletionService.class);
         when(authorizer.requireEnabledUser()).thenReturn(1L);
         when(query.list(anyLong())).thenThrow(error);
         when(query.get(anyLong(), anyLong())).thenThrow(error);
@@ -517,8 +521,10 @@ class IdentityManagementFeedbackTest {
         when(relocate.relocate(anyLong(), anyLong(), anyLong(), any(), any(), anyString(), any(), anyLong())).thenThrow(error);
         when(security.get(anyLong())).thenThrow(error);
         when(security.change(anyLong(), any(), any())).thenThrow(error);
+        when(deletions.delete(anyLong(), anyString())).thenThrow(error);
         return mvc(new SpaceController(query, writes, acls, authorizer), new DocumentAclController(documentAcls),
-                new DocumentRelocationController(relocate), new DocumentSecurityLevelController(security));
+                new DocumentRelocationController(relocate), new DocumentSecurityLevelController(security),
+                new DocumentAdminDeletionController(deletions));
     }
 
     @RestController

@@ -9,6 +9,7 @@ import com.zhishiku.kb.app.embedding.model.EmbeddingProfileView;
 import com.zhishiku.kb.app.embedding.model.EmbeddingReceipt;
 import com.zhishiku.kb.app.embedding.model.EmbeddingViews;
 import com.zhishiku.kb.app.search.embedding.EmbeddingInstanceReadiness;
+import com.zhishiku.kb.app.space.model.DocumentAdminDeleteResult;
 import com.zhishiku.kb.common.embedding.EmbeddingProfile;
 import io.swagger.v3.core.converter.AnnotatedType;
 import io.swagger.v3.core.converter.ModelConverters;
@@ -39,7 +40,7 @@ class RecordOpenApiSchemaTest {
         for (Class<?> type : List.of(DocumentSecurityLevelChange.class, DocumentSecurityLevelResult.class,
                 DocumentSecurityLevelState.class, EmbeddingReceipt.class, EmbeddingViews.Profile.class,
                 EmbeddingViews.Status.class, EmbeddingViews.Run.class, EmbeddingInstanceReadiness.Snapshot.class,
-                EmbeddingProfileView.class)) {
+                EmbeddingProfileView.class, DocumentAdminDeleteResult.class)) {
             var resolved = ModelConverters.getInstance().resolveAsResolvedSchema(new AnnotatedType(type));
             assertThat(resolved.schema.getDescription()).as(type.getName()).isNotBlank();
             for (var component : type.getRecordComponents()) {

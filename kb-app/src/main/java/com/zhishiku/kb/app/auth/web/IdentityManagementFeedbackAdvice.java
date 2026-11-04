@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.zhishiku.kb.app.config.GlobalExceptionHandler;
 import com.zhishiku.kb.app.space.web.SpaceController;
 import com.zhishiku.kb.app.space.web.DocumentAclController;
+import com.zhishiku.kb.app.space.web.DocumentAdminDeletionController;
 import com.zhishiku.kb.app.space.web.DocumentRelocationController;
 import com.zhishiku.kb.app.document.web.DocumentSecurityLevelController;
 import com.zhishiku.kb.common.api.R;
@@ -30,8 +31,8 @@ import java.util.Set;
  */
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = {IdentityManagementController.class, RoleManagementController.class,
-        SpaceController.class, DocumentAclController.class, DocumentRelocationController.class,
-        DocumentSecurityLevelController.class})
+        SpaceController.class, DocumentAclController.class, DocumentAdminDeletionController.class,
+        DocumentRelocationController.class, DocumentSecurityLevelController.class})
 public class IdentityManagementFeedbackAdvice {
     private static final Logger log = LoggerFactory.getLogger(IdentityManagementFeedbackAdvice.class);
     private static final String PREFIX = "/api/admin/identity";
@@ -60,6 +61,7 @@ public class IdentityManagementFeedbackAdvice {
             "DELETE /api/admin/spaces/{spaceId}/acl",
             "POST /api/admin/documents/{documentId}/acl",
             "DELETE /api/admin/documents/{documentId}/acl",
+            "DELETE /api/admin/documents/{documentId}",
             "PATCH /api/admin/documents/{documentId}/space",
             "PATCH /api/admin/documents/{documentId}/security-level");
 

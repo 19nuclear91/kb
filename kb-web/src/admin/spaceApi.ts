@@ -16,6 +16,8 @@ export interface SecurityState { documentId: string; securityLevel: number; secu
 export interface SecurityResult extends SecurityState { previousSecurityLevel: number; previousSecurityVersion: Version; requestId: string; changedAt: string; replayed: boolean }
 export interface RelocationResult { documentId: string; fromSpaceId: string; toSpaceId: string; clearedExceptionCount: number; clearedExceptions: string[]; clearedExceptionsTruncated: boolean; clearanceBlockedPrincipalCount: number | bigint; replayed: boolean; targetCategoryId: string | null; metadataVersion: Version }
 export interface RelocationContext { documentId: string; fromSpaceId: string; metadataVersion: Version }
+/** 管理端删除回执只含定位字段：不含标题、文件名或正文。 */
+export interface DeleteDocumentResult { documentId: string; spaceId: string; replayed: boolean }
 export async function relocationContext(session: Session, id: string, signal?: AbortSignal): Promise<RelocationContext> {
   const value = await session.json<RelocationContext>(`${base}/documents/${positiveId(id)}/relocation-context`, { signal });
   try { if (value.documentId !== id) throw new Error(); positiveId(value.fromSpaceId); exactVersion(value.metadataVersion); }
@@ -76,6 +78,8 @@ export const spaceWrites = {
   update: (id: string, name: string, description: string, version: Version): WriteIntent => ({ method: 'PATCH', path: spacePaths.space(id), body: { ...metadata(name, description), version: exactVersion(version) } }),
   archive: (id: string, archived: boolean, version: Version): WriteIntent => ({ method: 'POST', path: `${spacePaths.space(id)}/${archived ? 'archive' : 'unarchive'}`, body: { version: exactVersion(version) } }),
   delete: (id: string): WriteIntent => ({ method: 'DELETE', path: spacePaths.space(id) }),
+  /** 管理端整文档删除：无请求体，请求标识只在 X-Request-Id；资格由服务端按当前所属空间 manage 判定。 */
+  deleteDocument: (id: string): WriteIntent => ({ method: 'DELETE', path: resource('documents', id) }),
   grant: (kind: ResourceKind, id: string, principal: Principal, permission: AclPermission): WriteIntent => ({ method: 'POST', path: spacePaths.acl(kind, id), body: aclBody(kind, principal, permission) }),
   revoke: (kind: ResourceKind, id: string, principal: Principal, permission: AclPermission): WriteIntent => ({ method: 'DELETE', path: spacePaths.acl(kind, id), body: aclBody(kind, principal, permission) }),
   relocate: (id: string, from: string, to: string, targetCategoryId: string | null, expectedMetadataVersion: Version): WriteIntent => {

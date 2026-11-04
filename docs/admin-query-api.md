@@ -87,11 +87,16 @@ permission。外部绑定及密码事件不提供可还原内容。原
 beforeState/afterState、reason、自由名称、provider、subject、密码、哈希、token、标题、文件名、正文、对象键和远程错误体均不返回。未知操作域、非法
 JSON 或已注册字段类型错误时，保留 metadata，changes 为空且 summaryAvailable=false，不回显原字符串。查询不写审计，不修补和删除历史事件。
 
+管理端整文档删除写入操作域 `DOCUMENT_ADMIN_DELETE`：targetType 为 `document`，targetId 为被删文档 ID，operation 为
+`delete`，requestId 即客户端提交的 `X-Request-Id`；可按 operationScope、targetType+targetId 或 requestId 检索，相同标识重放不产生第二条事件。详情
+changes 只可出现 spaceId（删除时所属空间）与 spaceArchived（该空间当时是否已归档），均为变更前值、变更后为 null；标题、文件名、版本、对象键与操作者以外的身份信息均不进入摘要。用户端
+`DELETE /api/documents/{id}` 不写审计，查不到该操作域事件不代表文档未被删除。
+
 ### 数据源覆盖
 
 首期只查询 `sys_identity_audit` 中生产者已经写入的管理及登录事件，包括成功、失败、目标为 null 和目标后来被删除的事件。
 
-- 覆盖用户生命周期、部门、角色权限、外部身份绑定、空间/文档管理与 ACL、文档密级、登录和解析死信等已记录事件。
+- 覆盖用户生命周期、部门、角色权限、外部身份绑定、空间/文档管理与 ACL、管理端文档删除、文档密级、登录和解析死信等已记录事件。
 - 不包含 Redis AI 审计、独立 Embedding 操作表，也不拼接不同来源的保留期或排序。
 - 不补录生产者未留下记录的请求，包括登录节流期间未记录的尝试。没有查到记录不能证明操作从未发生。
 

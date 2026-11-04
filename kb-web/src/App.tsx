@@ -11,12 +11,13 @@ import { ReviewsPage } from './pages/Reviews';
 import { NotificationsPage } from './pages/Notifications';
 import { UnreadBadge } from './notifications/unread';
 import { AssistantPage } from './pages/Assistant';
-import { AdminAccessProvider, AdminGuard, AdminNavigation, perm } from './admin/access';
+import { AdminAccessProvider, AdminGuard, AdminNavigation, canOpenDocuments, perm } from './admin/access';
 import { UsersPage } from './admin/UsersPage';
 import { DepartmentsPage } from './admin/DepartmentsPage';
 import { RolesPage } from './admin/RolesPage';
 import { SpacesPage } from './admin/SpacesPage';
 import { SpaceDetailPage } from './admin/SpaceDetailPage';
+import { DocumentsIndexPage } from './admin/DocumentsIndexPage';
 import { DocumentPanelPage } from './admin/DocumentPanelPage';
 import { EmbeddingPage } from './admin/EmbeddingPage';
 import { ParseDeadLettersPage } from './admin/ParseDeadLettersPage';
@@ -64,6 +65,7 @@ export function AppRoutes() {
       <Route path="/admin/roles" element={<AdminGuard code={perm.roleRead} title="角色管理"><RolesPage /></AdminGuard>} />
       <Route path="/admin/spaces" element={<AdminGuard spaces title="知识空间"><SpacesPage /></AdminGuard>} />
       <Route path="/admin/spaces/:spaceId" element={<AdminGuard title="空间管理"><SpaceDetailPage /></AdminGuard>} />
+      <Route path="/admin/documents" element={<AdminGuard allow={canOpenDocuments} title="文档管理面板"><DocumentsIndexPage /></AdminGuard>} />
       <Route path="/admin/documents/:documentId" element={<AdminGuard title="文档管理"><DocumentPanelPage /></AdminGuard>} />
       <Route path="/admin/embedding" element={<AdminGuard code={perm.embeddingRead} title="向量重建"><EmbeddingPage /></AdminGuard>} />
       <Route path="/admin/parse/dead-letters" element={<AdminGuard code={perm.deadLetterRead} title="解析死信"><ParseDeadLettersPage /></AdminGuard>} />

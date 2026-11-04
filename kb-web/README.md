@@ -102,7 +102,7 @@ SSE error 可选 `code=SEARCH_UNAVAILABLE` 显示固定检索不可用提示；�
 
 审计查询入口为 `/admin/audits`，独立要求当前 `audit:read`；支持管理、本地登录及企业 SSO 事件的精确筛选、固定时间窗口续页与安全详情。默认最近 7 天，自定义最长 31 天，筛选和结果只保留在当前页面内存。使用、权限、恢复与验证边界见[审计查询管理页面](../docs/admin-audit-web.md)。
 
-管理区同时提供 `/admin/spaces`、`/admin/spaces/:spaceId` 和 `/admin/documents/:documentId`。知识空间入口由当前可管理空间或独立建空间/全局管理资格开放；文档详情按已确认资格显示管理入口。生命周期、上下文候选、例外授权、搬迁和密级规则及已知限制见[知识空间与文档管理](../docs/admin-space-document-web.md)。
+管理区同时提供 `/admin/spaces`、`/admin/spaces/:spaceId`、`/admin/documents` 和 `/admin/documents/:documentId`。知识空间入口由当前可管理空间或独立建空间/全局管理资格开放；文档管理面板入口在上述任一条件成立或持有 `document:security-level:write` 时显示，索引页只提供文档 ID 输入并跳转到面板，不发出管理请求、不枚举文档、不保存历史，入口显示不代表任何文档可管理，面板各区块（例外授权、搬迁、删除按管理清单，密级按功能权限）独立判定；文档详情按已确认资格显示管理入口。生命周期、上下文候选、例外授权、搬迁、删除和密级规则及已知限制见[知识空间与文档管理](../docs/admin-space-document-web.md)。
 
 管理区与用户端同一工程、同一登录与静态托管，入口为 `/admin/users`、`/admin/departments`、`/admin/roles`，分别需要 `identity:user:read`、`identity:dept:read`、`identity:role:read`。导航只显示有读取资格的入口；本人权限按完整 code 判断，不依据角色名称。写操作和部门/角色候选另需对应权限，缺少候选资格时禁用并说明，不提供手工输入 ID。完整权限矩阵、页面规则与错误分类见 [身份管理 Web 说明](../docs/admin-identity-web.md)。
 

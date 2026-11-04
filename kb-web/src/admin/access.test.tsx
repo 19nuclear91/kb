@@ -5,6 +5,7 @@ import App from '../App';
 import { Session } from '../session';
 import { SessionProvider } from '../SessionProvider';
 import { deferred, json, me, storage } from '../test/fixtures';
+import { safeReturnPath } from '../navigation';
 import { AdminAccessProvider, useAdminAccess } from './access';
 vi.mock('../pages/AuthPages', () => ({ LoginPage: () => <div>登录入口</div>, ChangePasswordPage: () => <div>强制改密入口</div>, AccountPage: () => <div>账户入口</div> }));
 vi.mock('../pages/Documents', () => ({ DocumentsPage: () => <div>文档入口</div>, DocumentDetailPage: () => <div>详情入口</div> }));
@@ -158,5 +159,34 @@ describe('权限核对时机', () => {
     await screen.findByText('当前无法确认管理权限，管理功能暂不可用。');
     await act(() => new Promise(resolve => setTimeout(resolve, 50)));
     expect([h.count('/api/auth/me'), h.count('/api/auth/permissions'), h.count('/api/admin/identity/users/search')]).toEqual([3, 3, 2]);
+  });
+});
+
+describe('文档管理面板入口', () => {
+  const link = (name: string) => screen.queryByRole('link', { name: new RegExp(name) });
+  it('仅密级权限显示文档管理面板入口而不显示知识空间入口，且不触发任何文档或空间请求', async () => {
+    const h = backend([json(['document:security-level:write'])]); show(h.session, '/documents');
+    expect(await screen.findByRole('link', { name: /文档管理面板/ })).toBeTruthy(); expect(link('知识空间')).toBeNull();
+    expect(link('文档管理面板')!.getAttribute('href')).toBe('/admin/documents');
+    expect(h.calls.some(call => call.path.startsWith('/api/admin/documents') || call.path.startsWith('/api/admin/spaces/') || call.path.startsWith('/api/documents'))).toBe(false);
+    expect(h.count('/api/admin/spaces')).toBe(1);
+  });
+  it('仅 space:create 同时显示两个入口；无资格时都不显示', async () => {
+    const h = backend([json(['space:create'])]); const view = show(h.session, '/documents');
+    expect(await screen.findByRole('link', { name: /文档管理面板/ })).toBeTruthy(); expect(link('知识空间')).toBeTruthy(); view.unmount();
+    const none = backend([json([])]); show(none.session, '/documents');
+    await screen.findByText('文档入口'); await waitFor(() => expect(none.count('/api/auth/permissions')).toBe(1));
+    expect(link('文档管理面板')).toBeNull(); expect(link('知识空间')).toBeNull(); expect(screen.queryByRole('navigation', { name: '管理导航' })).toBeNull();
+    expect(none.calls.some(call => call.path.startsWith('/api/admin/documents'))).toBe(false);
+  });
+  it('/admin/documents 是合法站内返回地址，返回后重新核对资格才展示输入框；不带 ID 以外的路径或查询', async () => {
+    expect(safeReturnPath('/admin/documents')).toBe('/admin/documents'); expect(safeReturnPath('/admin/documents/9')).toBe('/admin/documents/9');
+    for (const path of ['/admin/documents/', '/admin/documents/0', '/admin/documents?documentId=9', '/admin/documents#9', 'https://outside.test/admin/documents', '//admin/documents']) expect(safeReturnPath(path)).toBe('/documents');
+    const h = backend([json(['document:security-level:write'])]); const view = show(h.session, '/admin/documents');
+    expect(await screen.findByLabelText('文档 ID')).toBeTruthy(); expect(h.count('/api/auth/permissions')).toBe(1);
+    expect(h.calls.some(call => call.path.startsWith('/api/admin/documents'))).toBe(false); view.unmount();
+    const none = backend([json([])]); show(none.session, '/admin/documents');
+    await screen.findByText('当前账号没有此管理页面的读取资格。'); expect(screen.queryByLabelText('文档 ID')).toBeNull();
+    expect(none.calls.some(call => call.path.startsWith('/api/admin/documents'))).toBe(false);
   });
 });

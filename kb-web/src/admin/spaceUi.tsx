@@ -35,7 +35,7 @@ export function ResourceWriteDialog<T>({ title, scope, children, build, onDone, 
   return <AdminModal title={title} write={write} onClose={onClose}>
     <WriteNotice write={write} disabled={retryDisabled} onRetry={() => { if (!retryDisabled) void write.retry<T>().then(receive); }} onVerify={onVerify} />
     <form onSubmit={event => { event.preventDefault(); if (!disabled) { const data = new FormData(event.currentTarget); void write.submit<T>(() => build(data)).then(receive); } }}>
-      <fieldset disabled={write.busy}>{children}<div style={{ marginTop: 16 }}><Button type="primary" htmlType="submit" disabled={disabled || write.pending}>确认提交</Button></div></fieldset>
+      <fieldset disabled={write.busy}>{children}<div style={{ marginTop: 16 }}><Button type="primary" htmlType="submit" disabled={disabled || write.pending || write.blocked}>确认提交</Button></div></fieldset>
     </form>
   </AdminModal>;
 }

@@ -3,6 +3,7 @@ package com.zhishiku.kb.app.document.service;
 import com.zhishiku.kb.app.auth.service.PermissionService;
 import com.zhishiku.kb.app.document.mapper.DocumentMapper;
 import com.zhishiku.kb.app.document.model.DocumentDetail;
+import com.zhishiku.kb.app.document.model.DocumentEntity;
 import com.zhishiku.kb.app.document.model.DocumentFile;
 import com.zhishiku.kb.app.document.model.DocumentPage;
 import com.zhishiku.kb.app.document.model.DocumentProgress;
@@ -129,13 +130,39 @@ public class DocumentManagementService {
     public void delete(long userId, long documentId) {
         PermissionScope scope = permissionService.resolve(userId, PermissionService.PERM_EDIT);
         requireSummary(documentId, scope, PermissionService.PERM_EDIT);
+        deleteAuthorized(documentId, userId, null);
+    }
+
+    /**
+     * 不含资格判定的删除主体，供用户端与管理端共用；调用方必须已经完成自己的授权。
+     *
+     * <p>两条入口共用这一段而不是各自复制：删除效果必须完全一致，任务取消或审核取消的
+     * 后续修正不能只落一边。
+     *
+     * @param documentId      被删文档
+     * @param actorUserId     操作者，写入审核取消记录
+     * @param expectedSpaceId 软删除的空间前置条件。管理端按预读归属判定 manage 后传入它，
+     *                        文档在判定后被搬走时更新 0 行并以 409 拒绝；用户端的 edit
+     *                        范围已含归属，传 {@code null} 沿用无前置条件的语句
+     */
+    @Transactional
+    public void deleteAuthorized(long documentId, long actorUserId, Long expectedSpaceId) {
         List<String> objectKeys = mapper.findObjectKeys(documentId);
         // 与 Worker 发布事务保持 task -> document 的锁顺序，避免删除和发布互相等待。
         mapper.cancelTasks(documentId);
-        if (mapper.softDelete(documentId) == 0) {
+        int deleted = expectedSpaceId == null
+                ? mapper.softDelete(documentId)
+                : mapper.softDeleteInSpace(documentId, expectedSpaceId);
+        if (deleted == 0) {
+            if (expectedSpaceId != null) {
+                DocumentEntity current = mapper.findRawById(documentId);
+                if (current != null && !"deleted".equals(current.getStatus())) {
+                    throw ApiException.conflict("文档归属已变化，请重新读取后再决定是否删除");
+                }
+            }
             throw ApiException.notFound("文档不存在或已经删除");
         }
-        reviewCancellation.cancelDocument(documentId, userId);
+        reviewCancellation.cancelDocument(documentId, actorUserId);
         // 只有事务提交后才删对象，避免数据库回滚而原件已经消失。生产环境仍应有对象存储对账任务。
         Runnable cleanup = () -> cleanupObjects(documentId, objectKeys);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {

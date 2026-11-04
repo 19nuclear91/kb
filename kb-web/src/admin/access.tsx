@@ -60,16 +60,18 @@ export function AdminAccessProvider({ children, loadSpaces = true }: { children:
   return <AdminAccessContext value={value}>{children}</AdminAccessContext>;
 }
 
-/** 管理页面守卫：按完整权限 code 精确判断，不依据角色名称、前缀或通配；进入时核对一次本人权限。 */
-export function AdminGuard({ code, title, children, spaces = false }: { code?: string; title: string; children: ReactNode; spaces?: boolean }) {
+/** 管理页面守卫：按完整权限 code 精确判断，不依据角色名称、前缀或通配；进入时核对一次本人权限。
+ * `spaces` 以可管理空间目录为开放条件；`allow` 接受依赖目录的自定义谓词（目录未就绪时等待，目录故障且谓词不成立时提示重读）。 */
+export function AdminGuard({ code, title, children, spaces = false, allow }: { code?: string; title: string; children: ReactNode; spaces?: boolean; allow?: (access: AdminAccess) => boolean }) {
   const access = useAdminAccess();
   const { check } = access;
   useEffect(() => { check(); }, [check]);
-  if (access.status === 'loading' || (spaces && access.spaceStatus === 'loading')) return <div className="panel" role="status"><Spin /> <span className="muted">正在确认管理权限…</span></div>;
-  if (access.status === 'unavailable' && (!spaces || !canOpenSpaces(access))) return <><PageHeader title={title} /><Alert type="warning" showIcon title="当前无法确认管理权限，管理功能暂不可用。"
+  const gate = allow ?? (spaces ? canOpenSpaces : undefined);
+  if (access.status === 'loading' || (gate && access.spaceStatus === 'loading')) return <div className="panel" role="status"><Spin /> <span className="muted">正在确认管理权限…</span></div>;
+  if (access.status === 'unavailable' && (!gate || !gate(access))) return <><PageHeader title={title} /><Alert type="warning" showIcon title="当前无法确认管理权限，管理功能暂不可用。"
     action={<Button disabled={access.checking} onClick={() => check(true)}>重新确认</Button>} /></>;
-  if (spaces && !canOpenSpaces(access) && access.spaceStatus === 'unavailable') return <><PageHeader title={title} /><Alert type="warning" title="当前无法读取可管理空间。" action={<Button onClick={() => check(true)}>重新确认</Button>} /></>;
-  if ((code && !access.has(code)) || (spaces && !canOpenSpaces(access))) return <><PageHeader title={title} /><Alert type="info" showIcon title="当前账号没有此管理页面的读取资格。" /></>;
+  if (gate && !gate(access) && access.spaceStatus === 'unavailable') return <><PageHeader title={title} /><Alert type="warning" title="当前无法读取可管理空间。" action={<Button onClick={() => check(true)}>重新确认</Button>} /></>;
+  if ((code && !access.has(code)) || (gate && !gate(access))) return <><PageHeader title={title} /><Alert type="info" showIcon title="当前账号没有此管理页面的读取资格。" /></>;
   return children;
 }
 
@@ -85,6 +87,8 @@ export const perm = {
   tagRead: 'document:tag:read', tagWrite: 'document:tag:write',
 } as const;
 export const canOpenSpaces = (access: AdminAccess) => (access.spaceStatus === 'ready' && access.spaces.length > 0) || access.has(perm.spaceCreate) || access.has(perm.spaceManageAll);
+/** 文档管理面板入口：知识空间条件之外再加密级调整权限；入口显示不代表任何文档可管理，面板各区块独立判定。 */
+export const canOpenDocuments = (access: AdminAccess) => canOpenSpaces(access) || access.has(perm.securityLevelWrite);
 export const adminNavigation = [
   { path: '/admin/users', label: '账号管理', mark: 'A1', visible: (access: AdminAccess) => access.has(perm.userRead) },
   { path: '/admin/departments', label: '部门管理', mark: 'A2', visible: (access: AdminAccess) => access.has(perm.deptRead) },
@@ -97,6 +101,7 @@ export const adminNavigation = [
   { path: '/admin/ai/audits', label: 'AI 调用审计', mark: 'A9', visible: (access: AdminAccess) => access.has(perm.aiAuditRead) },
   { path: '/admin/reports/operations', label: '运营概览', mark: 'A10', visible: (access: AdminAccess) => access.has(perm.operationsReportsRead) },
   { path: '/admin/document-tags', label: '全局标签', mark: 'A11', visible: (access: AdminAccess) => access.has(perm.tagRead) },
+  { path: '/admin/documents', label: '文档管理面板', mark: 'A12', visible: canOpenDocuments },
 ] as const;
 export function AdminNavigation() {
   const access = useAdminAccess();

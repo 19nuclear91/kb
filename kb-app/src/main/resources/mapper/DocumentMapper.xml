@@ -359,6 +359,20 @@
         WHERE id = #{documentId} AND status &lt;&gt; 'deleted'
     </update>
 
+    <update id="softDeleteInSpace">
+        UPDATE kb_document
+        SET status = 'deleted', updated_at = now()
+        WHERE id = #{documentId}
+        AND space_id = #{expectedSpaceId}
+        AND status &lt;&gt; 'deleted'
+    </update>
+
+    <select id="findRawById" resultType="com.zhishiku.kb.app.document.model.DocumentEntity">
+        SELECT id, space_id, status
+        FROM kb_document
+        WHERE id = #{documentId}
+    </select>
+
     <update id="cancelTasks">
         UPDATE kb_parse_task t
         SET status = 'failed',

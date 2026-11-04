@@ -2,6 +2,7 @@ package com.zhishiku.kb.app.document;
 
 import com.zhishiku.kb.app.auth.service.PermissionService;
 import com.zhishiku.kb.app.document.mapper.DocumentMapper;
+import com.zhishiku.kb.app.document.model.DocumentEntity;
 import com.zhishiku.kb.app.document.model.DocumentProgress;
 import com.zhishiku.kb.app.document.model.DocumentFile;
 import com.zhishiku.kb.app.document.model.DocumentSummary;
@@ -24,11 +25,13 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyShort;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.isNull;
 import static org.mockito.Mockito.mock;
@@ -202,6 +205,98 @@ class DocumentManagementServiceTest {
         order.verify(mapper).softDelete(10L);
         order.verify(cancellation).cancelDocument(10L, 7L);
         order.verify(storage).delete("documents/a.txt");
+    }
+
+    /**
+     * 共用主体不做任何资格解析；带空间前置条件时走新语句，且任务取消仍先于软删除，
+     * 保持与 Worker 发布事务一致的 task -> document 锁顺序。
+     */
+    @Test
+    void authorizedDeleteWithSpacePreconditionKeepsTaskBeforeDocumentOrderAndSkipsPermissions() {
+        when(mapper.findObjectKeys(10L)).thenReturn(List.of("documents/a.txt", "documents/b.txt"));
+        when(mapper.softDeleteInSpace(10L, 3L)).thenReturn(1);
+
+        service.deleteAuthorized(10L, 7L, 3L);
+
+        var order = inOrder(mapper, cancellation, storage);
+        order.verify(mapper).findObjectKeys(10L);
+        order.verify(mapper).cancelTasks(10L);
+        order.verify(mapper).softDeleteInSpace(10L, 3L);
+        order.verify(cancellation).cancelDocument(10L, 7L);
+        order.verify(storage).delete("documents/a.txt");
+        order.verify(storage).delete("documents/b.txt");
+        verify(mapper, never()).softDelete(anyLong());
+        verify(mapper, never()).findRawById(anyLong());
+        verifyNoInteractions(permissions);
+    }
+
+    @Test
+    void authorizedDeleteWithoutPreconditionUsesTheOriginalStatement() {
+        when(mapper.findObjectKeys(10L)).thenReturn(List.of());
+        when(mapper.softDelete(10L)).thenReturn(1);
+
+        service.deleteAuthorized(10L, 7L, null);
+
+        verify(mapper).softDelete(10L);
+        verify(mapper, never()).softDeleteInSpace(anyLong(), anyLong());
+        verify(cancellation).cancelDocument(10L, 7L);
+        verifyNoInteractions(permissions, storage);
+    }
+
+    @Test
+    void zeroRowsWithPreconditionIsNotFoundWhenDocumentIsGoneOrAlreadyDeleted() {
+        when(mapper.findObjectKeys(10L)).thenReturn(List.of("documents/a.txt"));
+        when(mapper.softDeleteInSpace(10L, 3L)).thenReturn(0);
+        when(mapper.findRawById(10L)).thenReturn(null);
+
+        assertThatThrownBy(() -> service.deleteAuthorized(10L, 7L, 3L))
+                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.httpStatus()).isEqualTo(404));
+
+        when(mapper.findRawById(10L)).thenReturn(DocumentEntity.builder().id(10L).spaceId(3L).status("deleted").build());
+        assertThatThrownBy(() -> service.deleteAuthorized(10L, 7L, 3L))
+                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.httpStatus()).isEqualTo(404));
+
+        verify(cancellation, never()).cancelDocument(anyLong(), anyLong());
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void zeroRowsWithPreconditionIsConflictWhenDocumentStillLivesElsewhere() {
+        when(mapper.findObjectKeys(10L)).thenReturn(List.of("documents/a.txt"));
+        when(mapper.softDeleteInSpace(10L, 3L)).thenReturn(0);
+        when(mapper.findRawById(10L)).thenReturn(DocumentEntity.builder().id(10L).spaceId(5L).status("published").build());
+
+        assertThatThrownBy(() -> service.deleteAuthorized(10L, 7L, 3L))
+                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.httpStatus()).isEqualTo(409));
+
+        verify(cancellation, never()).cancelDocument(anyLong(), anyLong());
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void zeroRowsWithoutPreconditionStaysNotFoundWithoutRereading() {
+        when(mapper.findObjectKeys(10L)).thenReturn(List.of());
+        when(mapper.softDelete(10L)).thenReturn(0);
+
+        assertThatThrownBy(() -> service.deleteAuthorized(10L, 7L, null))
+                .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.httpStatus()).isEqualTo(404));
+
+        verify(mapper, never()).findRawById(anyLong());
+        verify(cancellation, never()).cancelDocument(anyLong(), anyLong());
+    }
+
+    @Test
+    void objectCleanupFailureDoesNotUndoTheDeletion() {
+        when(mapper.findObjectKeys(10L)).thenReturn(List.of("documents/a.txt", "documents/b.txt"));
+        when(mapper.softDeleteInSpace(10L, 3L)).thenReturn(1);
+        doThrow(new IllegalStateException("storage down")).when(storage).delete("documents/a.txt");
+
+        assertThatCode(() -> service.deleteAuthorized(10L, 7L, 3L)).doesNotThrowAnyException();
+
+        verify(mapper).softDeleteInSpace(10L, 3L);
+        verify(cancellation).cancelDocument(10L, 7L);
+        verify(storage).delete("documents/a.txt");
+        verify(storage).delete("documents/b.txt");
     }
 
     /**

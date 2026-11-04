@@ -8,7 +8,7 @@
 
 ### Requirement: 管理页面必须复用既有会话和受保护路由
 
-用户端 SHALL 提供 `/admin/users`、`/admin/departments`、`/admin/roles`、`/admin/spaces`、`/admin/spaces/:spaceId`、`/admin/documents/:documentId`、`/admin/embedding`、`/admin/parse/dead-letters`、`/admin/audits`，沿用当前登录、强制改密及退出流程。合法管理路径 SHALL 可直接访问、刷新及作为登录后的站内返回地址，且返回后重新核对资格；默认登录落点保持文档中心。路径中的空间或文档 ID 不是合法正整数时 SHALL 显示目标不可访问，且不发出管理请求。
+用户端 SHALL 提供 `/admin/users`、`/admin/departments`、`/admin/roles`、`/admin/spaces`、`/admin/spaces/:spaceId`、`/admin/documents`、`/admin/documents/:documentId`、`/admin/embedding`、`/admin/parse/dead-letters`、`/admin/audits`，沿用当前登录、强制改密及退出流程。合法管理路径 SHALL 可直接访问、刷新及作为登录后的站内返回地址，且返回后重新核对资格；默认登录落点保持文档中心。路径中的空间或文档 ID 不是合法正整数时 SHALL 显示目标不可访问，且不发出管理请求。
 
 #### Scenario: 未登录访问管理页面
 - **WHEN** 用户直接打开账号管理地址但没有有效会话
@@ -36,9 +36,14 @@
 - **WHEN** 外部输入把站外地址、`/admin/audits?loginUsername=someone` 或 `/admin/audits/other` 作为登录返回地址
 - **THEN** 不把该值作为合法审计返回路径，沿用文档中心的安全回退
 
+#### Scenario: 登录后返回文档面板索引
+- **WHEN** 用户未登录时访问 `/admin/documents`，随后完成现有登录和必要改密
+- **THEN** 返回 `/admin/documents` 并重新核对资格后才展示输入框
+- **AND** 返回地址不携带文档 ID 以外的路径或查询
+
 ### Requirement: 管理菜单与页面必须按独立读取资格开放
 
-用户端 MUST 以 `/api/auth/permissions` 的当前有效权限控制身份管理入口；账号、部门、角色页面分别要求 `identity:user:read`、`identity:dept:read`、`identity:role:read`。知识空间入口 SHALL 在当前空间目录存在可管理空间，或持有 `space:create`、`space:manage-all` 时显示；空间详情与文档管理面板按各自规格的资源级读取结果开放。向量重建、解析死信和审计页面分别要求 `embedding:read`、`parse:deadletter:read`、`audit:read`，对应写权限及旧 `identity:audit:read` 不代替相应读取资格。角色名称、角色 ID、权限前缀及任意写权限 MUST 不代替读取资格，知识空间入口的显示 MUST 不被解释为任一具体空间或文档的管理资格。直接访问无读取资格的页面 SHALL 显示无访问资格且不加载该实体数据。
+用户端 MUST 以 `/api/auth/permissions` 的当前有效权限控制身份管理入口；账号、部门、角色页面分别要求 `identity:user:read`、`identity:dept:read`、`identity:role:read`。知识空间入口 SHALL 在当前空间目录存在可管理空间，或持有 `space:create`、`space:manage-all` 时显示；文档管理面板入口 SHALL 在上述任一条件成立或持有 `document:security-level:write` 时显示；空间详情与文档管理面板按各自规格的资源级读取结果开放。向量重建、解析死信和审计页面分别要求 `embedding:read`、`parse:deadletter:read`、`audit:read`，对应写权限及旧 `identity:audit:read` 不代替相应读取资格。角色名称、角色 ID、权限前缀及任意写权限 MUST 不代替读取资格，知识空间入口与文档管理面板入口的显示 MUST 不被解释为任一具体空间或文档的管理资格。直接访问无读取资格的页面 SHALL 显示无访问资格且不加载该实体数据。
 
 #### Scenario: 只有账号读取资格
 - **WHEN** 当前用户只有 `identity:user:read`
@@ -55,7 +60,8 @@
 
 #### Scenario: 只有密级调整权限
 - **WHEN** 用户只持有 `document:security-level:write`，空间目录没有 manageable 条目
-- **THEN** 知识空间入口不显示，密级调整仅经文档详情的管理入口进入
+- **THEN** 知识空间入口不显示，文档管理面板入口显示
+- **AND** 经索引页按 ID 到达的面板只开放密级区块，不开放例外授权、搬迁或删除
 
 #### Scenario: 空间目录读取失败
 - **WHEN** 权限已确认而空间目录读取失败，且用户未持有 `space:create` 或 `space:manage-all`
@@ -77,6 +83,11 @@
 #### Scenario: 旧审计资格与角色名不能开放全局页面
 - **WHEN** 当前用户仅持有 `identity:audit:read`、`ROLE_ADMIN`、`audit:*` 或其他写权限，未持有精确的 `audit:read`
 - **THEN** 审计导航不显示，直接访问不请求审计列表或详情
+
+#### Scenario: 文档面板入口不代表任何文档可管理
+- **WHEN** 用户持有 `space:create` 但空间目录没有 manageable 条目，也没有密级调整权限
+- **THEN** 文档管理面板入口显示，按 ID 到达的面板显示无可用管理操作
+- **AND** 入口显示不使任何文档进入管理清单
 
 ### Requirement: 权限加载和变更必须具有明确状态
 

@@ -98,6 +98,13 @@ public enum AuditScope {
     DOC_ACL_REVOKE("doc-acl"),
 
     DOCUMENT_RELOCATE("document"),
+
+    /**
+     * 管理端整文档删除。用户端 {@code DELETE /api/documents/{id}} 按 edit 判定且不写审计；
+     * 管理端按所属空间 manage 判定，是管理员对他人内容的破坏性操作，必须留痕并以
+     * {@code request_id} 幂等。快照只含文档 ID、所属空间与归档状态，不含标题或存储键。
+     */
+    DOCUMENT_ADMIN_DELETE("document"),
     DOCUMENT_METADATA_UPDATE("document"),
     DOCUMENT_CATEGORY_CREATE("document-category"),
     DOCUMENT_CATEGORY_UPDATE("document-category"),

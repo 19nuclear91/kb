@@ -1,6 +1,7 @@
 package com.zhishiku.kb.app.document.mapper;
 
 import com.zhishiku.kb.app.document.model.DocumentCitationRow;
+import com.zhishiku.kb.app.document.model.DocumentEntity;
 import com.zhishiku.kb.app.document.model.DocumentFile;
 import com.zhishiku.kb.app.document.model.DocumentProgress;
 import com.zhishiku.kb.app.document.model.DocumentSummary;
@@ -76,6 +77,18 @@ public interface DocumentMapper {
     List<String> findObjectKeys(@Param("documentId") long documentId);
 
     int softDelete(@Param("documentId") long documentId);
+
+    /**
+     * 带归属前置条件的软删除：文档已不在 {@code expectedSpaceId} 时更新 0 行，
+     * 让管理端在不加文档行锁的前提下关闭"判定后被搬迁"的窗口。
+     */
+    int softDeleteInSpace(@Param("documentId") long documentId,
+                          @Param("expectedSpaceId") long expectedSpaceId);
+
+    /**
+     * 不带权限范围的归属与状态读取，只用于软删除前置条件未命中时区分"已删除"与"归属变化"。
+     */
+    DocumentEntity findRawById(@Param("documentId") long documentId);
 
     int cancelTasks(@Param("documentId") long documentId);
 

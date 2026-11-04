@@ -16,21 +16,23 @@
 | INVALID_VERSION | 版本变化，重读后按新版本重新确认 |
 | CONFLICT | 不能可靠细分的状态冲突，重读后确认 |
 
-投影只覆盖既有 15 个身份管理写入口及新增的 11 个空间/文档写入口。读取、旧 `/api/identity` 别名、外部身份和运维接口保持原错误契约。分类来自实际检查点，不能从 message 或客户端输入猜测。
+投影只覆盖既有 15 个身份管理写入口及新增的 12 个空间/文档写入口。读取、旧 `/api/identity` 别名、外部身份和运维接口保持原错误契约。分类来自实际检查点，不能从 message 或客户端输入猜测。
+
+管理端删除 `DELETE /api/admin/documents/{documentId}` 与其余管理写入口共用同一投影：失败响应附顶层 `reasonCode`，HTTP 状态与 `code/message/data` 保持原语义，message 为固定提示，不泄露目标是否存在。前端仍可按状态码分流：400 为缺少 `X-Request-Id` 或文档 ID 不是正整数（`INVALID_REQUEST`）；404 统一表示文档不存在、已删除或当前用户无权管理其所属空间，三者不可区分（`NOT_FOUND`）；409 表示资格判定后文档归属已变化，未写入删除，需重新读取归属后再决定（`CONFLICT`）。资格只看文档当前所属空间的 manage 或 `space:manage-all`，edit、view、文档例外与上传者身份都不能替代；已归档空间中的文档仍可删除。
 
 仅错误原因投影可以独立发布与回退。资料与分类功能包含新迁移、标签权限和严格搬迁协议，须同步更新前后端；部署与回退边界见 [文档资料运维](document-metadata-operations.md)。
 
 ## 请求与结果核对
 
-空间摘要携带 code、name、description、archived、version 及独立的 viewable/manageable；管理文档清单只含 documentId、spaceId、spaceArchived，采用游标而非总数。授权回执区分 alreadyGranted 与 clearanceBlockedPrincipalCount；搬迁回执包含 clearedExceptionCount、clearedExceptionsTruncated 与目标空间密级受阻数。
+空间摘要携带 code、name、description、archived、version 及独立的 viewable/manageable；管理文档清单只含 documentId、spaceId、spaceArchived，采用游标而非总数。授权回执区分 alreadyGranted 与 clearanceBlockedPrincipalCount；搬迁回执包含 clearedExceptionCount、clearedExceptionsTruncated 与目标空间密级受阻数。管理端删除回执只含 documentId、spaceId（删除时所属空间）与 replayed，不含标题、文件名或正文；同一 `X-Request-Id` 重复提交返回首次回执且 replayed 为 true，不再写入。
 
-ID、主体 ID、空间版本和 securityVersion 按精确整数回传，保持 JSON 数值类型。所有写入请求标识只在 X-Request-Id 请求头携带；删除空间不发送请求体，撤销授权发送主体及权限位。
+ID、主体 ID、空间版本和 securityVersion 按精确整数回传，保持 JSON 数值类型。所有写入请求标识只在 X-Request-Id 请求头携带；删除空间与删除文档都不发送请求体，撤销授权发送主体及权限位。
 
 网络结果丢失或成功回执无法读取时，操作可能已执行。可按原内容及原请求标识显式重试、重新读取核对或放弃本地核对；不会自动重传。目标、内容或版本变化视为新意图，重新生成标识。关闭页面或放弃核对不能撤回已发送写入。
 
 ## 入口与资格
 
-知识空间入口 `/admin/spaces` 要求存在可管理空间，或具有 `space:create`、`space:manage-all`。空间详情 `/admin/spaces/:spaceId` 与文档面板 `/admin/documents/:documentId` 按各自读取结果判断资源资格。只有 `document:security-level:write` 不会出现空间目录入口，但可以从可阅读文档的详情进入管理面板。
+知识空间入口 `/admin/spaces` 要求存在可管理空间，或具有 `space:create`、`space:manage-all`。文档管理面板入口 `/admin/documents` 在上述任一条件成立或持有 `document:security-level:write` 时显示，索引页只提供文档 ID 输入（正整数且不超过 64 位有符号整数范围）并跳转到 `/admin/documents/{id}`，非法值页内提示且不跳转；页面不发出管理请求、不枚举文档、不保存历史或最近打开记录，可直接访问、刷新及作为登录后的站内返回地址，返回后重新核对资格才展示输入框。入口显示不代表任何文档可管理：空间详情 `/admin/spaces/:spaceId` 与文档面板 `/admin/documents/:documentId` 按各自读取结果判断资源资格，面板的例外授权、搬迁与删除区块按管理清单是否返回该文档开放，密级区块按功能权限独立开放。只有 `document:security-level:write` 不会出现空间目录入口，但可经索引页按 ID 到达面板，也可以从可阅读文档的详情进入。
 
 本人权限与空间目录并行核对，分别区分加载、可用与故障；单侧失败不伪装空集合。管理导航、候选及写操作不使用未确认的旧事实。进入管理页、会话恢复、403，以及空间写入、搬迁、主部门调整、角色绑定或权限修改成功后重新核对。身份切换丢弃旧响应与管理资料。持续的读取 403 只触发一次自动资格核对，随后保留拒绝状态，用户可显式重读；确认的资格事实变化后也允许重新读取，避免自动循环和旧拒绝阻止权限恢复。
 
@@ -39,6 +41,8 @@ ID、主体 ID、空间版本和 securityVersion 按精确整数回传，保持 
 目录只列 manageable 空间，包含已归档空间；create-only 用户看到空目录与新建入口。新建需要 `space:create`，编码、名称、描述长度上限分别为 64、200、2000；编码创建后只读。名称、描述、归档与取消归档携带当前空间版本，过期后必须重读并重新确认。
 
 归档使文档退出检索、列表、详情、下载与预览，保留管理资格并可取消归档；取消归档按原授权与密级恢复可见。删除前以管理文档清单 `spaceId`、`limit=1` 核对是否为空，有文档时建议归档，核对失败不能删除。删除不可恢复，授权随之移除。服务端仍可能因新上传返回 SPACE_NOT_EMPTY，必须重读；不确定后核对为 404 只表示空间已不可访问，不证明由本次请求删除。
+
+文档删除是软删除，不释放空间删除条件：服务端的 `countReferencedDocuments` 按 `kb_document` 行计数，已软删除的文档行仍计入，因此删完文档的空间依旧会返回 SPACE_NOT_EMPTY。管理文档清单会排除已删除文档，`limit=1` 核对为空不代表服务端允许删除空间；需要让空间退出使用时仍应归档。
 
 ## 授权与管理文档清单
 
@@ -60,11 +64,13 @@ ID、主体 ID、空间版本和 securityVersion 按精确整数回传，保持 
 
 密级选项来自实际字典，只提供不超过本人 me 密级且不同于当前值的选项，不硬编码 0–3。原因必填，去首尾空白后最多 500 个 Unicode 字符，并携带当前独立 securityVersion。调高密级可能使现有读者失去访问。成功显示前后值并重读状态；版本冲突后重新确认，403 时核对本人权限，仍持有权限则显示当前无法调整，不猜测具体拒绝原因。
 
+删除区块与例外授权、搬迁同用管理清单的 owner 开关，仅密级权限不显示；标题不可读时以文档 ID 标识目标，所属空间已归档仍可删除。确认说明删除整份文档及全部版本、取消未完成处理与审核、例外授权随之失效、不可恢复。进入确认即禁用例外授予/撤销、搬迁与密级写入，其他写入在途时不能提交删除，取消确认恢复。成功只显示"文档已删除"并重读各区块；404 时重读管理清单，仍含该文档提示当前服务不支持管理端删除、不再含按当前不可访问处理，两者都不声称由本次删除；409 提示归属已变化并重读；结果不确定只提供按原标识重试、重新读取核对或放弃核对，重新读取得到的 404 不被解释为删除回执。
+
 管理资料、搜索词、原因和表单仅保存在当前内存，页面地址只保留目标 ID；名称与标题按安全文本展示。用户端详情的“管理此文档”只消费已有上下文，不额外查询管理清单或密级，进入面板后重新按各区块读取资格判定。
 
 ## 首期限制
 
-只有密级权限却无文档 view 的操作者，以及已归档空间中的文档，难以从用户端详情发现管理入口；已知面板地址仍可直接访问，首期不提供手填文档 ID。没有批量授权、文档删除、审计、外部身份或 Embedding/死信运维页。文档授权及搬迁的 404/403 先后语义保持现状。
+只有密级权限却无文档 view 的操作者，以及已归档空间中的文档，难以从用户端详情发现管理入口；可经 `/admin/documents` 索引页手填文档 ID 直达面板。没有批量授权、批量删除、单版本删除、回收站或恢复、审计、外部身份或 Embedding/死信运维页。文档授权及搬迁的 404/403 先后语义保持现状。
 
 ## 验证记录
 
@@ -78,3 +84,12 @@ mvn -o -pl kb-app -am package '-DskipTests'
 仅验证 Mock 业务分支、独立控制器、错误响应及架构边界；未验证真实数据库事务、锁、持久化、Redis、对象存储、跨服务链路或真实浏览器效果。文档只作人工核对，不运行文档内容测试或示例请求。
 
 前端执行 `npm run typecheck`、`npm test -- --run` 与 `npm run build`：19 个单元测试文件、216 项通过，类型检查与静态构建通过。新增验证涵盖双事实来源、精确请求、内存路由、空间生命周期、上下文候选、ACL 回执、搬迁、密级范围、403 重核及详情入口；全部使用进程内替身与模拟 DOM。`openspec validate admin-space-document-web --strict` 通过。
+
+2026-11-03（管理端文档删除与索引页）：后端以白名单执行 `DocumentManagementServiceTest`（16）、`AuditSummaryProjectorTest`（7）、`RecordOpenApiSchemaTest`（2）、`ModuleBoundaryTest`（9）、`DocumentAdminDeletionServiceTest`（15）、`DocumentAdminDeletionControllerTest`（9）、`IdentityManagementFeedbackTest`（95），共 153 项通过，失败、错误与跳过均为 0；跳过测试的打包通过。命令：
+
+```powershell
+mvn -o -pl kb-app -am test '-Dtest=DocumentManagementServiceTest,AuditSummaryProjectorTest,RecordOpenApiSchemaTest,ModuleBoundaryTest,DocumentAdminDeletionServiceTest,DocumentAdminDeletionControllerTest,IdentityManagementFeedbackTest' '-Dsurefire.failIfNoSpecifiedTests=false'
+mvn -o -pl kb-app -am package '-DskipTests'
+```
+
+前端按文件执行 `src/admin/spaceApi.test.ts`、`src/admin/space-pages.test.tsx`、`src/admin/access.test.tsx`、`src/admin/documents-index.test.tsx`，4 个文件 94 项通过；`npm run typecheck` 与 `npm run build` 通过。全量 `npx vitest run` 为 78 个文件 937 项，其中 934 项通过，3 项失败位于 `src/reviews/file-lifecycle.test.tsx`（会话替身缺少 `subscribe`），在未应用本次改动的工作树上同样失败，与本次变更无关。新增验证覆盖删除区块显示条件、确认文案、与例外/搬迁/密级的互斥及取消恢复、在途写入标记为未确认后放行提交并提示、成功重读、404 两种分流、409、结果不确定的重试/核对/放弃、不确定后核对为空清单不解释为删除回执、索引页校验与跳转、导航项显示资格、`/admin/documents` 返回地址；后端另覆盖管理端删除路由进入 reasonCode 投影白名单（400 `INVALID_REQUEST`、404 `NOT_FOUND`、409 `CONFLICT`）及共用主体 404/409 改写为身份领域异常；全部使用进程内替身、内存路由与模拟 DOM，未启动任何服务。

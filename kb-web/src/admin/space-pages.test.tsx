@@ -7,7 +7,8 @@ import { safeReturnPath } from '../navigation';
 import { AdminAccessContext, AdminAccessProvider, AdminGuard, emptyAdminAccess, canOpenSpaces, perm, type AdminAccess } from './access';
 import { SpacesPage } from './SpacesPage';
 import { SpaceDetailPage, ManagedDocuments } from './SpaceDetailPage';
-import { DocumentPanelPage, RelocationBox, SecurityBox } from './DocumentPanelPage';
+import { DocumentPanelPage, DeletionBox, RelocationBox, SecurityBox } from './DocumentPanelPage';
+import { DocumentOperations } from '../documents/operations';
 import { AclPanel } from './AclPanel';
 import { PrincipalPicker } from './PrincipalPicker';
 import { DocumentDetailPage } from '../pages/Documents';
@@ -80,8 +81,8 @@ describe('入口、路由与精确目标', () => {
     expect(screen.getByText('目标不可访问')).toBeTruthy(); expect(f.json).not.toHaveBeenCalled();
   });
   it('返回地址只接受精确管理路径', () => {
-    for (const path of ['/admin/spaces', '/admin/spaces/7', '/admin/documents/9', '/admin/users']) expect(safeReturnPath(path)).toBe(path);
-    for (const path of ['/admin/foo', '//outside.test', '/admin/spaces/0', '/admin/spaces/7?q=x', '/admin/documents']) expect(safeReturnPath(path)).toBe('/documents');
+    for (const path of ['/admin/spaces', '/admin/spaces/7', '/admin/documents', '/admin/documents/9', '/admin/users']) expect(safeReturnPath(path)).toBe(path);
+    for (const path of ['/admin/foo', '//outside.test', '/admin/spaces/0', '/admin/spaces/7?q=x', '/admin/documents/', '/admin/documents/0', '/admin/documents?documentId=9', '/admin/documents#9']) expect(safeReturnPath(path)).toBe('/documents');
   });
 });
 
@@ -401,5 +402,136 @@ describe('文档面板、搬迁与密级', () => {
     answers.set('/api/admin/spaces/7/acl/principals?principalType=USER&q=new', page([{ principalId: '8', principalType: 'USER', label: '新主体' }]));
     show(<PrincipalPicker kind="spaces" resourceId="7" onChange={selected} />); fill('搜索主体', 'new'); await screen.findByRole('option', { name: '新主体' });
     slow.resolve(json(page([{ principalId: '5', label: '旧主体' }]))); await waitFor(() => expect(screen.queryByRole('option', { name: '旧主体' })).toBeNull());
+  });
+});
+
+describe('文档面板删除', () => {
+  const deleteButton = () => screen.getByRole('button', { name: '删除文档' }) as HTMLButtonElement;
+  const openDeletion = async () => { await waitFor(() => expect(deleteButton().disabled).toBe(false)); fireEvent.click(deleteButton()); await screen.findByLabelText('删除目标'); };
+  const deletes = () => writes().filter(([path, init]) => init?.method === 'DELETE' && path === '/api/admin/documents/9');
+  const membershipReads = () => f.json.mock.calls.filter(([path]) => path === '/api/admin/documents?documentId=9').length;
+  it('删除区块只随管理清单开放：有 owner 显示、仅密级权限不显示、标题不可读以 ID 标识、已归档仍可删，且不发出请求', async () => {
+    let view = show(<DocumentPanelPage />, access(), '/admin/documents/9');
+    await screen.findByRole('heading', { name: '删除文档' }); await openDeletion();
+    expect(screen.getByLabelText('删除目标').textContent).toBe('删除目标：文档标题');
+    expect(screen.getByText('将删除整份文档及全部版本，取消未完成的解析处理与审核，该文档的例外授权随之失效，不可恢复。')).toBeTruthy();
+    expect(writes()).toHaveLength(0); view.unmount();
+    answers.set('/api/admin/documents?documentId=9', page([])); answers.set('/api/documents/9', new Response(null, { status: 404 }));
+    view = show(<DocumentPanelPage />, access({ has: code => code === perm.securityLevelWrite }), '/admin/documents/9');
+    await screen.findByText(/当前密级 1/); expect(screen.queryByRole('heading', { name: '删除文档' })).toBeNull(); expect(screen.queryByRole('button', { name: '删除文档' })).toBeNull();
+    expect(writes()).toHaveLength(0); view.unmount();
+    answers.set('/api/admin/documents?documentId=9', page([{ documentId: '9', spaceId: '7', spaceArchived: true }]));
+    show(<DocumentPanelPage />, access(), '/admin/documents/9');
+    await screen.findByText('当前空间 7 · 已归档'); const titleReads = () => f.json.mock.calls.filter(([path]) => path === '/api/documents/9').length;
+    const before = titleReads(); await openDeletion();
+    expect(screen.getByLabelText('删除目标').textContent).toBe('删除目标：文档 9');
+    expect(screen.getAllByText(/无需先取消归档/).length).toBeGreaterThan(0); expect(writes()).toHaveLength(0);
+    expect(titleReads()).toBe(before);
+  });
+  it('进入删除确认即禁用例外、搬迁与密级写入，取消确认恢复，全程不发请求', async () => {
+    show(<DocumentPanelPage />, access({ has: () => true }), '/admin/documents/9');
+    const grant = () => screen.getByRole('button', { name: '授予授权' }) as HTMLButtonElement;
+    const revoke = () => screen.getByRole('button', { name: '撤销 小甲 view' }) as HTMLButtonElement;
+    const relocate = () => screen.getByRole('button', { name: '搬迁文档' }) as HTMLButtonElement;
+    const security = () => screen.getByRole('button', { name: '调整密级' }) as HTMLButtonElement;
+    await waitFor(() => { expect(grant().disabled).toBe(false); expect(relocate().disabled).toBe(false); expect(security().disabled).toBe(false); });
+    await openDeletion();
+    expect(grant().disabled).toBe(true); expect(revoke().disabled).toBe(true); expect(relocate().disabled).toBe(true); expect(security().disabled).toBe(true);
+    expect(deleteButton().disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByLabelText('删除目标')).toBeNull());
+    expect(grant().disabled).toBe(false); expect(revoke().disabled).toBe(false); expect(relocate().disabled).toBe(false); expect(security().disabled).toBe(false);
+    expect(deleteButton().disabled).toBe(false); expect(writes()).toHaveLength(0);
+  });
+  it('其他写入在途时禁用删除提交，结束后恢复；标记为未确认同样放行提交并提示；区块卸载释放互斥', async () => {
+    const operations = new DocumentOperations(); const pending = operations.beginWrite('relocate')!;
+    expect(operations.beginDelete()).toBe(true);
+    const box = (ops: DocumentOperations) => <DeletionBox id="9" owner={{ documentId: '9', spaceId: '7', spaceArchived: false }} title="文档标题" operations={ops} open
+      onOpen={vi.fn()} onClose={vi.fn()} onDone={vi.fn()} onRejected={vi.fn()} refresh={vi.fn()} />;
+    const view = show(box(operations));
+    expect(confirmation().disabled).toBe(true); expect(screen.getByText('仍有其他管理写入等待结果，结束前不能提交删除。')).toBeTruthy();
+    submit(); expect(writes()).toHaveLength(0);
+    act(() => pending.settle('confirmed'));
+    await waitFor(() => expect(confirmation().disabled).toBe(false)); expect(screen.queryByText('仍有其他管理写入等待结果，结束前不能提交删除。')).toBeNull();
+    expect(screen.queryByText('先前操作可能已经执行，结果仍未确认。')).toBeNull();
+    view.unmount(); expect(operations.getSnapshot().exclusive).toBe(false);
+    // 在途写入以“未确认”收口：不再算在途，删除提交恢复，但要把先前结果仍未核对的事实告知操作者。
+    const uncertain = new DocumentOperations(); const late = uncertain.beginWrite('relocate')!;
+    expect(uncertain.beginDelete()).toBe(true);
+    const other = show(box(uncertain));
+    expect(confirmation().disabled).toBe(true); expect(screen.queryByText('先前操作可能已经执行，结果仍未确认。')).toBeNull();
+    act(() => late.settle('uncertain'));
+    await waitFor(() => expect(confirmation().disabled).toBe(false));
+    expect(screen.getByText('先前操作可能已经执行，结果仍未确认。')).toBeTruthy(); expect(screen.queryByText('仍有其他管理写入等待结果，结束前不能提交删除。')).toBeNull();
+    expect(uncertain.getSnapshot()).toMatchObject({ pending: 0, uncertain: 1, exclusive: true }); expect(writes()).toHaveLength(0);
+    other.unmount(); expect(uncertain.getSnapshot().exclusive).toBe(false);
+  });
+  it('删除成功显示“文档已删除”并重读各区块，owner 为空后显示无可用管理操作', async () => {
+    answers.set('DELETE /api/admin/documents/9', { documentId: '9', spaceId: '7', replayed: false });
+    show(<DocumentPanelPage />, access(), '/admin/documents/9'); await openDeletion();
+    answers.set('/api/admin/documents?documentId=9', page([])); answers.set('/api/documents/9', new Response(null, { status: 404 }));
+    submit(); await screen.findByText('文档已删除'); await screen.findByText('无可用管理操作');
+    expect(screen.queryByRole('heading', { name: '文档例外授权' })).toBeNull(); expect(screen.queryByRole('heading', { name: '文档搬迁' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: '删除文档' })).toBeNull(); expect(screen.queryByLabelText('删除目标')).toBeNull();
+    expect(screen.queryByText(/文档标题/)).toBeNull();
+    expect(deletes()).toHaveLength(1); expect(deletes()[0][1].body).toBeUndefined();
+    expect(new Headers(deletes()[0][1].headers).get('X-Request-Id')).toMatch(/^[\x21-\x7e]{1,128}$/);
+    expect(check).toHaveBeenCalledWith(true);
+  });
+  it('404 后清单仍含该文档：提示当前服务不支持管理端删除，其他区块保持可用，不自动重发', async () => {
+    answers.set('DELETE /api/admin/documents/9', new Response(null, { status: 404 }));
+    show(<DocumentPanelPage />, access(), '/admin/documents/9'); await openDeletion(); const before = membershipReads(); submit();
+    await screen.findByText('当前服务不支持管理端删除；文档未被本次请求删除，其他管理操作仍可使用。');
+    expect(screen.queryByText('文档已删除')).toBeNull(); expect(screen.getByRole('heading', { name: '文档例外授权' })).toBeTruthy();
+    await waitFor(() => expect(deleteButton().disabled).toBe(false));
+    await waitFor(() => expect((screen.getByRole('button', { name: '授予授权' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(membershipReads()).toBe(before + 1); expect(deletes()).toHaveLength(1);
+  });
+  it('404 后清单不再含该文档：按当前不可访问处理，不声称由本次删除', async () => {
+    answers.set('DELETE /api/admin/documents/9', new Response(null, { status: 404 }));
+    show(<DocumentPanelPage />, access(), '/admin/documents/9'); await openDeletion();
+    answers.set('/api/admin/documents?documentId=9', page([])); submit();
+    await screen.findByText('文档当前不可访问；这不表示由本次请求删除。'); await screen.findByText('无可用管理操作');
+    expect(screen.queryByText('文档已删除')).toBeNull(); expect(screen.queryByLabelText('删除目标')).toBeNull(); expect(deletes()).toHaveLength(1);
+  });
+  it('409 提示归属已变化并重读归属，不以新归属自动重试', async () => {
+    answers.set('DELETE /api/admin/documents/9', failure('CONFLICT'));
+    show(<DocumentPanelPage />, access(), '/admin/documents/9'); await openDeletion();
+    answers.set('/api/admin/documents?documentId=9', page([{ documentId: '9', spaceId: '8', spaceArchived: false }])); submit();
+    await screen.findByText('文档归属已变化，请重新读取后再决定是否删除；不会以新归属自动重试。'); await screen.findByText('当前空间 8 · 未归档');
+    await waitFor(() => expect(deleteButton().disabled).toBe(false));
+    expect(deletes()).toHaveLength(1); expect(screen.queryByText('敏感原文')).toBeNull(); expect(screen.queryByText('文档已删除')).toBeNull();
+  });
+  it('结果不确定只提供按原标识重试、重新读取核对或放弃核对，不自动重发；重试沿用原标识且互斥持续', async () => {
+    answers.set('DELETE /api/admin/documents/9', () => { throw new TypeError('offline'); });
+    show(<DocumentPanelPage />, access(), '/admin/documents/9'); await openDeletion(); submit();
+    await screen.findByRole('button', { name: '按原内容重试' }); screen.getByRole('button', { name: '重新读取核对' }); screen.getByRole('button', { name: '放弃核对' });
+    expect(deletes()).toHaveLength(1); const original = new Headers(deletes()[0][1].headers).get('X-Request-Id');
+    expect((screen.getByRole('button', { name: '搬迁文档' }) as HTMLButtonElement).disabled).toBe(true);
+    const before = membershipReads(); fireEvent.click(screen.getByRole('button', { name: '重新读取核对' }));
+    await waitFor(() => expect(membershipReads()).toBe(before + 1));
+    expect(deletes()).toHaveLength(1); expect(screen.queryByText('文档已删除')).toBeNull(); expect(screen.getByRole('button', { name: '按原内容重试' })).toBeTruthy();
+    answers.set('DELETE /api/admin/documents/9', { documentId: '9', spaceId: '7', replayed: true });
+    fireEvent.click(screen.getByRole('button', { name: '按原内容重试' })); await screen.findByText('文档已删除');
+    expect(deletes()).toHaveLength(2); expect(new Headers(deletes()[1][1].headers).get('X-Request-Id')).toBe(original);
+    await waitFor(() => expect((screen.getByRole('button', { name: '搬迁文档' }) as HTMLButtonElement).disabled).toBe(false));
+  });
+  it('结果不确定后重新读取核对得到空清单：不解释为删除回执，保留原标识重试与放弃核对，面板按当前事实显示无可用管理操作', async () => {
+    answers.set('DELETE /api/admin/documents/9', () => { throw new TypeError('offline'); });
+    show(<DocumentPanelPage />, access(), '/admin/documents/9'); await openDeletion(); submit();
+    await screen.findByRole('button', { name: '按原内容重试' }); expect(deletes()).toHaveLength(1);
+    const original = new Headers(deletes()[0][1].headers).get('X-Request-Id');
+    answers.set('/api/admin/documents?documentId=9', page([])); answers.set('/api/documents/9', new Response(null, { status: 404 }));
+    const before = membershipReads(); fireEvent.click(screen.getByRole('button', { name: '重新读取核对' }));
+    await waitFor(() => expect(membershipReads()).toBe(before + 1));
+    await screen.findByText('无可用管理操作');
+    expect(screen.queryByText('文档已删除')).toBeNull(); expect(screen.queryByText(/这不表示由本次请求删除/)).toBeNull();
+    expect(screen.getByLabelText('删除目标')).toBeTruthy(); expect(screen.getByRole('button', { name: '按原内容重试' })).toBeTruthy(); expect(screen.getByRole('button', { name: '放弃核对' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '文档例外授权' })).toBeNull(); expect(screen.queryByRole('heading', { name: '文档搬迁' })).toBeNull();
+    expect(deletes()).toHaveLength(1);
+    answers.set('DELETE /api/admin/documents/9', { documentId: '9', spaceId: '7', replayed: true });
+    fireEvent.click(screen.getByRole('button', { name: '按原内容重试' })); await screen.findByText('文档已删除');
+    expect(deletes()).toHaveLength(2); expect(new Headers(deletes()[1][1].headers).get('X-Request-Id')).toBe(original);
+    await waitFor(() => expect(screen.queryByLabelText('删除目标')).toBeNull());
   });
 });

@@ -1,6 +1,7 @@
 package com.zhishiku.kb.app.audit.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhishiku.kb.app.audit.model.AuditQueryViews.Change;
 import com.zhishiku.kb.app.auth.model.IdentityAuditRecord;
 import com.zhishiku.kb.app.auth.service.AuditScope;
 import org.junit.jupiter.api.Test;
@@ -50,6 +51,9 @@ class AuditSummaryProjectorTest {
                 case DOCUMENT_RELOCATE ->
                         "{\"spaceId\":2,\"clearedExceptionCount\":4,\"clearanceBlockedPrincipalCount\":2," +
                                 "\"clearedExceptions\":[\"private-name\"]}";
+                case DOCUMENT_ADMIN_DELETE ->
+                        "{\"documentId\":10,\"spaceId\":2,\"spaceArchived\":false,\"title\":\"private-title\"," +
+                                "\"fileName\":\"private-file\",\"objectKey\":\"documents/private-key\"}";
                 case DOCUMENT_SECURITY_LEVEL_CHANGE ->
                         "{\"securityLevel\":4,\"securityVersion\":1,\"expectedSecurityVersion\":0," +
                                 "\"title\":\"private-title\"}";
@@ -152,5 +156,38 @@ class AuditSummaryProjectorTest {
         assertThat(projector.detail(row("SSO_LOGIN", "{}", "{\"platform\":\"attacker\",\"resultCode\":\"OK\"}")).summaryAvailable()).isFalse();
         assertThat(projector.detail(row("SSO_BIND", "{}", "{\"platform\":\"wecom\",\"resultCode\":\"private\"}")).summaryAvailable()).isFalse();
         assertThat(projector.metadata(row("SSO_LOGIN", "{}", "{\"username\":\"private\"}")).attemptedUsername()).isNull();
+    }
+
+    /**
+     * 管理端删除的生产形状：{@code before_state} 含定位字段与可能被夹带的敏感值，
+     * {@code after_state} 为空对象。投影只能露出所属空间与归档状态。
+     */
+    @Test
+    void adminDeleteProjectsOnlyLocatingFieldsAndLeavesOtherScopesUnchanged() throws Exception {
+        var projector = new AuditSummaryProjector();
+        String before = "{\"documentId\":10,\"spaceId\":2,\"spaceArchived\":true,\"title\":\"private-title\"," +
+                "\"fileName\":\"private-file\",\"objectKey\":\"documents/private-key\"}";
+        var detail = projector.detail(row("DOCUMENT_ADMIN_DELETE", before, "{}"));
+        assertThat(detail.summaryAvailable()).isTrue();
+        assertThat(detail.changes()).extracting(Change::field).containsExactly("spaceId", "spaceArchived");
+        assertThat(detail.changes()).anySatisfy(change -> {
+            assertThat(change.field()).isEqualTo("spaceId");
+            assertThat(change.before()).isEqualTo(2L);
+            assertThat(change.after()).isNull();
+        });
+        assertThat(detail.changes()).anySatisfy(change -> {
+            assertThat(change.field()).isEqualTo("spaceArchived");
+            assertThat(change.before()).isEqualTo(true);
+            assertThat(change.after()).isNull();
+        });
+        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(detail);
+        assertThat(json).doesNotContain("private-", "documents/", "title", "fileName", "objectKey");
+        assertThat(projector.detail(row("DOCUMENT_ADMIN_DELETE", "{\"spaceId\":0}", "{}")).summaryAvailable()).isFalse();
+        assertThat(projector.detail(row("DOCUMENT_ADMIN_DELETE", "{\"spaceArchived\":\"true\"}", "{}")).summaryAvailable()).isFalse();
+        // 同一载荷喂给既有操作域：spaceArchived 不会被别的规则捡走，DOC_ACL 仍只投影自己的字段。
+        assertThat(projector.detail(row("DOC_ACL_REVOKE", before, "{}")).changes())
+                .extracting(Change::field).containsExactly("documentId");
+        assertThat(projector.detail(row("DOCUMENT_RELOCATE", before, "{}")).changes())
+                .extracting(Change::field).containsExactly("spaceId");
     }
 }
