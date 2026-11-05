@@ -1,3 +1,4 @@
+import { VersionPreview } from '../office/VersionPreview';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Alert, Button, Form, Input, Modal, Pagination, Select, Space, Table, Tag } from 'antd';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -15,7 +16,7 @@ import { useResource } from '../useResource';
 import { ApiError, isAbort, messageOf, positiveId } from '../api';
 import { pendingProgress, progressLabel, retryable } from '../logic';
 import { Feedback, PageHeader } from '../components';
-import { DownloadButton, FilePreview } from '../FileAccess';
+import { DownloadButton } from '../FileAccess';
 import { perm, useAdminAccess } from '../admin/access';
 import { useFavorites } from '../favorites/useFavorites';
 import { FavoriteButton } from '../favorites/FavoriteButton';
@@ -276,6 +277,6 @@ function DocumentDetail({ documentId, onDelete, onInvalidate }: { documentId: st
       ]} /></section>
     </>}
     <UploadDialog open={!!detail && upload} documentId={documentId} onClose={() => setUpload(false)} onUploaded={result => { setSelected(result.versionId); setRevision(value => value + 1); query.reload(); }} />
-    <FilePreview path={detail && canRead ? preview : null} onClose={() => setPreview(null)} onDenied={loseVersion} />
+    <VersionPreview path={detail && canRead ? preview : null} fileName={version?.fileName} onClose={() => setPreview(null)} onDenied={loseVersion} />
   </>;
 }

@@ -17,9 +17,12 @@ export async function readFile(session: Session, path: string, signal: AbortSign
   return blob;
 }
 
-export function FilePreview({ path, onClose, onDenied }: { path: string | null; onClose: () => void; onDenied?: () => void }) {
+export function FilePreview({ path, onClose, onDenied, onUnsupported }: {
+  path: string | null; onClose: () => void; onDenied?: () => void; onUnsupported?: () => void;
+}) {
   const { session } = useSession();
   const denied = useRef(onDenied); denied.current = onDenied;
+  const unsupported = useRef(onUnsupported); unsupported.current = onUnsupported;
   const [file, setFile] = useState<{ path: string; url?: string; text?: string; error?: string }>({ path: '' });
   useEffect(() => {
     if (!path) { setFile({ path: '' }); return; }
@@ -30,6 +33,7 @@ export function FilePreview({ path, onClose, onDenied }: { path: string | null; 
         const text = await blob.text(); if (!controller.signal.aborted) setFile({ path, text });
       } else if (!controller.signal.aborted) { url = URL.createObjectURL(blob); setFile({ path, url }); }
     }).catch(error => { if (!controller.signal.aborted && !isAbort(error)) {
+      if (error instanceof ApiError && error.status === 415 && unsupported.current) { unsupported.current(); return; }
       setFile({ path, error: messageOf(error) });
       if (error instanceof ApiError && [401, 403, 404].includes(error.status)) denied.current?.();
     } });

@@ -11,7 +11,8 @@ const unitSession = { json: f.json, send: f.send, getSnapshot: () => ({ epoch: f
 vi.mock('../SessionProvider', () => ({ useSession: () => ({ session: unitSession, state: { epoch: f.epoch, phase: f.phase } }) }));
 vi.mock('../favorites/useFavorites', () => ({ useFavorites: () => ({ unavailable: () => false, status: () => ({ phase: 'loading' }) }) }));
 vi.mock('../favorites/FavoriteButton', () => ({ FavoriteButton: () => null }));
-vi.mock('../FileAccess', () => ({ FilePreview: ({ path, onDenied }: { path: string | null; onDenied?: () => void }) => <div><output>{path ?? '预览已清除'}</output>{path && <button onClick={onDenied}>模拟文件拒绝</button>}</div>,
+vi.mock('../office/VersionPreview', () => ({ VersionPreview: ({ path, onDenied }: { path: string | null; onDenied?: () => void }) => <div><output>{path ?? '预览已清除'}</output>{path && <button onClick={onDenied}>模拟文件拒绝</button>}</div> }));
+vi.mock('../FileAccess', () => ({
   DownloadButton: ({ path, disabled }: { path: string; disabled?: boolean }) => <button disabled={disabled} data-path={path}>下载原件</button> }));
 const versions = [
   { id: '12', versionNo: 2, current: false, fileName: 'v2-private.pdf', indexStatus: 'indexed', publicationPolicy: 'REVIEW_REQUIRED', publicationEvidence: 'NONE', reviewState: 'IN_REVIEW' },

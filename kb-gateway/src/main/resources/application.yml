@@ -52,7 +52,7 @@ spring:
             # /api/admin/** 覆盖身份、部门、空间、embedding 与授权管理接口。
             # 网关只做转发，鉴权仍在 kb-app：这些接口逐一校验全局管理员
             # 或目标空间的 manage 资格，把规则复制到网关会变成两份真相。
-            - Path=/api/documents/**,/api/files/**,/api/auth/**,/api/admin/**,/api/conversations/**,/api/reviews/**,/api/notifications/**
+            - Path=/api/documents/**,/api/files/**,/api/auth/**,/api/admin/**,/api/conversations/**,/api/reviews/**,/api/notifications/**,/api/office-preview/**
           metadata:
             response-timeout: 10000
             connect-timeout: 2000
@@ -88,6 +88,18 @@ spring:
             allowCredentials: true
 
 kb:
+  office-preview:
+    enabled: ${KB_OFFICE_PREVIEW_ENABLED:false}
+    application-origin: ${KB_OFFICE_APPLICATION_ORIGIN:}
+    preview-origin: ${KB_OFFICE_PREVIEW_ORIGIN:}
+    app-base-url: ${KB_APP_BASE_URL:}
+    upstream-url: ${KB_OFFICE_UPSTREAM_URL:}
+    gateway-secret: ${KB_OFFICE_GATEWAY_SECRET:}
+    authorization-timeout-seconds: ${KB_OFFICE_AUTHORIZATION_TIMEOUT_SECONDS:3}
+    upstream-timeout-seconds: ${KB_OFFICE_UPSTREAM_TIMEOUT_SECONDS:30}
+    max-connections: ${KB_OFFICE_MAX_CONNECTIONS:100}
+    max-message-bytes: ${KB_OFFICE_MAX_MESSAGE_BYTES:4194304}
+    max-resource-bytes: ${KB_OFFICE_MAX_RESOURCE_BYTES:104857600}
   telemetry:
     tracing:
       enabled: ${KB_TELEMETRY_TRACING_ENABLED:false}

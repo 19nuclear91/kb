@@ -1,3 +1,4 @@
+import { VersionPreview } from '../office/VersionPreview';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Space, Tag } from 'antd';
 import { Link } from 'react-router-dom';
@@ -7,7 +8,7 @@ import { useResource } from '../useResource';
 import { useAdminWrite } from '../admin/hooks';
 import { AdminModal } from '../admin/ui';
 import { Feedback } from '../components';
-import { DownloadButton, FilePreview } from '../FileAccess';
+import { DownloadButton } from '../FileAccess';
 import { reviewIntent, reviewPaths, reviewWrite, type ReviewCommand, type ReviewReceipt, type ReviewState, type ReviewStatus } from './api';
 import { useReviewScope } from './lifecycle';
 
@@ -68,7 +69,7 @@ function ReviewContext({ documentId, versionId, onChanged, onStatus, onDenied, f
       current={current} close={() => setChosen(null)} refresh={refresh} done={value => {
         setChosen(null); setReceipt(`操作回执已确认：版本 ${value.versionId}${value.roundNo ? `，轮次 ${value.roundNo}` : ''}。`); refresh(); onChanged?.();
       }} />}
-    {files && <FilePreview path={preview && current?.capabilities.canRead ? `${filePath}/preview` : null} onClose={() => setPreview(false)} onDenied={refresh} />}
+    {files && <VersionPreview path={preview && current?.capabilities.canRead ? `${filePath}/preview` : null} onClose={() => setPreview(false)} onDenied={refresh} />}
   </section>;
 }
 function Opinions({ documentId, versionId, onDenied }: { documentId: string; versionId: string; onDenied: () => void }) {

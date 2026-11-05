@@ -68,6 +68,22 @@ logging:
     com.zhishiku.kb.app.document.metadata.mapper: "OFF"
 
 kb:
+  office-preview:
+    enabled: ${KB_OFFICE_PREVIEW_ENABLED:false}
+    application-origin: ${KB_OFFICE_APPLICATION_ORIGIN:}
+    preview-origin: ${KB_OFFICE_PREVIEW_ORIGIN:}
+    source-base-url: ${KB_OFFICE_SOURCE_BASE_URL:}
+    configuration-secret: ${KB_OFFICE_CONFIGURATION_SECRET:}
+    outbox-secret: ${KB_OFFICE_OUTBOX_SECRET:}
+    gateway-secret: ${KB_OFFICE_GATEWAY_SECRET:}
+    deployment-id: ${KB_OFFICE_DEPLOYMENT_ID:kb}
+    launch-seconds: ${KB_OFFICE_LAUNCH_SECONDS:60}
+    lease-seconds: ${KB_OFFICE_LEASE_SECONDS:45}
+    heartbeat-seconds: ${KB_OFFICE_HEARTBEAT_SECONDS:15}
+    absolute-seconds: ${KB_OFFICE_ABSOLUTE_SECONDS:1800}
+    max-per-user: ${KB_OFFICE_MAX_PER_USER:3}
+    max-total: ${KB_OFFICE_MAX_TOTAL:100}
+    max-file-bytes: ${KB_OFFICE_MAX_FILE_BYTES:52428800}
   telemetry:
     tracing:
       enabled: ${KB_TELEMETRY_TRACING_ENABLED:false}

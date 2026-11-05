@@ -7,7 +7,7 @@ import { deferred } from '../test/fixtures';
 import type { ReviewStatus } from './api';
 
 const f = vi.hoisted(() => ({ json: vi.fn(), send: vi.fn(), refresh: vi.fn(), state: { phase: 'ready', epoch: 1 } }));
-const session = { json: f.json, send: f.send, refresh: f.refresh, getSnapshot: () => f.state };
+const session = { json: f.json, send: f.send, refresh: f.refresh, getSnapshot: () => f.state, subscribe: () => () => {} };
 vi.mock('../SessionProvider', () => ({ useSession: () => ({ session, state: f.state }) }));
 vi.mock('../favorites/useFavorites', () => ({ useFavorites: () => ({ unavailable: () => false, status: () => ({ phase: 'loading' }) }) }));
 vi.mock('../favorites/FavoriteButton', () => ({ FavoriteButton: () => null }));
@@ -22,6 +22,7 @@ beforeEach(() => {
   f.send.mockReset().mockImplementation(async () => new Response('候选私有正文', { headers: { 'Content-Type': 'text/plain' } }));
   f.refresh.mockReset().mockResolvedValue(undefined);
   f.json.mockReset().mockImplementation(async (path: string) => {
+    if (path.endsWith('/preview-info')) return { protocolVersion: 1, documentId: '1', versionId: path.split('/')[5], mode: 'DIRECT', fileType: 'txt', previewPath: path.replace('/preview-info', '/preview') };
     if (path.endsWith('/review')) return status(path.split('/')[5]);
     if (path.endsWith('/capabilities')) return { canDownload: true, canUploadVersion: false, canRetry: false };
     if (path.includes('/progress')) return { indexStatus: 'indexed', publicationEvidence: 'NONE' };
@@ -56,7 +57,7 @@ it.each(['text', 'pdf'])('详情隐藏清理 %s 预览，恢复先等身份核�
   await act(async () => checking.resolve());
   await screen.findByRole('button', { name: 'v2' });
   expect(f.json.mock.calls.length).toBeGreaterThan(reads);
-  expect(f.send).toHaveBeenCalledOnce(); expect(screen.queryByText('候选私有正文')).toBeNull();
+  expect(f.send.mock.calls.filter(([path]) => String(path).endsWith('/preview'))).toHaveLength(1); expect(screen.queryByText('候选私有正文')).toBeNull();
   expect(screen.queryByTitle('PDF 版本预览')).toBeNull();
 });
 it('详情隐藏中止文件读取，迟到正文不能恢复', async () => {
@@ -71,11 +72,14 @@ it('详情隐藏中止文件读取，迟到正文不能恢复', async () => {
 });
 it.each([401, 403, 404])('工作台预览 %i 立即清除操作资格，重读完成后按新能力显示', async code => {
   const recheck = deferred<ReviewStatus>();
-  f.json.mockResolvedValueOnce(status()).mockReturnValueOnce(recheck.promise);
+  f.json.mockImplementation(async (path: string) => {
+    if (path.endsWith('/preview-info')) return { protocolVersion: 1, documentId: '1', versionId: '12', mode: 'DIRECT', fileType: 'txt', previewPath: path.replace('/preview-info', '/preview') };
+    return f.json.mock.calls.filter(([url]) => String(url).endsWith('/review')).length === 1 ? status() : recheck.promise;
+  });
   f.send.mockImplementation(async () => new Response('', { status: code }));
   render(<MemoryRouter><VersionReviewPanel documentId="1" versionId="12" /></MemoryRouter>);
   fireEvent.click(await screen.findByRole('button', { name: '预览此版本' }));
-  await waitFor(() => expect(f.json).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(f.json).toHaveBeenCalledTimes(3));
   for (const name of ['通过并发布', '驳回', '下载原件', '查看私有意见', '预览此版本']) expect(screen.queryByRole('button', { name })).toBeNull();
   await act(async () => recheck.resolve(status('12', false)));
   await screen.findByText(/当前仅可查看本人最小状态/);

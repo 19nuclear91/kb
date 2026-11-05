@@ -40,12 +40,15 @@ class ReviewRouteTest {
                 var definition = route.getPredicates().stream().filter(item -> item.getName().equals("Path")).findFirst().orElseThrow();
                 var predicate = new PathRoutePredicateFactory().apply(new PathRoutePredicateFactory.Config().setPatterns(new ArrayList<>(definition.getArgs().values())));
                 for (String path : List.of("/api/reviews", "/api/reviews/invalid", "/api/documents/7/versions/8/comments",
-                        "/api/documents/7/versions/8/comments/00000000-0000-0000-0000-000000000001/replies")) {
+                        "/api/documents/7/versions/8/comments/00000000-0000-0000-0000-000000000001/replies",
+                        "/api/documents/7/versions/8/preview-info", "/api/office-preview/sessions/example/heartbeat")) {
                     assertThat(predicate.test(MockServerWebExchange.from(MockServerHttpRequest.get(path)))).isEqualTo(route.getId().equals("kb-app"));
                     assertThat(authentication.includeList).anyMatch(pattern -> new AntPathMatcher().match(pattern, path));
                     assertThat(authentication.excludeList).noneMatch(pattern -> new AntPathMatcher().match(pattern, path));
                 }
                 assertThat(predicate.test(MockServerWebExchange.from(MockServerHttpRequest.post("/internal/reviews")))).isFalse();
+                assertThat(predicate.test(MockServerWebExchange.from(MockServerHttpRequest.post("/internal/office-preview/authorize")))).isFalse();
+                assertThat(predicate.test(MockServerWebExchange.from(MockServerHttpRequest.get("/internal/office-preview/sessions/example/source")))).isFalse();
                 if (route.getId().equals("kb-ai-stream")) {
                     assertThat(route.getMetadata().get("response-timeout").toString()).isEqualTo("-1");
                 }

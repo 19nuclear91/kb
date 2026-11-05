@@ -1,10 +1,11 @@
+import { VersionPreview } from './office/VersionPreview';
 import { useEffect, useState } from 'react';
 import { Alert, Drawer, Space, Button, Tag } from 'antd';
 import { useSession } from './SessionProvider';
 import { useResource } from './useResource';
 import { citationPath } from './logic';
 import { Feedback, SafeText } from './components';
-import { DownloadButton, FilePreview } from './FileAccess';
+import { DownloadButton } from './FileAccess';
 import type { Citation, CitationDetail } from './types';
 import { ApiError } from './api';
 
@@ -21,9 +22,9 @@ function CitationContent({ citation }: { citation: Citation }) {
       <p className="muted">{query.data.chunk.headingPath ?? '章节未知'} · {query.data.chunk.pageNo != null ? `第 ${query.data.chunk.pageNo} 页` : '页码未知'}</p>
       <SafeText text={query.data.chunk.content} />
     </div>}
-    <Space style={{ marginTop: 20 }}><Button onClick={() => setPreview(query.data!.previewPath)}>预览原版本</Button>
+    <Space style={{ marginTop: 20 }}><Button onClick={() => setPreview(path.replace(/\/citations\/[1-9]\d*$/, '/preview'))}>预览原版本</Button>
       {query.data.downloadPath && <DownloadButton path={query.data.downloadPath} name={query.data.docTitle ?? '原版本文件'} onDenied={() => { setPreview(null); query.reload(); }} />}</Space>
-  </>}<FilePreview path={preview} onClose={() => setPreview(null)} /></>;
+  </>}<VersionPreview path={preview} onClose={() => setPreview(null)} /></>;
 }
 export function CitationDrawer({ citation, onClose }: { citation: Citation | null; onClose: () => void }) {
   return <Drawer title="版本引用" open={!!citation} onClose={onClose} size="large" destroyOnHidden>

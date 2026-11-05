@@ -1,0 +1,58 @@
+# 独立可选编排，只有显式选择 office profile 才包含服务；不改根目录默认服务。
+services:
+  office-documents:
+    profiles: [office]
+    image: onlyoffice/documentserver:10.0.0@sha256:ca17889f10b11141cc6441836aebdd2835cf3e1b49681b2fd6e155c94b7850b3
+    restart: unless-stopped
+    shm_size: 256m
+    mem_limit: 4g
+    cpus: 2
+    pids_limit: 1024
+    networks: [office-private]
+    environment:
+      JWT_ENABLED: 'true'
+      JWT_IN_BODY: 'false'
+      JWT_HEADER: Authorization
+      ALLOW_PRIVATE_IP_ADDRESS: 'true'
+      ALLOW_META_IP_ADDRESS: 'false'
+      WOPI_ENABLED: 'false'
+      PLUGINS_ENABLED: 'false'
+      WELCOME_PAGE_ENABLED: 'false'
+      NGINX_ACCESS_LOG: 'false'
+      DS_LOG_LEVEL: 'OFF'
+      # NODE_CONFIG 覆盖 entrypoint 写入 local.json 的共享默认秘密；仅列秘密文件路径。
+      NODE_CONFIG: >-
+        {"services":{"CoAuthoring":{"secret":{"browser":{"string":"","file":"/run/secrets/office-configuration"},"inbox":{"string":"","file":"/run/secrets/office-configuration"},"outbox":{"string":"","file":"/run/secrets/office-outbox"},"session":{"string":"","file":"/run/secrets/office-session"}},"token":{"enable":{"browser":true,"request":{"inbox":true,"outbox":true}},"purposeCheck":"validate","outbox":{"algorithm":"HS256","expires":"5m","header":"Authorization","prefix":"Bearer ","inBody":false},"session":{"expires":"30m"}},"expire":{"files":3600,"filesCron":"0 */5 * * * *","sessionidle":"2m","sessionabsolute":"30m"},"server":{"openProtectedFile":false}}},"externalRequest":{"directIfIn":{"allowList":["http://office-source/internal/office-preview/sessions/"],"jwtToken":false},"action":{"allow":false,"blockPrivateIP":true}},"wopi":{"enable":false}}
+    secrets: [office-configuration, office-outbox, office-session]
+    # 缓存只在本实例临时目录保存；总容量有界，重建容器即清理。
+    tmpfs:
+      - /var/lib/onlyoffice/documentserver/App_Data/cache:size=1073741824,mode=0755
+    logging:
+      driver: none
+  office-source:
+    profiles: [office]
+    image: nginx:1.28.0-alpine
+    restart: unless-stopped
+    networks: [office-private, application]
+    volumes:
+      - ./source.conf:/etc/nginx/conf.d/default.conf:ro
+    read_only: true
+    tmpfs: [/var/cache/nginx, /var/run]
+    mem_limit: 64m
+    pids_limit: 64
+    logging:
+      driver: none
+networks:
+  office-private:
+    name: kb-office-private
+    internal: true
+  application:
+    external: true
+    name: ${KB_APPLICATION_NETWORK:?填写 kb-app 所在的私有容器网络名称}
+secrets:
+  office-configuration:
+    file: ${KB_OFFICE_CONFIGURATION_SECRET_FILE:?填写配置签名秘密文件绝对路径}
+  office-outbox:
+    file: ${KB_OFFICE_OUTBOX_SECRET_FILE:?填写取件签名秘密文件绝对路径}
+  office-session:
+    file: ${KB_OFFICE_SESSION_SECRET_FILE:?填写供应商会话秘密文件绝对路径}
