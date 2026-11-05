@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "datasetId": "collection-demo",
+  "datasetVersion": "v1",
+  "corpusSnapshotId": "synthetic-v1",
+  "labelsFile": "labels.jsonl"
+}

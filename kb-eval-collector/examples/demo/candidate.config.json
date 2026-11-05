@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "runId": "candidate",
+  "configurationId": "candidate-demo-v1",
+  "endpointId": "candidate-demo",
+  "baseUrl": "https://candidate.example.invalid/kb",
+  "identities": {
+    "staff": {"tokenEnv": "KB_EVAL_TOKEN_STAFF", "expectedUserId": 7},
+    "restricted": {"tokenEnv": "KB_EVAL_TOKEN_RESTRICTED", "expectedUserId": 8}
+  },
+  "candidates": 50,
+  "topK": 20,
+  "connectTimeoutMs": 5000,
+  "requestTimeoutMs": 15000,
+  "maxResponseBytes": 4194304,
+  "allowHttpLoopback": false
+}

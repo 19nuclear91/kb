@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "runId": "baseline",
+  "configurationId": "baseline-demo-v1",
+  "endpointId": "baseline-demo",
+  "baseUrl": "https://baseline.example.invalid/kb",
+  "identities": {
+    "staff": {"tokenEnv": "KB_EVAL_TOKEN_STAFF", "expectedUserId": 7},
+    "restricted": {"tokenEnv": "KB_EVAL_TOKEN_RESTRICTED", "expectedUserId": 8}
+  },
+  "candidates": 50,
+  "topK": 20,
+  "connectTimeoutMs": 5000,
+  "requestTimeoutMs": 15000,
+  "maxResponseBytes": 4194304,
+  "allowHttpLoopback": false
+}

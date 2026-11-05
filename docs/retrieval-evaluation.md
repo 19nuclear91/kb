@@ -3,6 +3,9 @@
 `kb-eval` 是 Java 21 命令行工具，只读取本地 UTF-8 文件。输入文件保持只读，报告写到显式指定的新目录。运行不需要业务服务、PostgreSQL、Redis、MinIO、HTTP
 或模型。
 
+真实授权搜索的采集入口为独立的 [`kb-eval-collector`](retrieval-result-collection.md)，生成的 `run.json` 和 `results.jsonl`
+可直接由本工具读取。采集元数据单独存放于 `collection.json`，比较前由运行方核对；本工具保持完全离线。
+
 ## 数据格式
 
 所有清单使用 `schemaVersion: 1`。清单路径可为本地绝对路径；清单引用的文件相对清单所在目录解析，不接受 URI、网络共享或扫描通配符。JSONL
@@ -55,7 +58,7 @@ ACL，也不读取查询文本。标注变化需升级 `datasetVersion`。等级
 k) 之后的结果。只保留计算所需的前 max(k) 项。
 
 标注行、结果行的额外顶层业务字段以及 hit 的非身份字段会被跳过，正文、title、query、score、token 不保存、不回显；score 不参与排序。真实
-API 的响应包装需要由独立流程整理成本格式，本工具不提供在线接入、导出或转换命令。
+API 的响应包装可由独立的 `kb-eval-collector` 严格转换成本格式，本工具不提供在线接入、导出或转换命令。
 
 ## 指标口径
 

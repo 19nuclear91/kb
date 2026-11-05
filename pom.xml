@@ -22,6 +22,7 @@
         <module>kb-worker</module>
         <module>kb-ai</module>
         <module>kb-eval</module>
+        <module>kb-eval-collector</module>
     </modules>
 
     <properties>
