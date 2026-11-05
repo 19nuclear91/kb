@@ -1,18 +1,19 @@
 package com.zhishiku.kb.worker.embedding;
 
-import com.zhishiku.kb.worker.embedding.mapper.EmbeddingStateMapper;
-import io.micrometer.core.instrument.Gauge;
+import com.zhishiku.kb.common.monitoring.MonitoringSample;
+import com.zhishiku.kb.common.monitoring.MonitoringSample.Series;
+import com.zhishiku.kb.worker.telemetry.MonitoringSnapshotExporter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 public class EmbeddingMetrics {
@@ -20,72 +21,69 @@ public class EmbeddingMetrics {
     private static final List<String> STATES = List.of("UNINITIALIZED", "ACTIVE", "QUIESCING", "REBUILDING",
             "VERIFYING", "BLOCKED", "UNKNOWN");
     private static final List<String> ERRORS = List.of("NONE", "MODEL_UNAVAILABLE", "INVALID_RESPONSE", "LEASE_LOST",
-            "CONTENT_CHANGED",
-            "MISSING_CHUNKS", "COVERAGE_INVALID", "READINESS_EXPIRED", "RETRY_EXHAUSTED", "DATABASE_ERROR",
-            "INTERNAL_ERROR");
-    private final EmbeddingStateMapper state;
-    private final JdbcTemplate jdbc;
-    private final Map<String, AtomicLong> modes = new LinkedHashMap<>();
-    private final Map<String, AtomicLong> errors = new LinkedHashMap<>();
-    private final Map<String, AtomicLong> events = new LinkedHashMap<>();
-    private final Map<String, AtomicLong> progress = new LinkedHashMap<>();
-    private final AtomicLong available = new AtomicLong();
+            "CONTENT_CHANGED", "MISSING_CHUNKS", "COVERAGE_INVALID", "READINESS_EXPIRED", "RETRY_EXHAUSTED",
+            "DATABASE_ERROR", "INTERNAL_ERROR");
+    private static final List<String> OPERATIONS = List.of("START", "RESUME", "BLOCKED", "SUCCEEDED");
+    private final EmbeddingMetricsReader reader;
+    private final Clock clock;
+    private final MonitoringSample snapshot;
     private String previous;
 
-    public EmbeddingMetrics(MeterRegistry registry, EmbeddingStateMapper state, JdbcTemplate jdbc) {
-        this.state = state;
-        this.jdbc = jdbc;
-        register(registry, "kb.embedding.mode", "state", STATES, modes);
-        register(registry, "kb.embedding.error", "category", ERRORS, errors);
-        register(registry, "kb.embedding.events.persisted", "operation", List.of("START", "RESUME", "BLOCKED",
-                "SUCCEEDED"), events);
-        register(registry, "kb.embedding.progress", "result", List.of("total", "succeeded", "skipped", "remaining"),
-                progress);
-        Gauge.builder("kb.embedding.metrics.available", available, AtomicLong::get).register(registry);
+    @Autowired
+    public EmbeddingMetrics(MeterRegistry registry, EmbeddingMetricsReader reader, MonitoringSnapshotExporter exporter) {
+        this(registry, reader, exporter, Clock.systemUTC());
     }
 
-    private static void register(MeterRegistry registry, String name, String label, List<String> values, Map<String,
-            AtomicLong> gauges) {
-        for (String value : values) {
-            var gauge = new AtomicLong();
-            gauges.put(value, gauge);
-            Gauge.builder(name, gauge, AtomicLong::get).tag(label, value).register(registry);
-        }
+    public EmbeddingMetrics(MeterRegistry registry, EmbeddingMetricsReader reader,
+                            MonitoringSnapshotExporter exporter, Clock clock) {
+        this.reader = reader;
+        this.clock = clock;
+        Map<Series, Double> initial = new LinkedHashMap<>();
+        STATES.forEach(value -> initial.put(series("mode", "state", value), 0.0));
+        ERRORS.forEach(value -> initial.put(series("error", "category", value), 0.0));
+        OPERATIONS.forEach(value -> initial.put(series("events.persisted", "operation", value), 0.0));
+        List.of("total", "succeeded", "skipped", "remaining").forEach(value ->
+                initial.put(series("progress", "result", value), 0.0));
+        snapshot = new MonitoringSample("embedding", initial);
+        exporter.add(snapshot);
+        exporter.bindTo(registry);
     }
 
-    @Scheduled(fixedDelay = 30000)
-    public void refresh() {
+    private static Series series(String name, String label, String value) {
+        return new Series("kb.embedding." + name, Map.of(label, value));
+    }
+
+    @Scheduled(fixedDelayString = "#{@monitoringSchedule.delayMillis}",
+            initialDelayString = "#{@monitoringSchedule.delayMillis}")
+    public synchronized void refresh() {
         try {
-            var control = state.control();
-            if (control == null) throw new IllegalStateException("embedding control unavailable");
-            var run = control.runId() == null ? null : state.run(control.runId());
-            String mode = STATES.contains(control.state()) ? control.state() : "UNKNOWN";
-            String error = run == null || run.errorCode() == null ? "NONE"
-                    : ERRORS.contains(run.errorCode()) ? run.errorCode() : "INTERNAL_ERROR";
-            modes.forEach((key, value) -> value.set(key.equals(mode) ? 1 : 0));
-            errors.forEach((key, value) -> value.set(key.equals(error) ? 1 : 0));
-            long total = run == null ? 0 : run.totalCount();
-            long succeeded = run == null ? 0 : run.succeededCount();
-            long skipped = run == null ? 0 : run.skippedCount();
-            progress.get("total").set(total);
-            progress.get("succeeded").set(succeeded);
-            progress.get("skipped").set(skipped);
-            progress.get("remaining").set(Math.max(0, total - succeeded - skipped));
-            // 从持久去重事件采样，不把多实例重复观察变成新的成功计数。
-            for (var entry : events.entrySet()) {
-                Long count = jdbc.queryForObject("SELECT count(*) FROM kb_embedding_operation WHERE operation_domain " +
-                                "= ?",
-                        Long.class, entry.getKey());
-                entry.getValue().set(count == null ? 0 : count);
+            var state = reader.state();
+            if (state == null || state.mode() == null) {
+                throw new IllegalStateException("Embedding state unavailable");
             }
-            available.set(1);
+            String mode = STATES.contains(state.mode()) ? state.mode() : "UNKNOWN";
+            String error = state.error() == null ? "NONE"
+                    : ERRORS.contains(state.error()) ? state.error() : "INTERNAL_ERROR";
+            Map<Series, Double> values = new LinkedHashMap<>();
+            STATES.forEach(value -> values.put(series("mode", "state", value), value.equals(mode) ? 1.0 : 0.0));
+            ERRORS.forEach(value -> values.put(series("error", "category", value), value.equals(error) ? 1.0 : 0.0));
+            values.put(series("progress", "result", "total"), (double) state.total());
+            values.put(series("progress", "result", "succeeded"), (double) state.succeeded());
+            values.put(series("progress", "result", "skipped"), (double) state.skipped());
+            values.put(series("progress", "result", "remaining"),
+                    (double) Math.max(0, state.total() - state.succeeded() - state.skipped()));
+            // 持久事件是数据库 Gauge，不是进程 Counter；失败不能发布部分计数。
+            for (String operation : OPERATIONS) {
+                values.put(series("events.persisted", "operation", operation), (double) reader.events(operation));
+            }
+            snapshot.success(values, clock.instant().getEpochSecond());
             String signature = mode + ":" + error;
             if (!signature.equals(previous)) {
                 log.info("embedding state={} error={}", mode, error);
                 previous = signature;
             }
         } catch (RuntimeException unavailable) {
-            available.set(0);
+            snapshot.failure();
             log.warn("embedding metrics unavailable");
         }
     }

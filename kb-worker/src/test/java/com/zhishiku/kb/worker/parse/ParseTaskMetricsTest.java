@@ -30,15 +30,20 @@ class ParseTaskMetricsTest {
                     "kb.parse.tasks.claimed", "kb.parse.tasks.completed", "kb.parse.tasks.retried", "kb.parse.tasks.dead_lettered",
                     "kb.parse.tasks.lease_lost", "kb.parse.alerts.failed", "kb.parse.queue.depth", "kb.parse.dead_letter.depth",
                     "kb.parse.queue.oldest_age_seconds", "kb.parse.task.duration",
-                    "kb.parse.tasks.retried.by_class", "kb.parse.tasks.dead_lettered.by_class");
+                    "kb.parse.tasks.retried.by_class", "kb.parse.tasks.dead_lettered.by_class",
+                    "kb.monitoring.sample.available", "kb.monitoring.sample.last_success_timestamp_seconds");
             var timer = registry.get("kb.parse.task.duration").timer();
             assertThat(timer.count()).isEqualTo(1);
             assertThat(timer.getId().getTags()).isEmpty();
             assertThat(java.util.Arrays.stream(timer.takeSnapshot().histogramCounts())
                     .mapToDouble(bucket -> bucket.bucket() / 1_000_000_000.0).toArray()).containsExactly(1, 5, 30, 60, 300, 600);
             assertThat(businessMeters).allSatisfy(meter -> assertThat(meter.getId().getTags()).allSatisfy(tag -> {
-                assertThat(tag.getKey()).isEqualTo("failure_class");
-                assertThat(tag.getValue()).isIn("RETRYABLE", "PERMANENT");
+                if (tag.getKey().equals("source")) {
+                    assertThat(tag.getValue()).isEqualTo("parse");
+                } else {
+                    assertThat(tag.getKey()).isEqualTo("failure_class");
+                    assertThat(tag.getValue()).isIn("RETRYABLE", "PERMANENT");
+                }
             }));
         } finally {
             registry.close();

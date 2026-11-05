@@ -1,5 +1,7 @@
 package com.zhishiku.kb.worker.parse;
 
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.binder.MeterBinder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.actuate.health.Health;
@@ -21,6 +23,12 @@ public class DocumentParserConfiguration {
     DocumentParser unavailableDocumentParser() {
         log.warn("第三方解析服务未配置，暂停领取解析任务");
         return new UnavailableDocumentParser();
+    }
+
+    @Bean
+    MeterBinder documentParserConfigured(DocumentParser parser) {
+        return registry -> Gauge.builder("kb.parse.parser.configured", parser,
+                value -> value.isAvailable() ? 1 : 0).register(registry);
     }
 
     @Bean

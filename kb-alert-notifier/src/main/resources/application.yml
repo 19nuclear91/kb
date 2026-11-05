@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: kb-alert-notifier
+  main:
+    banner-mode: "off"
+# 双端口、安全限制和显式环境变量别名由 NotifierBootstrap 在启动前校验、封闭。
+# 不提供 secret 明文属性或可配置的机器人 URL。

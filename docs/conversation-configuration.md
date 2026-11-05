@@ -26,3 +26,19 @@ TTL 覆盖整个时间窗口；结算去重期长于重试期并保留余量。�
 
 生产顺序：保持关闭，发布 app 与 V18 迁移，再发布 AI/网关并配置匹配密钥、TLS 和支持多轮的模型适配器；选择严格预算或显式估算并核对其参数后，最后启用。此处仅交付部署说明，本次未执行迁移、部署或真实组件验证。
 
+## 独立结算采样与有效开关
+
+app 与 AI 分别导出 `kb_monitoring_feature_enabled{feature="conversation"}` 和 `{feature="ai_observation"}`，读取各自已绑定的 `kb.conversation.enabled`、`kb.ai.observability.enabled`。关闭显式为 0，缺失不等于关闭；两服务值不一致时保留各自事实，不能取最大值伪装为一致开启。这些维度不包含用户、部门、会话、轮次或资源标识。
+
+app 始终装配持久结算采样，即使两个开关都关闭也继续观察 `kb_conversation_settlement`：
+
+- `kb_conversation_settlement_pending`：全部 PENDING，包括 `next_attempt_at` 在未来的退避记录和已被领取、有当前租约的记录。
+- `kb_conversation_settlement_review`：全部 REVIEW。
+- `kb_conversation_settlement_oldest_pending_age_seconds`：PENDING 最早 `finalized_at` 至采样时刻的秒数；空集为 0，未来时间下限为 0。
+- `kb_monitoring_sample_available{source="settlement"}` 与 `kb_monitoring_sample_last_success_timestamp_seconds{source="settlement"}`：首次成功前为 0；超时或失败仅使 available=0，保留旧值及旧成功时间，不能据旧零值判断健康。
+
+一次采样只执行单个只读、单行聚合，WHERE 仅允许 PENDING/REVIEW；正常 RESERVED 与历史 SETTLED 排除，不关联 AI 观测、用户或正文，不领取、不锁业务行、不扣费、不自动处理 REVIEW。默认启动 30 秒后首次采样，此后 fixed-delay 30 秒；`kb.monitoring.sample-interval-ms` 可设 1000–3600000，`kb.monitoring.query-timeout-seconds` 默认每条 3 秒、可设 1–30。专用 JDBC 模板不更改业务配置；抓取只读不可变快照，不触发 SQL。
+
+AI 观测页面及 `kb.ai.observation.unresolved` 是有采集覆盖边界的辅助视图，可能混入正常 RUNNING/RESERVED，不是结算权威来源。关闭新生成不会清空旧账本；页面没有对应记录不能解释为没有积压。结算告警先检查 settlement 来源可用性及新鲜度，再按同库部署的有效 app 副本 max 去重，不能 sum 或受功能开关静默。
+
+本轮仅进行进程内配置、JDBC Mock 映射、可控时钟与并发 registry 抓取验证，人工审阅 SQL 谓词；未连接数据库、执行真实 SQL、迁移或部署，不以 Mock 证明 SQL 性能或线上结算状态。

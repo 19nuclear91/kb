@@ -31,6 +31,7 @@ public class HistogramConfiguration {
 
     static Map<String, double[]> buckets(Environment environment) {
         var search = values(environment, "search", "1.5s,2s,3s,8s");
+        var firstEvent = values(environment, "first-event", "100ms,500ms,1s,2s,5s,10s,30s,60s");
         var parse = new TreeSet<Double>();
         Arrays.stream(values(environment, "parse", "1s,5s,30s,60s,300s")).forEach(parse::add);
         try {
@@ -44,6 +45,7 @@ public class HistogramConfiguration {
         }
         return Map.of("kb.search.stage.duration", search, "kb.search.options.stage.duration", search,
                 "kb.model.call.duration", values(environment, "model", "1s,5s,15s,30s,60s"),
+                "kb.model.first_text.delay", firstEvent, "kb.chat.first_event.delay", firstEvent,
                 "kb.parse.task.duration", parse.stream().mapToDouble(Double::doubleValue).toArray(),
                 "http.server.requests", values(environment, "http", "100ms,500ms,2s,10s"));
     }

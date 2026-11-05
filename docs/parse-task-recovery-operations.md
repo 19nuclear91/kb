@@ -55,8 +55,19 @@ Actuator 在管理端口暴露 `/actuator/metrics` 与 `/actuator/prometheus`。
 
 `kb.parse.task.duration` 保持无业务标签，默认显式边界为 1s、5s、30s、60s、300s，并去重合入 `KB_TASK_TIMEOUT_SECONDS`（默认 900s）。`kb.telemetry.histograms.parse` 可覆盖基础边界，配置必须严格递增且为正；Prometheus 按秒导出 `_bucket`、`_count`、`_sum`。抓取与 OpenMetrics 配置见[遥测运维](telemetry-operations.md)。
 
-死信转移和重试耗尽先写入 `kb_parse_task_event` 与 `kb_parse_alert_delivery`，告警投递器在事务提交后调用
-`TaskFailureAlert`。`dedupe_key` 保证重复巡检最多发送一次；发送失败保留待投递记录并增加失败指标。
+### 来源快照与本地接入状态
+
+`kb_monitoring_sample_available{source=~"parse|embedding"}` 和 `kb_monitoring_sample_last_success_timestamp_seconds{source}` 从启动即存在，首次完整采样前均为 0。Worker 默认延迟 30 秒首次采样，此后每次完成后等待 30 秒；`kb.worker.metrics-gauge-interval-ms`（既有 `KB_METRICS_GAUGE_INTERVAL_MS`）可设 1000–3600000 ms。监控专用 SQL 默认每条超时 3 秒，`kb.monitoring.query-timeout-seconds` 可设 1–30，不修改业务模板配置。
+
+解析的三个读取全部成功才发布：`queue.depth` 是 `status='pending' AND attempts<max_attempts` 且 `next_attempt_at` 为空或已到时的可尝试队列；`queue.oldest_age_seconds` 保留所有未耗尽 pending 的 `min(COALESCE(next_attempt_at,created_at))` 谓词，并将未来时间导致的负年龄收敛为 0；`dead_letter.depth` 仅为 OPEN。退避中的 pending 可以进入年龄集合而不进入可尝试深度，不要把深度与年龄当作同一集合。
+
+任一读取失败将来源 available 置 0，保留旧业务值和旧成功时间；不把异常当空库。Prometheus 抓取不查库，来源级导出一次捕获业务值与质量状态，避免并发发布时把部分新值当完整成功。Embedding 状态、错误、进度和持久事件一起发布，旧 `kb_embedding_metrics_available` 与新质量信号一致；`kb_embedding_events_persisted{operation}` 是数据库 Gauge，不是进程 Counter。
+
+同库多 Worker 汇总应先按实例筛选 up、available 和有效成功时间（默认新鲜度 120 秒，拒绝未来时间），再按环境／部署取 max 去重，不能按副本 sum。全部失效必须显示采样不可用。`kb_parse_parser_configured` 为本地 `DocumentParser.isAvailable()` 零一值：缺适配器为 0，配置完成但远程故障仍可能为 1；读取不调用 parse、不访问原件、不联网、不领取任务，原健康与暂停规则不变。
+
+采样仅只读观察，不重试任务、处置死信或调用钉钉。本轮数值映射、异常和并发行为通过进程内 registry/JDBC Mock 验证；SQL 仅人工审阅，不声称真实 PostgreSQL 执行或生产查询性能已验证。
+
+死信转移和重试耗尽先写入 `kb_parse_task_event` 与 `kb_parse_alert_delivery`。现有 `TaskAlertOutbox.dispatch` 在事务中持有待投递行锁并调用本地 `TaskFailureAlert`；本次不向该持锁事务接入钉钉 HTTP。`dedupe_key` 约束重复巡检事件，失败保留待投递记录并增加指标；钉钉聚合通知由独立 Prometheus/Alertmanager 链路负责。
 
 ## 任务级追踪
 

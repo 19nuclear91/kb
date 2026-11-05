@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "platform": "windows/amd64",
+  "containerPlatform": "linux",
+  "evidence": {
+    "verifiedUtc": "2026-11-05T12:02:49Z",
+    "method": "上游 registry manifest 响应 digest 与响应体 SHA-256 一致；CLI 发行归档 SHA-256 与官方校验文件一致。只核验静态契约，未构建或运行容器。",
+    "sourceFiles": ["monitoring-tools/cli-evidence.json", "monitoring-tools/registry-evidence.json"]
+  },
+  "images": {
+    "prometheus": {
+      "env": "PROMETHEUS_IMAGE",
+      "reference": "prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996",
+      "manifestUrl": "https://registry-1.docker.io/v2/prom/prometheus/manifests/v3.5.0"
+    },
+    "alertmanager": {
+      "env": "ALERTMANAGER_IMAGE",
+      "reference": "prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba",
+      "manifestUrl": "https://registry-1.docker.io/v2/prom/alertmanager/manifests/v0.28.1"
+    },
+    "grafana": {
+      "env": "GRAFANA_IMAGE",
+      "reference": "grafana/grafana:12.1.1@sha256:a1701c2180249361737a99a01bc770db39381640e4d631825d38ff4535efa47d",
+      "manifestUrl": "https://registry-1.docker.io/v2/grafana/grafana/manifests/12.1.1"
+    },
+    "notifierBase": {
+      "env": "NOTIFIER_BASE_IMAGE",
+      "reference": "eclipse-temurin:21.0.8_9-jre-jammy@sha256:db1689535962d757a5adabf57387584ed543d38c0b9d1fe870123ea362ad73b0",
+      "manifestUrl": "https://registry-1.docker.io/v2/library/eclipse-temurin/manifests/21.0.8_9-jre-jammy"
+    }
+  },
+  "notifier": {
+    "java": "21",
+    "springBoot": "3.3.5",
+    "artifact": "kb-alert-notifier/target/kb-alert-notifier-0.1.0-SNAPSHOT.jar",
+    "imageEnvironment": "KB_NOTIFIER_IMAGE",
+    "imageReference": null,
+    "status": "operator-build-required",
+    "requirement": "发布前构建并推送镜像，由发布记录提供实际固定 tag@sha256:digest；静态测试的 registry.invalid/零 digest 不是真镜像，禁止部署。"
+  },
+  "tools": {
+    "promtool": {
+      "version": "3.5.0",
+      "relativePath": "promtool-3.5.0/promtool.exe",
+      "versionArgs": ["--version"],
+      "versionPattern": "^promtool, version 3\\.5\\.0(?: |$)",
+      "executableSha256": "626674d5a047f2fd862a9c8678596b890a6824c76d31c33bcd6af93c1e3429d9",
+      "archiveSha256": "b3c2607d1e80a277735fd3cde86432eb1b6843897cb82fb04fbf4c7ffb1d1c36",
+      "downloadUrl": "https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.windows-amd64.zip",
+      "checksumUrl": "https://github.com/prometheus/prometheus/releases/download/v3.5.0/sha256sums.txt"
+    },
+    "amtool": {
+      "version": "0.28.1",
+      "relativePath": "amtool-0.28.1/amtool.exe",
+      "versionArgs": ["--version"],
+      "versionPattern": "^amtool, version 0\\.28\\.1(?: |$)",
+      "executableSha256": "ecc3104c1b742e5e18989fa3518be657b3fe8c945ab089f8515c0140d225f92b",
+      "archiveSha256": "521de9569ab0570845c38889cceb26790696ab04b1cba0b0086994b785013ca8",
+      "downloadUrl": "https://github.com/prometheus/alertmanager/releases/download/v0.28.1/alertmanager-0.28.1.windows-amd64.zip",
+      "checksumUrl": "https://github.com/prometheus/alertmanager/releases/download/v0.28.1/sha256sums.txt"
+    },
+    "compose": {
+      "version": "2.39.2",
+      "relativePath": "compose-2.39.2/docker-compose-windows-x86_64.exe",
+      "versionArgs": ["version"],
+      "versionPattern": "^Docker Compose version v2\\.39\\.2(?:\\s|$)",
+      "executableSha256": "6580793b1f612150646a9f8d02148c8d226a0033ed6e2e3273c0229b25e2f158",
+      "archiveSha256": "6580793b1f612150646a9f8d02148c8d226a0033ed6e2e3273c0229b25e2f158",
+      "downloadUrl": "https://github.com/docker/compose/releases/download/v2.39.2/docker-compose-windows-x86_64.exe",
+      "checksumUrl": "https://github.com/docker/compose/releases/download/v2.39.2/checksums.txt"
+    }
+  }
+}

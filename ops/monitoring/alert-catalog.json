@@ -1,0 +1,22 @@
+[
+  {"name":"KbServiceUnavailable","services":["app","worker","ai","gateway","notifier","prometheus","alertmanager","grafana"],"severity":"critical","family":"availability","summary":"预期服务没有存活目标，请检查目标配置与管理网络。","link":{"root":"grafana","path":"/d/kb-overview"}},
+  {"name":"KbServiceReplicaUnavailable","services":["app","worker","ai","gateway","notifier","prometheus","alertmanager","grafana"],"severity":"warning","family":"availability","summary":"部分服务副本失联，其余副本仍可抓取。","link":{"root":"grafana","path":"/d/kb-overview"}},
+  {"name":"KbMonitoringContractMissing","services":["app","worker","ai","notifier"],"severity":"warning","family":"sampling","summary":"存活目标缺少固定指标契约，不得将缺失解释为零。","link":{"root":"grafana","path":"/d/kb-overview"}},
+  {"name":"KbMetricSampleUnavailable","services":["app","worker"],"severity":"warning","family":"sampling","summary":"数据库采样失败、未完成或时间无效，请核对来源新鲜度。","link":{"root":"grafana","path":"/d/kb-overview"}},
+  {"name":"KbParserNotConfigured","services":["worker"],"severity":"critical","family":"parser","summary":"预期解析开启，但存活 Worker 均未配置本地可用解析器。","link":{"root":"grafana","path":"/d/kb-parse-index"}},
+  {"name":"KbParseQueueAging","services":["worker"],"severity":"warning","family":"parse-queue","summary":"解析配置及索引就绪时，pending 最老等待持续过长。","link":{"root":"grafana","path":"/d/kb-parse-index"}},
+  {"name":"KbParseDeadLetters","services":["worker"],"severity":"warning","family":"parse-dead-letter","summary":"存在尚未处置的解析死信；进入维护不会清除该状态。","link":{"root":"admin","path":"/admin/parse/dead-letters"}},
+  {"name":"KbParseLeaseLoss","services":["worker"],"severity":"warning","family":"parse-lease","summary":"解析执行持续失去租约，请检查耗时、调度与实例稳定性。","link":{"root":"grafana","path":"/d/kb-parse-index"}},
+  {"name":"KbEmbeddingBlocked","services":["worker"],"severity":"critical","family":"embedding","summary":"向量索引处于 BLOCKED，需在授权管理页面核对原因。","link":{"root":"admin","path":"/admin/embedding"}},
+  {"name":"KbEmbeddingMaintenanceLong","services":["worker"],"severity":"warning","family":"embedding","summary":"索引长期未初始化或维护未结束，请核对进度与采样。","link":{"root":"admin","path":"/admin/embedding"}},
+  {"name":"KbSearchFailures","services":["app"],"severity":"critical","family":"search","summary":"有效流量下搜索业务失败率持续超限，不包含合法空结果。","link":{"root":"grafana","path":"/d/kb-search-ai"}},
+  {"name":"KbSearchRetrievalSlow","services":["app"],"severity":"warning","family":"search","summary":"召回阶段 P95 持续超限；此指标不是搜索总耗时。","link":{"root":"grafana","path":"/d/kb-search-ai"}},
+  {"name":"KbSearchDegradation","services":["app"],"severity":"warning","family":"search-degradation","summary":"Embedding 或 rerank 降级持续，需核对对应依赖状态。","link":{"root":"grafana","path":"/d/kb-search-ai"}},
+  {"name":"KbModelFailures","services":["ai"],"severity":"critical","family":"model","summary":"有效流量下模型超时、协议或上游错误率持续超限。","link":{"root":"grafana","path":"/d/kb-search-ai"}},
+  {"name":"KbChatSystemErrors","services":["ai"],"severity":"critical","family":"chat","summary":"SSE 系统错误持续超限，不以 HTTP 200 作为生成成功依据。","link":{"root":"grafana","path":"/d/kb-search-ai"}},
+  {"name":"KbSettlementPendingOld","services":["app"],"severity":"warning","family":"settlement","summary":"已终结的持久结算长期 PENDING；观测页面可能没有对应采集记录。","link":{"root":"grafana","path":"/d/kb-search-ai"}},
+  {"name":"KbSettlementReview","services":["app"],"severity":"critical","family":"settlement","summary":"持久结算存在 REVIEW，请人工核对；通知不会扣费或自动重放。","link":{"root":"grafana","path":"/d/kb-search-ai"}},
+  {"name":"KbConversationConfigurationMismatch","services":["app"],"severity":"warning","family":"configuration","summary":"存活 app 与 AI 的多轮会话开关不一致。","link":{"root":"grafana","path":"/d/kb-search-ai"}},
+  {"name":"KbNotificationDeliveryFailures","services":["notifier","alertmanager"],"severity":"warning","family":"notification","summary":"通知持续失败或受到容量限制；同一失效链路不能保证自身通知。","link":{"root":"grafana","path":"/d/kb-overview"}},
+  {"name":"KbRuleEvaluationFailures","services":["prometheus"],"severity":"critical","family":"rules","summary":"Prometheus 规则求值持续失败，业务告警可能缺失。","link":{"root":"grafana","path":"/d/kb-overview"}}
+]

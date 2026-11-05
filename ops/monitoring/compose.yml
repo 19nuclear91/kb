@@ -1,0 +1,173 @@
+name: kb-monitoring
+
+services:
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:?load versions.env}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    working_dir: /etc/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.json
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${KB_MONITORING_RETENTION:?load deployment.env}
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - type: bind
+        source: ${KB_MONITORING_CONFIG_DIR:?set absolute generated directory}
+        target: /etc/prometheus
+        read_only: true
+        bind:
+          create_host_path: false
+      - prometheus_data:/prometheus
+    tmpfs: [/tmp]
+    networks:
+      monitoring: {}
+      prometheus_egress:
+        gw_priority: 1
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  alertmanager:
+    image: ${ALERTMANAGER_IMAGE:?load versions.env}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.json
+      - --storage.path=/alertmanager
+      - --cluster.listen-address=
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - type: bind
+        source: ${KB_MONITORING_CONFIG_DIR:?set absolute generated directory}/alertmanager.json
+        target: /etc/alertmanager/alertmanager.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - alertmanager_data:/alertmanager
+    secrets: [notifier_token]
+    tmpfs: [/tmp]
+    networks: [monitoring]
+
+  grafana:
+    image: ${GRAFANA_IMAGE:?load versions.env}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_password
+      GF_UNIFIED_ALERTING_ENABLED: "false"
+      GF_METRICS_ENABLED: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_SERVER_ROOT_URL: ${KB_MONITORING_GRAFANA_ROOT:?load deployment.env}
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - type: bind
+        source: ${KB_MONITORING_CONFIG_DIR:?set absolute generated directory}/datasource.yaml
+        target: /etc/grafana/provisioning/datasources/kb.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${KB_MONITORING_CONFIG_DIR:?set absolute generated directory}/dashboard-provider.yaml
+        target: /etc/grafana/provisioning/dashboards/kb.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${KB_MONITORING_CONFIG_DIR:?set absolute generated directory}/kb-overview.json
+        target: /var/lib/grafana/dashboards/kb-overview.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${KB_MONITORING_CONFIG_DIR:?set absolute generated directory}/kb-parse-index.json
+        target: /var/lib/grafana/dashboards/kb-parse-index.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${KB_MONITORING_CONFIG_DIR:?set absolute generated directory}/kb-search-ai.json
+        target: /var/lib/grafana/dashboards/kb-search-ai.json
+        read_only: true
+        bind:
+          create_host_path: false
+    secrets: [grafana_password]
+    tmpfs: [/tmp]
+    networks: [monitoring]
+
+  notifier:
+    image: ${KB_NOTIFIER_IMAGE:?operator must supply a built tag@sha256 digest}
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+      update_config:
+        order: stop-first
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      KB_NOTIFIER_ENVIRONMENT: ${KB_MONITORING_ENVIRONMENT:?load deployment.env}
+      KB_NOTIFIER_DEPLOYMENT: ${KB_MONITORING_DEPLOYMENT:?load deployment.env}
+      KB_NOTIFIER_ADMIN_ROOT: ${KB_MONITORING_ADMIN_ROOT:?load deployment.env}
+      KB_NOTIFIER_GRAFANA_ROOT: ${KB_MONITORING_GRAFANA_ROOT:?load deployment.env}
+      KB_NOTIFIER_ADDRESS: ${KB_NOTIFIER_IPV4:-172.30.80.10}
+      KB_NOTIFIER_PORT: "8090"
+      KB_NOTIFIER_MANAGEMENT_ADDRESS: ${KB_NOTIFIER_IPV4:-172.30.80.10}
+      KB_NOTIFIER_MANAGEMENT_PORT: "9090"
+      KB_NOTIFIER_CATALOG_FILE: /etc/notifier/alert-catalog.json
+      KB_NOTIFIER_BEARER_SECRET_FILE: /run/secrets/notifier_token
+      KB_NOTIFIER_DINGTALK_TOKEN_FILE: /run/secrets/dingtalk_token
+      KB_NOTIFIER_DINGTALK_SECRET_FILE: /run/secrets/dingtalk_secret
+    volumes:
+      - type: bind
+        source: ${KB_MONITORING_CONFIG_DIR:?set absolute generated directory}/alert-catalog.json
+        target: /etc/notifier/alert-catalog.json
+        read_only: true
+        bind:
+          create_host_path: false
+    secrets: [notifier_token, dingtalk_token, dingtalk_secret]
+    tmpfs: [/tmp]
+    networks:
+      monitoring:
+        ipv4_address: ${KB_NOTIFIER_IPV4:-172.30.80.10}
+      notifier_egress:
+        gw_priority: 1
+
+networks:
+  monitoring:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${KB_MONITORING_SUBNET:-172.30.80.0/24}
+  prometheus_egress: {}
+  notifier_egress: {}
+
+volumes:
+  prometheus_data: {}
+  alertmanager_data: {}
+  grafana_data: {}
+
+secrets:
+  notifier_token:
+    file: ${KB_NOTIFIER_TOKEN_FILE:?set readonly bearer secret file}
+  dingtalk_token:
+    file: ${KB_DINGTALK_TOKEN_FILE:?set readonly robot token file}
+  dingtalk_secret:
+    file: ${KB_DINGTALK_SECRET_FILE:?set readonly signing secret file}
+  grafana_password:
+    file: ${KB_GRAFANA_PASSWORD_FILE:?set readonly Grafana password file}

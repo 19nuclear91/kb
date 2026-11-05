@@ -1,0 +1,7 @@
+/settings.json
+/generated/
+/releases/
+/secrets/
+/deployment.local.env
+/.env
+/verification/

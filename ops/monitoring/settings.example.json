@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "deployment": "kb-main",
+  "adminRoot": "https://kb.internal.example",
+  "grafanaRoot": "https://monitor.internal.example",
+  "retentionDays": 15,
+  "parserExpected": true,
+  "services": [
+    {"service":"app","expected":true,"targets":["host.docker.internal:9081"]},
+    {"service":"worker","expected":true,"targets":["host.docker.internal:9083"]},
+    {"service":"ai","expected":true,"targets":["host.docker.internal:9082"]},
+    {"service":"gateway","expected":true,"targets":["host.docker.internal:9080"]}
+  ],
+  "thresholds": {
+    "freshnessSeconds":120,
+    "queueAgeSeconds":900,
+    "leaseLossCount":3,
+    "searchMinRequests":20,
+    "searchFailureRatio":0.1,
+    "retrievalP95Seconds":2.5,
+    "degradationRatio":0.2,
+    "modelMinRequests":10,
+    "modelFailureRatio":0.2,
+    "chatMinRequests":10,
+    "chatErrorRatio":0.2,
+    "settlementAgeSeconds":300
+  },
+  "waitSeconds": {
+    "KbServiceUnavailable":120,
+    "KbServiceReplicaUnavailable":300,
+    "KbMonitoringContractMissing":120,
+    "KbMetricSampleUnavailable":120,
+    "KbParserNotConfigured":300,
+    "KbParseQueueAging":300,
+    "KbParseDeadLetters":300,
+    "KbParseLeaseLoss":300,
+    "KbEmbeddingBlocked":120,
+    "KbEmbeddingMaintenanceLong":3600,
+    "KbSearchFailures":300,
+    "KbSearchRetrievalSlow":300,
+    "KbSearchDegradation":600,
+    "KbModelFailures":300,
+    "KbChatSystemErrors":300,
+    "KbSettlementPendingOld":300,
+    "KbSettlementReview":120,
+    "KbConversationConfigurationMismatch":300,
+    "KbNotificationDeliveryFailures":300,
+    "KbRuleEvaluationFailures":120
+  }
+}

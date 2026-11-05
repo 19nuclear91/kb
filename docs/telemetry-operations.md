@@ -74,16 +74,43 @@ Worker 重试/死信分类有一项明确的名称迁移：保留无标签总量
 | --- | --- | --- |
 | `kb.telemetry.histograms.search` | `kb.search.stage.duration`、`kb.search.options.stage.duration` | 1.5s、2s、3s、8s |
 | `kb.telemetry.histograms.model` | `kb.model.call.duration` | 1s、5s、15s、30s、60s |
+| `kb.telemetry.histograms.first-event`（仅 AI） | `kb.model.first_text.delay`、`kb.chat.first_event.delay` | 100ms、500ms、1s、2s、5s、10s、30s、60s |
 | `kb.telemetry.histograms.parse` | `kb.parse.task.duration` | 1s、5s、30s、60s、300s，并合入 `KB_TASK_TIMEOUT_SECONDS` |
 | `kb.telemetry.histograms.http` | `http.server.requests` | 100ms、500ms、2s、10s |
 
 可在外部配置文件中用逗号分隔的 Duration 或列表覆盖边界；修改预算后应同步审视对应分桶。配置必须严格递增且为正值，Worker 的任务超时边界会去重后合入。按名称应用 SLO 桶，避免全局开启百分位直方图。
+
+两个首事件 Timer 显式导出 `_seconds_bucket`，供面板在逐序列 rate 后合并桶计算 P95；该配置不改变模型整次调用的分桶。SSE 的首个内容事件可能是 citation，不等于模型首字；没有内容事件时不生成该次延迟样本，不补造零值。
 
 HTTP 服务端按路径模板聚合，未知路径使用固定类别，网关以路由 ID 聚合；`management.metrics.web.server.max-uri-tags` 默认 100。管理请求在路由匹配前投影为固定 `MANAGEMENT` 类别，由过滤器拒绝计量，覆盖 `.active` 与结束时的耗时指标；原始路径不会写入标签。网关附加指标移除原始路径和目标 URI 标签。
 
 导出时删除完整 URL、请求头、网络地址及异常消息/堆栈属性。OTel 异常事件重新构建为仅含合法异常类名的事件；跨度状态保留 ERROR/OK/UNSET，但清空描述，避免原始异常消息绕过属性过滤。排障使用 trace、路由、固定失败类别和任务标识，不依赖远程原始错误体。
 
 app 的搜索主工作与可选阶段显式恢复 Observation、span 和本地 requestId，确保跨线程的降级日志仍关联入口 trace；作用域只覆盖实际执行，成功、异常或取消后的真实退出都会清理，不复制其他 MDC 或认证/事务字段。app/AI 接收端的内存测试同时核对已知 W3C 父上下文、服务端日志和后续内部调用沿用同一 trace，不仅断言出站头存在。
+
+## 数据库采样可信度与功能状态
+
+Worker 的 parse、embedding 与 app 的 settlement 各自保存不可变来源快照。启动即导出 `kb_monitoring_sample_available{source}` 和 `kb_monitoring_sample_last_success_timestamp_seconds{source}`，初始均为 0；只有全部必要读取与校验成功才更新业务值及 UTC Unix 秒。超时或中途失败将 available 置 0，保留旧值与旧成功时间；没有新采样时，抓取不会推进时间或查询数据库。
+
+Prometheus 使用来源级 collector 一次捕获快照后生成该来源全部 Gauge（含质量信号），而不是依次读取多个独立 Gauge 的当前值。因此即使两次抓取与采样发布交错，同一次来源导出仍保持完整；不同来源、不同实例之间不承诺同一数据库事务快照。`kb_embedding_metrics_available` 与 embedding 来源 available 来自同一份状态。Counter、Timer 和既有分类名称不变；`kb_embedding_events_persisted{operation}` 仍为数据库 Gauge，没有 `_total` 后缀。
+
+| 配置键 | 范围 | 默认 / 限制 |
+| --- | --- | --- |
+| `kb.worker.metrics-gauge-interval-ms` | Worker parse、embedding；兼容 `KB_METRICS_GAUGE_INTERVAL_MS` | 30000 ms；1000–3600000 |
+| `kb.monitoring.sample-interval-ms` | app settlement | 30000 ms；1000–3600000 |
+| `kb.monitoring.query-timeout-seconds` | Worker / app 监控专用 JDBC 模板 | 每条 SQL 3 秒；1–30 |
+
+首次采样延迟一个周期，随后为 fixed-delay，来源方法串行执行；结果规模固定为单行，结算每次仅一个聚合语句。专用模板不会修改业务 JDBC 的超时；SQL 语句超时不等于连接池取连接的总期限，连接池等待仍按现有 DataSource 配置。采样不领取任务、不锁业务行、不变更索引或扣费，不调用供应商。修改周期应同时审视告警的新鲜度窗口。
+
+数据库 Gauge 先按实例核对 `up=1`、available=1、成功时间大于 0 且不在未来，并检查 `time()-last_success<=120`，再按同一 environment/deployment 的同库副本取 max 去重，不能 sum。全部无效应显示不可用，而非零或绿色；Counter 先逐序列 rate/increase，直方图合并桶后计算分位数。
+
+`kb_parse_parser_configured` 只读取 `DocumentParser.isAvailable()` 的本地事实，不探测网络、不访问原件、不调用 parse；有适配器但远端不可达时仍可能为 1，不改变原健康检查与任务暂停规则。解析深度只计已到可尝试时间的 pending，年龄则使用所有未耗尽 pending 的 `COALESCE(next_attempt_at, created_at)`；两者不是同一过滤集合。
+
+app / AI 各自导出 `kb_monitoring_feature_enabled{feature=~"conversation|ai_observation"}`，分别来自本地有效 `kb.conversation.enabled` 与 `kb.ai.observability.enabled`，关闭显式为 0，不合并对端开关。缺少序列是契约缺失，不等于关闭。开关不门控 settlement、采样失败或进程失联。
+
+app 的 `kb_conversation_settlement_pending`、`kb_conversation_settlement_review`、`kb_conversation_settlement_oldest_pending_age_seconds` 直接取持久账本；关闭新会话和 AI 观测后仍采样。AI 观测 unresolved 混入正常生成／预留且受采集覆盖限制，不能替代结算指标；管理页面无记录不能证明无积压。详见[会话配置](conversation-configuration.md)。
+
+上述验证仅使用进程内 registry、JDBC/Mapper Mock 与配置上下文，覆盖失败保留、恢复及并发抓取；未执行真实 SQL、连接数据库或启动监听。SQL 谓词人工审阅，文档不作为内容断言测试对象。
 
 ## 回退
 

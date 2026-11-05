@@ -23,6 +23,7 @@
         <module>kb-ai</module>
         <module>kb-eval</module>
         <module>kb-eval-collector</module>
+        <module>kb-alert-notifier</module>
     </modules>
 
     <properties>
