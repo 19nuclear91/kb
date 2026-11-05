@@ -49,16 +49,21 @@ export function FilePreview({ path, onClose, onDenied, onUnsupported }: {
 export function DownloadButton({ path, name, disabled, onDenied }: { path: string; name: string; disabled?: boolean; onDenied?: () => void }) {
   const { session } = useSession();
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
-  const [controller] = useState(() => new AbortController());
-  useEffect(() => () => controller.abort(), [controller]);
+  const active = useRef<AbortController | null>(null);
+  useEffect(() => {
+    setError(''); setBusy(false);
+    return () => { active.current?.abort(); active.current = null; };
+  }, [path, session]);
   return <Space orientation="vertical"><Button disabled={disabled} loading={busy} onClick={async () => {
-    if (busy) return; setBusy(true); setError('');
+    if (disabled || active.current) return;
+    const controller = new AbortController(); active.current = controller;
+    setBusy(true); setError('');
     try {
       const blob = await readFile(session, path, controller.signal);
       const url = URL.createObjectURL(blob), link = document.createElement('a');
       try { link.href = url; link.download = name; link.rel = 'noopener'; link.click(); }
       finally { URL.revokeObjectURL(url); }
-    } catch (failure) { if (!isAbort(failure)) { setError(messageOf(failure)); if (failure instanceof ApiError && [403, 404].includes(failure.status)) onDenied?.(); } }
-    finally { setBusy(false); }
+    } catch (failure) { if (active.current === controller && !controller.signal.aborted && !isAbort(failure)) { setError(messageOf(failure)); if (failure instanceof ApiError && [403, 404].includes(failure.status)) onDenied?.(); } }
+    finally { if (active.current === controller) { active.current = null; if (!controller.signal.aborted) setBusy(false); } }
   }}>下载原件</Button>{error && <span role="alert" className="muted">{error}</span>}</Space>;
 }

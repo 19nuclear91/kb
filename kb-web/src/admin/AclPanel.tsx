@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Alert, Button } from 'antd';
 import { ApiError, decodeJson, encodeJson } from '../api';
 import { useSession } from '../SessionProvider';
@@ -33,6 +33,13 @@ const revokeBatchWrite: typeof adminWrite = async (session, intent, requestId, s
     throw error;
   }
 };
+
+// 选择批量条目只改变复选框，不必重渲染列表中每个撤销按钮。
+const RevokeButton = memo(function RevokeButton({ acl, disabled, onRevoke }: {
+  acl: Acl; disabled: boolean; onRevoke: (acl: Acl) => void;
+}) {
+  return <Button aria-label={`撤销 ${acl.principalName} ${acl.permission}`} disabled={disabled} onClick={() => onRevoke(acl)}>撤销</Button>;
+});
 
 export function AclPanel(props: AclPanelProps) {
   const { state } = useSession();
@@ -111,7 +118,7 @@ function AclPanelContent({ kind, resourceId, archived = false, onChanged, onData
           disabled={documentState.exclusive} onChange={event => saveRevokeDraft({ ...revokeDraft,
             keys: event.target.checked ? [...revokeDraft.keys, aclKey(acl)] : revokeDraft.keys.filter(key => key !== aclKey(acl)) })} />}
         <span>{acl.principalType} · {acl.principalName} · {acl.permission}</span>
-        {(acl.permission !== 'manage' || manage) && <Button aria-label={`撤销 ${acl.principalName} ${acl.permission}`} disabled={documentState.exclusive} onClick={() => setDialog(acl)}>撤销</Button>}</li>)}</ul></>}
+        {(acl.permission !== 'manage' || manage) && <RevokeButton acl={acl} disabled={documentState.exclusive} onRevoke={setDialog} />}</li>)}</ul></>}
     {dialog === 'revoke-batch' && kind === 'spaces' && <ResourceWriteDialog<BatchRevokeResult> title="批量撤销空间授权" scope={revokeScope} bindings={batchBindings}
       onClose={() => setDialog(null)} onRefresh={refresh} execute={revokeBatchWrite}
       disabled={selected.length === 0 || selected.length > 300 || query.loading || !!query.error || revokeDraft.unsupported}

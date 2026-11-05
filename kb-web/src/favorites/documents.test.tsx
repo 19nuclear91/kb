@@ -36,12 +36,14 @@ it('独立状态服务故障保留正常文档，收藏按钮待确认', async (
 
 it('详情收藏核对确认不可访问后，版本标题与打开的预览被清理', async () => {
   const pending = deferred<unknown>(); vi.mocked(context.session.post).mockReturnValue(pending.promise);
-  vi.mocked(context.session.json).mockImplementation(async path => path.endsWith('/review')
-    ? { state: { versionId: '11', indexStatus: 'indexed', publicationEvidence: 'PUBLISHED' }, capabilities: { canRead: true }, rounds: [] }
-    : path.endsWith('/capabilities') ? {} : path.includes('/progress') ? { indexStatus: 'indexed' } : doc as never);
+  vi.mocked(context.session.json).mockImplementation(async path => path.endsWith('/preview-info')
+    ? { protocolVersion: 1, documentId: '1', versionId: '11', mode: 'DIRECT', fileType: 'pdf', previewPath: '/api/documents/1/versions/11/preview' }
+    : path.endsWith('/review')
+      ? { state: { documentId: '1', versionId: '11', indexStatus: 'indexed', publicationEvidence: 'PUBLISHED' }, capabilities: { canRead: true }, rounds: [] }
+      : path.endsWith('/capabilities') ? {} : path.includes('/progress') ? { indexStatus: 'indexed' } : doc as never);
   render(<MemoryRouter initialEntries={['/documents/1']}><Routes><Route path="/documents/:documentId" element={<DocumentDetailPage />} /></Routes></MemoryRouter>);
   await screen.findByText(doc.title); await waitFor(() => expect((screen.getByRole('button', { name: '预览选中版本' }) as HTMLButtonElement).disabled).toBe(false)); fireEvent.click(screen.getByRole('button', { name: '预览选中版本' }));
-  expect(screen.getByTestId('preview').textContent).toContain('/versions/11/preview');
+  expect((await screen.findByTestId('preview')).textContent).toContain('/versions/11/preview');
   await act(async () => pending.resolve({ items: [] })); await screen.findByText('文档当前不可访问。');
   expect(screen.queryByText(doc.title)).toBeNull(); expect(screen.queryByText('v1.pdf')).toBeNull(); expect(screen.queryByTestId('preview')).toBeNull();
 });

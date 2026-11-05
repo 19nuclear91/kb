@@ -1,5 +1,5 @@
 import { VersionPreview } from '../office/VersionPreview';
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Alert, Button, Form, Input, Modal, Pagination, Select, Space, Table, Tag } from 'antd';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useSession } from '../SessionProvider';
@@ -79,17 +79,26 @@ function ReadableProgress({ documentId, versionId, revision, onDenied }: { docum
   </section>;
 }
 
-export function UploadDialog({ open, documentId, onClose, onUploaded }: { open: boolean; documentId?: string; onClose: () => void; onUploaded: (result: UploadResult) => void }) {
+export function UploadDialog({ open, documentId, access, onDenied, onRecheck, onClose, onUploaded }: {
+  open: boolean; documentId?: string; access?: { key: string; canUploadVersion: boolean; checking: boolean };
+  onDenied?: () => void; onRecheck?: () => void; onClose: () => void; onUploaded: (result: UploadResult) => void;
+}) {
   const { session } = useSession();
   const { operations, state: documentState } = useDocumentOperations();
   const [spaces, setSpaces] = useState<UploadSpace[]>([]), [cursor, setCursor] = useState<string | null>(null), [levels, setLevels] = useState<number[]>([]);
   const [busy, setBusy] = useState(false), [loading, setLoading] = useState(false), [error, setError] = useState('');
   const [file, setFile] = useState<File | null>(null), [form] = Form.useForm();
   const lock = useRef(false), active = useRef<AbortController | null>(null);
+  const [deniedAt, setDeniedAt] = useState<string | null>(null);
+  const rejectedKey = useRef<string | null>(null);
+  const currentAccess = useRef(access); currentAccess.current = access;
+  const paused = !!documentId && (!access?.canUploadVersion || access.checking || deniedAt === access.key);
+  const disabled = documentState.exclusive || loading || (documentId ? paused : !spaces.length || !levels.length);
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController(); active.current = controller;
     setError(''); setSpaces([]); setLevels([]); setCursor(null); setFile(null); form.resetFields();
+    rejectedKey.current = null; setDeniedAt(null);
     if (!documentId) {
       setLoading(true);
       void Promise.all([session.json<QueryPage<UploadSpace>>('/api/auth/upload-spaces', { signal: controller.signal }),
@@ -102,13 +111,16 @@ export function UploadDialog({ open, documentId, onClose, onUploaded }: { open: 
   }, [open, documentId, session, form]);
   return <Modal title={documentId ? '上传新版本' : '上传文档'} open={open} onCancel={() => { if (!busy) onClose(); }} footer={null} destroyOnHidden>
     {error && <Alert type="warning" title={error} style={{ marginBottom: 16 }} />}
+    {paused && <Alert type="warning" title="上传资格尚未确认或已失效，提交已暂停。" style={{ marginBottom: 16 }}
+      action={onRecheck && <Button disabled={access?.checking || busy || documentState.exclusive} onClick={onRecheck}>重新核对上传资格</Button>} />}
     <Form form={form} layout="vertical" onFinish={async (values: { spaceId: string; securityLevel: number; title?: string }) => {
-      if (lock.current) return;
+      if (!open || lock.current || disabled || (documentId && rejectedKey.current !== null && rejectedKey.current === currentAccess.current?.key)) return;
       if (!file || file.size === 0 || file.size > 50 * 1024 * 1024) { setError('请选择非空且不超过 50 MiB 的文件；实际限制由服务器判定。'); return; }
       if (!/\.(pdf|txt|md|doc|docx|xls|xlsx|ppt|pptx)$/i.test(file.name)) { setError('只支持 PDF、TXT、Markdown（.md）和常规 Office 文档。'); return; }
+      const request = active.current;
+      if (!request || request.signal.aborted) return;
       const operation = operations?.beginWrite('upload-version');
       if (operations && !operation) return;
-      const request = active.current;
       lock.current = true; setBusy(true); setError('');
       try {
         const body = new FormData(); body.set('file', file);
@@ -119,7 +131,14 @@ export function UploadDialog({ open, documentId, onClose, onUploaded }: { open: 
         onUploaded(result); onClose();
       } catch (failure) {
         operation?.settle(operationFailure(failure));
-        if (!request?.signal.aborted && !isAbort(failure)) setError(failure instanceof ApiError && failure.status === 0 ? '提交结果尚未确认，请先核对文档列表，不会自动重复上传。' : messageOf(failure));
+        if (!request.signal.aborted && active.current === request && !isAbort(failure)) {
+          setError(failure instanceof ApiError && failure.status === 0 ? '提交结果尚未确认，请先核对文档列表，不会自动重复上传。' : messageOf(failure));
+          if (documentId && failure instanceof ApiError && [403, 404].includes(failure.status)) {
+            rejectedKey.current = currentAccess.current?.key ?? '';
+            setDeniedAt(rejectedKey.current);
+            onDenied?.();
+          }
+        }
       }
       finally { lock.current = false; setBusy(false); }
     }}>
@@ -136,7 +155,7 @@ export function UploadDialog({ open, documentId, onClose, onUploaded }: { open: 
       </>}
       <Form.Item label="原始文件" required><input aria-label="原始文件" type="file" accept=".pdf,.txt,.md,.doc,.docx,.xls,.xlsx,.ppt,.pptx" onChange={event => setFile(event.target.files?.[0] ?? null)} /></Form.Item>
       <p className="muted">支持 PDF、文本和常规 Office。上传成功后将异步解析。</p>
-      <Button type="primary" htmlType="submit" loading={busy} disabled={documentState.exclusive || loading || (!documentId && (!spaces.length || !levels.length))}>提交文件</Button>
+      <Button type="primary" htmlType="submit" loading={busy} disabled={disabled}>提交文件</Button>
     </Form>
   </Modal>;
 }
@@ -209,42 +228,77 @@ function DocumentDetail({ documentId, onDelete, onInvalidate }: { documentId: st
   const { session } = useSession();
   const { operations, state: documentState } = useDocumentOperations();
   const adminAccess = useAdminAccess();
-  const query = useResource(signal => session.json<DocumentSummary>(`/api/documents/${positiveId(documentId)}`, { signal }), documentId);
-  const capabilities = useResource(signal => session.json<Capabilities>(`/api/documents/${positiveId(documentId)}/capabilities`, { signal }), documentId);
+  const [factsRevision, setFactsRevision] = useState(0);
+  const factsKey = `${documentId}/${factsRevision}`;
+  const query = useResource(signal => session.json<DocumentSummary>(`/api/documents/${positiveId(documentId)}`, { signal }), factsKey);
+  const capabilities = useResource(signal => session.json<Capabilities>(`/api/documents/${positiveId(documentId)}/capabilities`, { signal }), factsKey);
   const favorites = useFavorites(query.data ? [documentId] : [], query.data);
   const blocked = favorites.unavailable(documentId);
   const detail = blocked ? undefined : query.data;
   const [selected, setSelected] = useState<string | null>(null), [revision, setRevision] = useState(0), [upload, setUpload] = useState(false), [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [metadataTitle, setMetadataTitle] = useState<string | null>(null);
-  const [versionStatus, setVersionStatus] = useState<ReviewStatus | undefined>();
+  const [versionStatus, setVersionStatus] = useState<{ key: string; value: ReviewStatus }>();
   const [deniedVersions, setDeniedVersions] = useState<Set<string>>(() => new Set());
   const lock = useRef(false);
   const retryRequest = useRef<AbortController | null>(null);
   useEffect(() => () => retryRequest.current?.abort(), []);
   useEffect(() => {
-    if (blocked || query.status === 404 || capabilities.status === 404) onInvalidate(true);
+    if (blocked || [401, 403, 404].includes(query.status ?? 0) || [401, 403, 404].includes(capabilities.status ?? 0)) onInvalidate(true);
     else if (query.error || capabilities.error || (capabilities.data && !canDelete(capabilities.data))) onInvalidate();
   }, [blocked, query.status, query.error, capabilities.status, capabilities.error, capabilities.data, onInvalidate]);
   useEffect(() => { setSelected(null); setPreview(null); setUpload(false); setError(''); }, [documentId]);
-  useEffect(() => { if (query.error || blocked) { setPreview(null); setUpload(false); setSelected(null); } }, [query.error, blocked]);
+  useEffect(() => {
+    if (query.error || blocked) setPreview(null);
+    if (blocked || [401, 403, 404].includes(query.status ?? 0) || [401, 403, 404].includes(capabilities.status ?? 0)) {
+      setUpload(false); setSelected(null);
+    }
+  }, [query.error, query.status, capabilities.status, blocked]);
   const versions = (detail?.versions ?? []).filter(item => !deniedVersions.has(item.id));
   const version = selected ? versions.find(item => item.id === selected) : versions.find(item => item.id === detail?.currentVersionId);
   const versionId = version?.id;
   const path = versionId ? `/api/documents/${documentId}/versions/${versionId}` : '';
-  const currentStatus = versionStatus?.state.versionId === versionId ? versionStatus : undefined;
+  const versionKey = `${query.key}/${query.revision}/${versionId ?? ''}/${revision}`;
+  const liveVersion = useRef(versionKey); liveVersion.current = versionKey;
+  const receiveStatus = useCallback((value: ReviewStatus | undefined) => {
+    if (liveVersion.current !== versionKey) return;
+    setVersionStatus(value ? { key: versionKey, value } : undefined);
+  }, [versionKey]);
+  const currentStatus = versionStatus?.key === versionKey && versionStatus.value.state.documentId === documentId
+    && versionStatus.value.state.versionId === versionId ? versionStatus.value : undefined;
   const canRead = currentStatus?.capabilities.canRead === true;
+  const factsLoading = query.loading || capabilities.loading;
+  const canUploadVersion = !!detail && capabilities.data?.canUploadVersion === true && !factsLoading;
+  const refreshFacts = useCallback(() => {
+    liveVersion.current = '';
+    setVersionStatus(undefined); setPreview(null); setMetadataTitle(null);
+    setFactsRevision(value => value + 1);
+    onInvalidate();
+  }, [onInvalidate]);
+  const recheck = () => {
+    if (factsLoading || documentState.exclusive) return;
+    setDeniedVersions(new Set()); refreshFacts();
+  };
+  const downloadDenied = () => {
+    if (liveVersion.current !== versionKey || !versionId) return;
+    setSelected(versionId);
+    refreshFacts();
+  };
   const loseVersion = () => {
+    if (liveVersion.current !== versionKey) return;
+    liveVersion.current = '';
     if (versionId) setDeniedVersions(previous => new Set([...previous, versionId]));
-    setVersionStatus(undefined); setPreview(null); setSelected(null); query.reload(); capabilities.reload();
+    setVersionStatus(undefined); setPreview(null); setSelected(versionId ?? selected); query.reload(); capabilities.reload();
   };
   useEffect(() => { if (!canRead) setPreview(null); }, [versionId, canRead]);
   return <><PageHeader title={detail ? metadataTitle ?? detail.title : '文档详情'} description="版本、处理状态与原始文件" extra={<Link to="/documents">返回文档中心</Link>} />
-    <Feedback {...query} retry={query.reload} />{blocked && <Alert type="info" title="文档当前不可查看" action={<Button onClick={query.reload}>重新读取</Button>} />}{detail && <>
+    <Button onClick={recheck} disabled={factsLoading || documentState.exclusive}>重新核对操作资格</Button>
+    {factsLoading && <p role="status">正在核对文档与操作资格…</p>}
+    <Feedback {...query} retry={recheck} />{blocked && <Alert type="info" title="文档当前不可查看" action={<Button onClick={recheck}>重新读取</Button>} />}{detail && <>
       <section className="panel"><div className="toolbar"><Tag>密级 {detail.securityLevel}</Tag><span className="muted">当前发布：{detail.currentVersionNo == null ? '尚无版本' : `v${detail.currentVersionNo}`}</span></div>
-        <Space wrap><FavoriteButton id={documentId} favorites={favorites} />{(adminAccess.canManageSpace(detail.spaceId) || adminAccess.has(perm.securityLevelWrite)) && <Link to={`/admin/documents/${documentId}`}>管理此文档</Link>}<Button disabled={documentState.exclusive || !capabilities.data?.canUploadVersion} onClick={() => setUpload(true)}>上传新版本</Button>
+        <Space wrap><FavoriteButton id={documentId} favorites={favorites} />{(adminAccess.canManageSpace(detail.spaceId) || adminAccess.has(perm.securityLevelWrite)) && <Link to={`/admin/documents/${documentId}`}>管理此文档</Link>}<Button disabled={documentState.exclusive || !canUploadVersion} onClick={() => setUpload(true)}>上传新版本</Button>
           <Button disabled={!versionId || !canRead} onClick={() => setPreview(`${path}/preview`)}>预览选中版本</Button>
-          {versionId && <DownloadButton key={path} path={`${path}/download`} name={version?.fileName ?? detail.title} disabled={!capabilities.data?.canDownload || !canRead || !currentStatus?.capabilities.canDownload} onDenied={loseVersion} />}
+          {versionId && <DownloadButton key={versionKey} path={`${path}/download`} name={version?.fileName ?? detail.title} disabled={!capabilities.data?.canDownload || !canRead || !currentStatus?.capabilities.canDownload} onDenied={downloadDenied} />}
           <Button loading={busy} disabled={documentState.exclusive || !capabilities.data?.canRetry || !version || !retryable(version)} onClick={async () => {
             if (lock.current || !versionId) return;
             const operation = operations?.beginWrite('parse-retry');
@@ -266,17 +320,20 @@ function DocumentDetail({ documentId, onDelete, onInvalidate }: { documentId: st
       </section>
       <MetadataPanel documentId={documentId} canEdit={capabilities.data?.canEditMetadata === true} onTitle={setMetadataTitle}
         onDenied={status => { capabilities.reload(); if (status === 404) query.reload(); }} />
-      {versionId && <><VersionReviewPanel key={`review:${documentId}/${versionId}/${revision}`} documentId={documentId} versionId={versionId} files={false} onStatus={setVersionStatus} onDenied={loseVersion}
+      {versionId && <><VersionReviewPanel key={`review:${versionKey}`} documentId={documentId} versionId={versionId} files={false} onStatus={receiveStatus} onDenied={loseVersion}
         onChanged={() => { setPreview(null); query.reload(); capabilities.reload(); setRevision(value => value + 1); }} />
         {canRead && <ProgressCard key={`progress:${documentId}/${versionId}/${revision}`} documentId={documentId} versionId={versionId} revision={revision} onDenied={loseVersion} />}
         <VersionComments key={`${documentId}/${versionId}`} documentId={documentId} versionId={versionId} status={currentStatus} /></>}
       {!versionId && <p>默认读取当前发布版本；查看候选时请从可见版本列表明确选择。</p>}
       <section className="panel"><h2>版本历史</h2><Table<Version> rowKey="id" pagination={false} dataSource={versions} columns={[
-        { title: '版本', render: (_, value) => <Button type="link" onClick={() => setSelected(value.id)}>v{value.versionNo}{value.current ? ' · 当前发布' : ''}</Button> },
+        { title: '版本', render: (_, value) => <Button type="link" onClick={() => { if (value.id === versionId) return; liveVersion.current = ''; setVersionStatus(undefined); setPreview(null); setSelected(value.id); }}>v{value.versionNo}{value.current ? ' · 当前发布' : ''}</Button> },
         { title: '文件名', dataIndex: 'fileName' }, { title: '处理状态', render: (_, value) => progressLabel(value) },
       ]} /></section>
     </>}
-    <UploadDialog open={!!detail && upload} documentId={documentId} onClose={() => setUpload(false)} onUploaded={result => { setSelected(result.versionId); setRevision(value => value + 1); query.reload(); }} />
+    <UploadDialog open={upload} documentId={documentId}
+      access={{ key: `${factsKey}/${query.revision}/${capabilities.revision}`, canUploadVersion, checking: factsLoading }}
+      onDenied={refreshFacts} onRecheck={recheck} onClose={() => setUpload(false)}
+      onUploaded={result => { setSelected(result.versionId); setRevision(value => value + 1); query.reload(); }} />
     <VersionPreview path={detail && canRead ? preview : null} fileName={version?.fileName} onClose={() => setPreview(null)} onDenied={loseVersion} />
   </>;
 }

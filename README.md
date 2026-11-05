@@ -10,10 +10,10 @@
 | --- | --- | --- |
 | 登录与身份 | 本地登录、强制改密、账号与部门管理、角色与功能权限、外部身份绑定 | 钉钉、企业微信、飞书浏览器 SSO 默认关闭，只登录已有绑定账号，不自动建号。见[身份管理](docs/admin-identity-web.md)、[企业 SSO](docs/enterprise-sso-configuration.md) |
 | 空间与授权 | 空间创建、归档、授权、批量授予与撤销，文档例外授权 | 空间为授权主单位；主体支持用户、角色和部门树。见[空间与文档管理](docs/admin-space-document-web.md) |
-| 文档生命周期 | 原件上传、多版本、处理状态、失败重试、软删除、搬迁、密级调整 | 用户端删除与管理端删除分别校验编辑和空间管理资格；搬迁会清空文档例外授权。见[用户端说明](kb-web/README.md)、[文档密级管理](docs/document-security-level.md) |
+| 文档生命周期 | 原件上传、多版本、处理状态、失败重试、独立操作资格重核、软删除、搬迁、密级调整 | 新版本上传被拒后暂停并重核，不自动重传；用户端删除与管理端删除分别校验编辑和空间管理资格；搬迁会清空文档例外授权。见[用户端说明](kb-web/README.md)、[文档密级管理](docs/document-security-level.md) |
 | 文档资料 | 标题、人工摘要、空间分类树、全局标签，以及文档列表组合筛选 | 分类属于空间，标签可跨空间使用；资料修改作用于整份文档。见[资料与目录](docs/document-metadata-web.md) |
 | 审核与协作 | 空间发布策略、固定版本送审/通过/驳回/撤回、个人收藏、版本评论与回复、站内通知 | 解析完成、审核通过和发布是不同状态；评论和审核分别需要对应资格。见[版本审核](docs/document-review.md)、[收藏](docs/document-favorites.md)、[评论](docs/version-comments.md)、[通知](docs/in-app-notifications.md) |
-| 文件阅读 | PDF、UTF-8 TXT/Markdown 预览，以及独立授权的原件下载 | docx/xlsx/pptx 原生只读预览通过可选 ONLYOFFICE 服务提供，默认关闭；doc/xls/ppt 不进入该预览流程。见[Office 预览](docs/office-preview.md) |
+| 文件阅读 | PDF、UTF-8 TXT/Markdown 预览，以及独立授权的原件下载 | 下载拒绝不等于阅读拒绝，重核保持原版本且不自动打开文件；docx/xlsx/pptx 原生只读预览通过可选 ONLYOFFICE 服务提供，默认关闭；doc/xls/ppt 不进入该预览流程。见[Office 预览](docs/office-preview.md) |
 | 混合检索 | BM25、向量召回、SQL 内 RRF 融合、rerank、top-k，支持空间/分类/标签/类型/时间组合筛选 | 权限、密级与发布状态在召回时过滤；支持超时、并发与响应大小限制及降级。见[搜索筛选](docs/search-filtering-api.md)、[检索韧性](docs/search-resilience.md) |
 | 引用与会话 | 固定文档/版本/分块引用，SSE 单轮接口，私有多轮会话与历史、停止生成、额度结算 | 多轮会话及真实模型调用默认关闭；历史回答读取会重新校验来源权限。见[引用溯源](docs/citation-provenance.md)、[会话历史](docs/conversation-history.md)、[模型接入](docs/chat-model-adapter.md) |
 | 解析与索引运维 | 数据库任务队列、领取租约、心跳、退避重试、死信重放、结构化分块、Embedding profile 与重建 | **第三方解析适配器尚未提供**；缺少适配器时不领取普通解析任务。见[解析接入](docs/third-party-document-parsing.md)、[索引运维页面](docs/embedding-parse-operations-web.md) |
@@ -177,7 +177,7 @@ npm run dev
 
 仅打开开关不足以保证生成可用：默认 `verified` 缺少匹配预算策略时，多轮生成返回 503；选择 `estimated` 意味着接受估算误差，不能把估算或预留额度当作真实 token 用量。模型协议、限制和预算见[模型接入](docs/chat-model-adapter.md)，跨服务配置见[会话配置](docs/conversation-configuration.md)。
 
-当前网关的 `application-dev.yml` 覆盖了基础路由列表，其中业务路由未包含 `/api/conversations/**`。在开发环境启用多轮会话时，需要在网关开发路由中补齐该路径；基础 `application.yml` 已包含。外层反向代理还需关闭 SSE 缓冲，并允许足够的连接空闲时间。
+网关基础配置与 `application-dev.yml` 均将 `/api/conversations/**` 转发到 app，将 `/api/ai/**` 转发到 AI，并保持 `/internal/**` 不对浏览器转发。路由存在不代表会话已启用，仍需完成上述开关与服务配置。外层反向代理还需关闭 SSE 缓冲，并允许足够的连接空闲时间。
 
 ### 其他可选能力
 
@@ -275,6 +275,29 @@ try {
 仓库包含权限、业务状态、Mapper 映射、模块边界、AI 无数据库依赖、响应式链路及前端模拟 DOM 等测试。真实 PostgreSQL 烟测由 `KB_TEST_POSTGRES_URL`、`KB_TEST_POSTGRES_USER`、`KB_TEST_POSTGRES_PASSWORD` 指向专用测试库；未配置 URL 时相关用例跳过，跳过不代表数据库行为已验证。
 
 [db/verify_paradedb.sql](db/verify_paradedb.sql)、[db/verify_permission.sql](db/verify_permission.sql)、[db/verify_identity_department.sql](db/verify_identity_department.sql) 提供数据库检查脚本，部分依赖开发种子或创建测试数据，使用前阅读脚本并选择测试库。真实迁移、索引行为、权限隔离、并发发布、SSE 转发和供应商兼容性需要在目标环境另行验证；各专项文档保留其具体离线验证范围。
+
+### 会话路由与文档资格恢复回归
+
+以下定向回归覆盖 dev/prod 会话路由边界、下载与上传独立资格重核、迟到响应隔离，以及空间批量撤销的 300/301 条边界；不会启动监听服务或真实浏览器。`-o` 要求 Maven 依赖已缓存。
+
+```powershell
+mvn -o -pl kb-gateway -am test '-Dtest=ConversationRouteTest,SearchRouteTest,ReviewRouteTest,NotificationRouteTest' '-Dsurefire.failIfNoSpecifiedTests=false' '-Dstyle.color=never'
+if ($LASTEXITCODE -ne 0) {
+    throw '网关配置回归失败'
+}
+
+Push-Location .\kb-web
+try {
+    npm test -- --run src/documents/recovery.test.tsx src/admin/space-pages.test.tsx
+    if ($LASTEXITCODE -ne 0) {
+        throw '文档资格恢复或空间授权回归失败'
+    }
+} finally {
+    Pop-Location
+}
+```
+
+本次修复已同步至[会话主规格](openspec/specs/user-web-conversations/spec.md)和[文档主规格](openspec/specs/user-web-documents/spec.md)。[2026-11-06 归档验证记录](openspec/changes/archive/2026-11-06-fix-conversation-routing-and-document-recovery/verification.md)记载完整前端 84 个文件、1038 项通过及相邻网关 7 项通过；这些是模拟 DOM 与进程内配置验证，不代表实际网络 SSE、浏览器下载或外部服务验收。
 
 ### 监控专项离线验证
 

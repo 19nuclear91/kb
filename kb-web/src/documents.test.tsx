@@ -51,7 +51,7 @@ it('上传候选分页、真实字典新增值和 multipart 表单，提交期�
 it('字典失败禁用新上传；文件限制和网络不确定不自动重传', async () => {
   vi.mocked(context.session.json).mockRejectedValue(new ApiError(503));
   const view = render(<UploadDialog open onClose={vi.fn()} onUploaded={vi.fn()} />); await screen.findByText('服务暂不可用，请稍后重试。'); expect((screen.getByRole('button', { name: '提交文件' }) as HTMLButtonElement).disabled).toBe(true); view.unmount();
-  vi.mocked(context.session.json).mockClear().mockRejectedValue(new ApiError(0)); render(<UploadDialog open documentId="1" onClose={vi.fn()} onUploaded={vi.fn()} />);
+  vi.mocked(context.session.json).mockClear().mockRejectedValue(new ApiError(0)); render(<UploadDialog open documentId="1" access={{ key: '1', canUploadVersion: true, checking: false }} onClose={vi.fn()} onUploaded={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: '提交文件' })); await screen.findByText(/请选择非空/); expect(context.session.json).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText('原始文件'), { target: { files: [new File(['x'], 'bad.html')] } }); fireEvent.click(screen.getByRole('button', { name: '提交文件' })); await screen.findByText(/只支持 PDF、TXT/); expect(context.session.json).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText('原始文件'), { target: { files: [new File(['x'], 'new.txt')] } }); fireEvent.click(screen.getByRole('button', { name: '提交文件' })); await screen.findByText(/提交结果尚未确认/); expect(context.session.json).toHaveBeenCalledTimes(1); expect(vi.mocked(context.session.json).mock.calls[0][0]).toBe('/api/documents/1/versions');
