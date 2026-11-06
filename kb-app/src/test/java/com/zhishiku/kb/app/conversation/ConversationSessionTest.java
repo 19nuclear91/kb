@@ -5,7 +5,7 @@ import com.zhishiku.kb.app.auth.service.ConversationSessionService;
 import com.zhishiku.kb.app.auth.service.EpochSessionService;
 import com.zhishiku.kb.common.security.IdentityException;
 import org.junit.jupiter.api.Test;
-import org.springframework.web.server.ResponseStatusException;
+import com.zhishiku.kb.common.security.AccountRevokedException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -25,9 +25,9 @@ class ConversationSessionTest {
         assertThat(service.user("new")).isEqualTo(1);
         doThrow(IdentityException.unauthorized("旧代次")).when(sessions).check("old");
         doThrow(IdentityException.unauthorized("无会话")).when(sessions).check(null);
-        assertThatThrownBy(() -> service.user("old")).isInstanceOfSatisfying(ResponseStatusException.class,
-                error -> assertThat(error.getStatusCode().value()).isEqualTo(401));
-        assertThatThrownBy(() -> service.user(null)).isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(() -> service.user("old")).isInstanceOfSatisfying(AccountRevokedException.class,
+                error -> assertThat(error.httpStatus()).isEqualTo(401));
+        assertThatThrownBy(() -> service.user(null)).isInstanceOf(AccountRevokedException.class);
         assertThat(service.user("new")).isEqualTo(1);
     }
 }

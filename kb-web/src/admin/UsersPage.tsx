@@ -71,10 +71,13 @@ function UserDetail({ userId, departments, onClose, onChanged }: { userId: strin
   const detail = useAdminResource<AdminUser>(signal => session.json(adminPaths.user(userId), { signal }), `user:${userId}`);
   const roles = useCursorList<RoleSummary>((cursor, signal) => session.json<QueryPage<RoleSummary>>(adminPaths.userRoles(userId, cursor), { signal }), `user-roles:${userId}`);
   const [dialog, setDialog] = useState<Dialog | null>(null), [receipt, setReceipt] = useState('');
+  const [lifecycleRevision, setLifecycleRevision] = useState(0);
+  const refreshDetail = () => { detail.reload(); setLifecycleRevision(value => value + 1); };
+  const refreshRoles = () => { roles.reload(); setLifecycleRevision(value => value + 1); };
   const done = (text: string, scope: 'detail' | 'roles') => {
     if (dialog === 'department') access.check(true);
     setDialog(null); setReceipt(text);
-    if (scope === 'roles') { roles.reload(); access.check(true); } else { detail.reload(); onChanged(); }
+    if (scope === 'roles') { refreshRoles(); access.check(true); } else { refreshDetail(); onChanged(); }
   };
   const user = detail.data, self = user?.userId === state.me?.user.userId;
   const deptRead = access.has(perm.deptRead), roleRead = access.has(perm.roleRead), roleAssign = access.has(perm.roleAssign);
@@ -113,22 +116,22 @@ function UserDetail({ userId, departments, onClose, onChanged }: { userId: strin
     {roleAssign && <div style={{ marginTop: 12 }}><Button disabled={!roleRead || roles.loading} onClick={() => setDialog('assign')}>分配角色</Button>
       {!roleRead && <Note>缺少 identity:role:read，无法列出完整角色候选；仍可解除已读取的绑定，不提供手工输入角色 ID。</Note>}</div>}
     <Note>绑定列表只显示角色摘要；角色包含的功能权限请在角色管理中查看。</Note>
-    <UserLifecyclePanel userId={userId} onChanged={() => { detail.reload(); onChanged(); }} />
+    <UserLifecyclePanel userId={userId} refreshRevision={lifecycleRevision} onChanged={() => { detail.reload(); onChanged(); }} />
   </>;
   return <Drawer title="账号详情" open size={520} onClose={close} maskClosable={!dialog}>
     {receipt && <Alert type="success" showIcon title={receipt} style={{ marginBottom: 16 }} />}
     {body}
     {user && dialog === 'department' && access.has(perm.userWrite) && deptRead && <MoveUserDialog user={user} departments={departments} refreshing={detail.loading}
-      onClose={() => setDialog(null)} onDone={() => done('主部门已调整。', 'detail')} onRefresh={detail.reload} />}
+      onClose={() => setDialog(null)} onDone={() => done('主部门已调整。', 'detail')} onRefresh={refreshDetail} />}
     {user && dialog === 'enabled' && access.has(perm.userWrite) && <EnabledDialog user={user} refreshing={detail.loading}
-      onClose={() => setDialog(null)} onDone={enabled => done(enabled ? '账号已启用。' : '账号已停用。', 'detail')} onRefresh={detail.reload} />}
-    {user && dialog === 'password' && access.has(perm.password) && <PasswordDialog user={user} onClose={() => setDialog(null)} onDone={() => done('密码已重置，该账号下次登录需修改密码。', 'detail')} />}
+      onClose={() => setDialog(null)} onDone={enabled => done(enabled ? '账号已启用。' : '账号已停用。', 'detail')} onRefresh={refreshDetail} />}
+    {user && dialog === 'password' && access.has(perm.password) && <PasswordDialog user={user} onClose={() => setDialog(null)} onDone={() => done('密码已重置，该账号下次登录需修改密码。', 'detail')} onRefresh={refreshDetail} />}
     {user && dialog === 'clearance' && access.has(perm.clearance) && !self && <ClearanceDialog user={user} refreshing={detail.loading}
-      onClose={() => setDialog(null)} onDone={() => done('密级已调整。', 'detail')} onRefresh={detail.reload} />}
+      onClose={() => setDialog(null)} onDone={() => done('密级已调整。', 'detail')} onRefresh={refreshDetail} />}
     {user && dialog === 'assign' && roleAssign && roleRead && <AssignRoleDialog user={user} bound={roles.items}
-      onClose={() => setDialog(null)} onDone={() => done('角色已分配。', 'roles')} onRefresh={roles.reload} />}
+      onClose={() => setDialog(null)} onDone={() => done('角色已分配。', 'roles')} onRefresh={refreshRoles} />}
     {user && dialog && typeof dialog === 'object' && roleAssign && <RevokeRoleDialog user={user} role={dialog.revoke}
-      onClose={() => setDialog(null)} onDone={() => done('角色绑定已解除。', 'roles')} onRefresh={roles.reload} />}
+      onClose={() => setDialog(null)} onDone={() => done('角色绑定已解除。', 'roles')} onRefresh={refreshRoles} />}
   </Drawer>;
 }
 type DialogProps<T = unknown> = { onClose: () => void; onDone: (value: T) => void; onRefresh?: () => void };
@@ -164,14 +167,14 @@ function EnabledDialog({ user, refreshing, onClose, onDone, onRefresh }: DialogP
 }
 
 /** 独立重置密码：不套用账号 version；结果未确认以外的任何结局都清空密码输入。 */
-function PasswordDialog({ user, onClose, onDone }: DialogProps & { user: AdminUser }) {
+function PasswordDialog({ user, onClose, onDone, onRefresh }: DialogProps & { user: AdminUser }) {
   const write = useAdminWrite(`user-password:${user.userId}`), [form] = Form.useForm();
   const after = (outcome: WriteOutcome<unknown>) => {
     if (outcome.status === 'ignored') return;
-    form.resetFields(['newPassword', 'newPasswordConfirm']); settle(outcome, onDone);
+    form.resetFields(['newPassword', 'newPasswordConfirm']); settle(outcome, onDone, onRefresh);
   };
   return <AdminModal title={`重置 ${user.username} 的密码`} write={write} onClose={onClose}>
-    <WriteNotice write={write} onRetry={async () => after(await write.retry())} />
+    <WriteNotice write={write} onRetry={async () => after(await write.retry())} onVerify={onRefresh} />
     <Form name="user-password" form={form} layout="vertical" disabled={write.busy} onFinish={async (values: { newPassword: string }) => after(await write.submit(() => adminWrites.resetPassword(user.userId, values.newPassword)))}>
       <PasswordFields name="newPassword" label="新密码" />
       <Note>密码强度由服务器策略判定；重置后该账号下次登录需修改密码。</Note>

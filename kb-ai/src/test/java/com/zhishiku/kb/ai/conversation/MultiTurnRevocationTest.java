@@ -4,7 +4,7 @@ import com.zhishiku.kb.ai.auth.AuthenticationClient;
 import com.zhishiku.kb.ai.auth.OutputPermitService;
 import com.zhishiku.kb.common.api.ApiException;
 import com.zhishiku.kb.common.security.AuthenticationCheck;
-import com.zhishiku.kb.common.security.IdentityException;
+import com.zhishiku.kb.common.security.AccountRevokedException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -41,7 +41,7 @@ class MultiTurnRevocationTest {
 
     MultiTurnRevocationTest() {
         when(authentication.check(anyString())).thenAnswer(call -> denied.get()
-                ? Mono.error(IdentityException.forbidden("撤销")) : Mono.just(new AuthenticationCheck(1, 1, false)));
+                ? Mono.error(new AccountRevokedException(403)) : Mono.just(new AuthenticationCheck(1, 1, false)));
         when(fixture.app.finishRevoked(any(), anyLong(), anyBoolean(), any(), any())).thenAnswer(call -> {
             assertThat(fixture.cancelled).isTrue();
             return fixture.app.finish(call.getArgument(0), "CANCELLED", call.getArgument(1), call.getArgument(2),

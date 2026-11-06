@@ -6,7 +6,7 @@ import com.zhishiku.kb.ai.observation.AiObservationClient;
 import com.zhishiku.kb.ai.observation.AiObservationProperties;
 import com.zhishiku.kb.ai.observation.AiObservedChat;
 import com.zhishiku.kb.common.security.AuthenticationCheck;
-import com.zhishiku.kb.common.security.IdentityException;
+import com.zhishiku.kb.common.security.AccountRevokedException;
 import com.zhishiku.kb.common.security.QuotaPrincipal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -51,7 +51,7 @@ class ChatRevocationTest {
 
     ChatRevocationTest() {
         when(authentication.check(anyString())).thenAnswer(call -> denied.get()
-                ? Mono.error(IdentityException.forbidden("身份已撤销")) : Mono.just(new AuthenticationCheck(1, 1, false)));
+                ? Mono.error(new AccountRevokedException(403)) : Mono.just(new AuthenticationCheck(1, 1, false)));
         when(quota.acquire(any(), anyInt())).thenReturn(Mono.just(lease));
         when(quota.acquireConfirmed(any(), any(), anyInt())).thenReturn(Mono.just(lease));
         when(lease.renewAsync()).thenReturn(Mono.empty());

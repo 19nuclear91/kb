@@ -2,6 +2,7 @@ package com.zhishiku.kb.ai.auth;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhishiku.kb.common.api.ApiException;
+import com.zhishiku.kb.common.security.AccountRevokedException;
 import com.zhishiku.kb.common.security.AuthenticationCheck;
 import com.zhishiku.kb.common.security.OutputStopReport;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -41,7 +42,7 @@ class OutputStopReporterTest {
         when(client.check("private-token")).thenReturn(Mono.defer(() -> {
             nanos.set(10_000_000L);
             return Mono.just(new AuthenticationCheck(7, 3, false, anchor));
-        }), Mono.error(ApiException.forbidden("revoked")));
+        }), Mono.error(new AccountRevokedException(403)));
         var cancelled = new AtomicBoolean();
         var report = new AtomicReference<OutputStopReport>();
         doAnswer(call -> {

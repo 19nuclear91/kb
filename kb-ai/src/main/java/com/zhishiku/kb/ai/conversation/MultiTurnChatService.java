@@ -1,5 +1,6 @@
 package com.zhishiku.kb.ai.conversation;
 
+import com.zhishiku.kb.common.security.AccountRevokedException;
 import com.zhishiku.kb.ai.chat.AiProperties;
 import com.zhishiku.kb.ai.chat.ChatQuotaAuditService;
 import com.zhishiku.kb.ai.chat.QuotaPrincipalRejectedException;
@@ -16,6 +17,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import reactor.core.Disposable;
+import reactor.core.Disposables;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
@@ -83,6 +86,7 @@ public class MultiTurnChatService {
         private final String token;
         private final StringBuilder buffer = new StringBuilder();
         private final AtomicBoolean subscribed = new AtomicBoolean();
+        private final Disposable.Swap modelSubscription = Disposables.swap();
         private long position;
         private int total;
         private Pending pending;
@@ -136,11 +140,16 @@ public class MultiTurnChatService {
                         });
                     });
                 }).onErrorResume(error -> {
+                    if (error instanceof AccountRevokedException) {
+                        state.outputStopped = true;
+                        state.accountRevoked = true;
+                    }
                     Mono<Void> rejected = error instanceof ChatQuotaAuditService.QuotaExceededException
                             && state.result != null && !state.result.replayed() && observation != null
                             ? observation.rejectedMulti(state.result.turnId())
                                     .onErrorResume(ignored -> Mono.empty()) : Mono.empty();
-                    return rejected.then(cleanup(state, "FAILED")).then(Mono.error(preflightError(error)));
+                    return rejected.then(cleanup(state, state.accountRevoked ? "CANCELLED" : "FAILED"))
+                            .then(Mono.error(preflightError(error)));
                 })
                 .doOnCancel(() -> cleanup(state, "CANCELLED").subscribe(ignored -> {
                 }, ignored -> {
@@ -186,16 +195,29 @@ public class MultiTurnChatService {
                                                     return Flux.error(new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                                                             "多轮模型能力暂不可用"));
                                                 }
-                                                return state.model.generate(plan.input());
+                                                return state.model.generate(plan.input())
+                                                        .doOnSubscribe(subscription ->
+                                                                state.modelSubscription.update(subscription::cancel));
                                             }));
                                     return commands(state, source.timeout(Duration.ofSeconds(ai.upstreamTimeout())));
                                 }));
+                    }).doOnError(AccountRevokedException.class, denied -> {
+                        // 同步保存或续期拒绝也必须先取消模型，随后才能报告停止证据。
+                        state.modelSubscription.dispose();
                     });
             Flux<ServerSentEvent<Object>> keepAlive = Flux.interval(Duration.ofMillis(ai.keepAliveMs()))
                     .onBackpressureDrop().map(t -> ServerSentEvent.builder().comment("keep-alive").<Object>build());
             var binding = new OutputPermitService.Binding(key.ownerUserId(), key.authEpoch(), key.turnId().toString());
             return OutputPermitService.protect(permits, state.token, binding,
-                            () -> Flux.merge(1, body, keepAlive).takeUntil(e -> "done".equals(e.event()) || "error".equals(e.event())))
+                            () -> Flux.merge(1, body, keepAlive)
+                                    .takeUntil(e -> "done".equals(e.event()) || "error".equals(e.event()))
+                                    .onErrorResume(error -> {
+                                        if (error instanceof AccountRevokedException || error instanceof OutputRevokedException) {
+                                            return Flux.error(error);
+                                        }
+                                        // 清理仍处于原许可上下文，异步保存拒绝也能提交同一次停止证据。
+                                        return cleanup(state, "FAILED").thenMany(Flux.error(error));
+                                    }))
                     .transform(StreamTelemetry::captureFailures)
                     .onErrorResume(error -> {
                         if (error instanceof OutputRevokedException stopped) {
@@ -206,6 +228,7 @@ public class MultiTurnChatService {
                                 .thenMany(Flux.just(event("error", failure(state, error))));
                     })
                     .doFinally(signal -> {
+                        state.modelSubscription.dispose();
                         if (signal == SignalType.CANCEL && !state.terminal)
                             cleanup(state, "CANCELLED").subscribe(ignored -> {
                             }, ignored -> {
@@ -262,7 +285,9 @@ public class MultiTurnChatService {
         return Mono.defer(() -> {
             Pending pending;
             synchronized (state) {
-                if (state.buffer.isEmpty()) return Mono.empty();
+                if (state.outputStopped || state.buffer.isEmpty()) {
+                    return Mono.empty();
+                }
                 if (!all && state.pending == null && state.buffer.codePointCount(0, state.buffer.length()) < properties.getBatchCodepoints())
                     return Mono.empty();
                 if (state.pending == null) {
@@ -312,17 +337,36 @@ public class MultiTurnChatService {
                     state.intent = intent;
                     state.terminal = true;
                 })
+                .switchIfEmpty(Mono.defer(() -> {
+                    if (state.lease == null) {
+                        return Mono.empty();
+                    }
+                    // app 已确认没有持久账本，不能遗留开始前取得的并发和 token 预留。
+                    return state.lease.cancelAsync().then(Mono.<SettlementIntent>empty());
+                }))
                 .flatMap(intent -> settlement.settle(intent).then(Mono.defer(() -> app.acknowledge(intent))))
                 .doOnSuccess(ignored -> state.terminal = true);
     }
 
     private Mono<Void> cleanup(Prepared state, String status) {
         synchronized (state) {
-            if (state.result == null || state.result.replayed() || state.terminal) return Mono.empty();
+            if (state.result == null || state.result.replayed() || state.terminal) {
+                return Mono.empty();
+            }
             if (state.closing == null) {
-                state.closing = (state.outputStopped ? Mono.<Void>empty() : flush(state).onErrorResume(error -> Mono.empty()))
-                        .then(finish(state, status))
-                        .timeout(Duration.ofMillis(properties.getCleanupTimeoutMs())).onErrorResume(error -> Mono.empty()).cache();
+                state.closing = Mono.deferContextual(context -> {
+                    Mono<Void> buffered = state.outputStopped ? Mono.empty() : flush(state)
+                            .onErrorResume(error -> !(error instanceof AccountRevokedException), error -> Mono.empty());
+                    return buffered.then(finish(state, status))
+                            .onErrorResume(AccountRevokedException.class, denied -> {
+                                state.outputStopped = true;
+                                state.accountRevoked = true;
+                                state.modelSubscription.dispose();
+                                OutputPermitService.revokeCurrent(context, denied);
+                                return finish(state, "CANCELLED");
+                            });
+                }).timeout(Duration.ofMillis(properties.getCleanupTimeoutMs()))
+                        .onErrorResume(error -> Mono.empty()).cache();
             }
             return state.closing;
         }
@@ -363,6 +407,10 @@ public class MultiTurnChatService {
     }
 
     private static ResponseStatusException preflightError(Throwable error) {
+        if (error instanceof AccountRevokedException revoked) {
+            return new ResponseStatusException(org.springframework.http.HttpStatusCode.valueOf(revoked.httpStatus()),
+                    "当前身份不可使用");
+        }
         if (error instanceof ResponseStatusException status) return status;
         if (error instanceof ChatQuotaAuditService.QuotaExceededException)
             return new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "部门配额不足");

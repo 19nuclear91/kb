@@ -6,6 +6,7 @@ import com.zhishiku.kb.ai.chat.AiProperties;
 import com.zhishiku.kb.ai.chat.RetrievalClient;
 import com.zhishiku.kb.ai.conversation.config.ConversationProperties;
 import com.zhishiku.kb.common.conversation.RequestSignature;
+import com.zhishiku.kb.common.security.AccountRevokedException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -130,11 +131,17 @@ public class ConversationAppClient {
                 h.set("X-Service-Signature", headers.signature());
                 if (token != null) h.set("satoken", token);
             }).bodyValue(body).exchangeToMono(response -> {
-                if (response.statusCode().isError()) return response.releaseBody().then(Mono.error(
-                        new ResponseStatusException(response.statusCode(), "会话请求未被接受")));
+                if (response.statusCode().isError()) {
+                    int status = response.statusCode().value();
+                    RuntimeException rejected = AccountRevokedException.confirmed(status,
+                            response.headers().header(AccountRevokedException.HEADER))
+                            ? new AccountRevokedException(status)
+                            : new ResponseStatusException(response.statusCode(), "会话请求未被接受");
+                    return response.releaseBody().then(Mono.error(rejected));
+                }
                 return response.bodyToMono(JsonNode.class).switchIfEmpty(Mono.error(unavailable()));
-            }).timeout(Duration.ofSeconds(5)).onErrorMap(error -> error instanceof ResponseStatusException ? error :
-                    unavailable());
+            }).timeout(Duration.ofSeconds(5)).onErrorMap(error -> error instanceof ResponseStatusException
+                    || error instanceof AccountRevokedException ? error : unavailable());
         });
         return retry ? request.retryWhen(Retry.fixedDelay(1, Duration.ofMillis(100))
                 .filter(error -> error instanceof ResponseStatusException status && status.getStatusCode().is5xxServerError())

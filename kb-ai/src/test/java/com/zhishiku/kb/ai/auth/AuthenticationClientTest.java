@@ -3,6 +3,9 @@ package com.zhishiku.kb.ai.auth;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.dev33.satoken.reactor.context.SaReactorSyncHolder;
 import com.zhishiku.kb.common.api.ApiException;
+import com.zhishiku.kb.common.security.AccountRevokedException;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import com.zhishiku.kb.common.security.AuthenticationSignature;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -126,8 +129,34 @@ class AuthenticationClientTest {
             assertThat(calls).hasValue(1);
             var protectedRoute = MockServerWebExchange.from(MockServerHttpRequest.get("/api/auth/login").build());
             filter.filter(protectedRoute, ignored -> Mono.empty()).block();
-            assertThat(protectedRoute.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(protectedRoute.getResponse().getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"401,absent", "403,absent", "403,unknown", "403,duplicate", "401,confirmed", "403,confirmed", "503,confirmed"})
+    void userRevocationRequiresSingleExplicitMarkerFromInternalResponse(int status, String marker) {
+        WebClient wire = WebClient.builder().baseUrl("http://app.invalid").exchangeFunction(request -> {
+            var response = ClientResponse.create(HttpStatus.valueOf(status));
+            if (!"absent".equals(marker)) {
+                response.header(AccountRevokedException.HEADER,
+                        "unknown".equals(marker) ? "OTHER" : AccountRevokedException.CODE);
+            }
+            if ("duplicate".equals(marker)) {
+                response.header(AccountRevokedException.HEADER, AccountRevokedException.CODE);
+            }
+            return Mono.just(response.body("private response").build());
+        }).build();
+        StepVerifier.create(new AuthenticationClient(wire, SECRET).check("token")).expectErrorSatisfies(error -> {
+            if ((status == 401 || status == 403) && "confirmed".equals(marker)) {
+                assertThat(error).isInstanceOf(AccountRevokedException.class);
+                assertThat(((ApiException) error).httpStatus()).isEqualTo(status);
+            } else {
+                assertThat(error).isNotInstanceOf(AccountRevokedException.class);
+                assertThat(((ApiException) error).httpStatus()).isEqualTo(503);
+            }
+            assertThat(error.getMessage()).doesNotContain("private");
+        }).verify();
     }
 
     @Test

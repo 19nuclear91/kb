@@ -11,8 +11,9 @@ import { LifecycleScope } from './scope';
 
 export const restrictionLabel = { CLEAR: '无限制', OFFBOARDED: '离职停权', REVIEW: '待人工核对（限制访问）' } as const;
 const kindLabel = { NONE: '未纳管', MANAGED: '受管员工', EMERGENCY: '独立应急管理员' } as const;
-export function UserLifecyclePanel({ userId, onChanged }: { userId: string; onChanged?: () => void }) {
-  return <LifecycleScope target={`user:${userId}`}><Panel userId={userId} onChanged={onChanged} /></LifecycleScope>;
+/** 普通账号操作显式推进刷新代次，卸载旧事实对应的表单与证明，再按原读取资格查询。 */
+export function UserLifecyclePanel({ userId, onChanged, refreshRevision = 0 }: { userId: string; onChanged?: () => void; refreshRevision?: number }) {
+  return <LifecycleScope target={`user:${userId}:refresh:${refreshRevision}`}><Panel userId={userId} onChanged={onChanged} /></LifecycleScope>;
 }
 function Panel({ userId, onChanged }: { userId: string; onChanged?: () => void }) {
   const { session } = useSession(), access = useAdminAccess();

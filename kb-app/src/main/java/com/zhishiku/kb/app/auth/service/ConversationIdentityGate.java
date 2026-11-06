@@ -2,6 +2,7 @@ package com.zhishiku.kb.app.auth.service;
 
 import com.zhishiku.kb.app.auth.mapper.IdentityDepartmentMapper;
 import com.zhishiku.kb.app.auth.lifecycle.IdentityAccessState;
+import com.zhishiku.kb.common.security.AccountRevokedException;
 import com.zhishiku.kb.common.security.IdentityException;
 import org.springframework.stereotype.Service;
 
@@ -30,17 +31,27 @@ public class ConversationIdentityGate {
     /** 生成写入先锁身份，再锁会话/轮次；不取得管理或映射锁，避免反向锁序。 */
     public void requireEpoch(long user, long expected) {
         var row = identities.findIdentityForUpdate(user);
-        if (row == null || expected < 1) {
+        if (expected < 1) {
             throw IdentityException.unauthorized("执行身份已失效");
+        }
+        if (row == null) {
+            throw new AccountRevokedException(401);
         }
         var current = IdentityAccessState.from(row);
         if (current.authEpoch() != expected) {
-            throw IdentityException.unauthorized("执行身份已失效");
+            throw new AccountRevokedException(401);
         }
         if (!current.enabled()) {
-            throw IdentityException.forbidden("执行身份已停用");
+            throw new AccountRevokedException(403);
         }
-        require(user);
+        try {
+            require(user);
+        } catch (IdentityException denied) {
+            if (denied.httpStatus() == 401 || denied.httpStatus() == 403) {
+                throw new AccountRevokedException(denied.httpStatus());
+            }
+            throw denied;
+        }
     }
 
     /** 恢复任务只判定持久撤销事实，不借此授予读取或生成资格。 */

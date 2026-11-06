@@ -17,6 +17,10 @@ check/begin/prepare 需要有效的当前用户会话；seal 还须当前用户�
 reserve、dispatch、seal、append、renew 和成功 finish 均先锁定身份、复核认证代次及有效状态，再锁会话和轮次；不能凭未过期的执行租约绕过账号撤销。
 现有来源权限检查继续独立执行。服务端恢复的旧轮次若缺少 authEpoch，不推断其身份，只允许维护关闭及固定结算。
 
+执行身份检查确认代次失效、账号/部门禁用或强制改密时，内部接口用原 401/403 加唯一 `X-Auth-Result: ACCOUNT_REVOKED` 响应，正文为空且 no-store。验签失败、资源权限拒绝及普通状态冲突不带此标记。AI 不能只凭 HTTP 401/403 推断离职；只有固定标记才转换为可信撤销异常。若 dispatch、seal、append、renew 或成功 finish 先于下一次许可刷新发现撤销，同一输出许可立即取消上游，并负责一次停止证据及受限取消/结算，不追加剩余缓冲。reserve 在输出尚未建立前被撤销也以 CANCELLED / ACCOUNT_REVOKED 收尾，但不伪造一次输出停止记录。
+
+普通模型错误触发的缓冲保存与失败收尾仍处于原输出许可上下文；清理时首次确认撤销也使用同一次停止报告及受限收尾，不吞掉撤销继续按 FAILED 封存。停止后不再提交下一批缓冲。若 reserve 被拒绝且后续 finish 明确返回无结算意图，AI 直接取消已取得的配额租约，释放并发和 token 预留；已有意图仍走固定账本结算，收尾响应未知时不能推断无账本并按零用量释放。
+
 reserve 绑定 departmentId、leaseId、eventId、reservedTokens；dispatch 在模型调用之前记录意图。seal 接受 kind、实际选中的父轮
 UUID 与本轮新引用，app 重新检查父轮完整来源和所有当前 view，并计算传递并集。MODEL 要有有效版本的新材料；NO_RESULTS
 不接受父轮或引用。append 接受固定 sequence/text；重复相同批次不追加，不同正文或跳号拒绝。

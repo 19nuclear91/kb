@@ -180,3 +180,71 @@ describe('事件处置与本人应急登记', () => {
     expect(sessionStorage.length).toBe(0); expect(localStorage.length).toBe(0);
   });
 });
+
+describe('外部事实重读与放弃未知确认', () => {
+  it.each(['verified', 'pending'])('外部事实重读隔离 %s 核验，并在新摘要读取完成前阻止操作', async mode => {
+    const view = mount();
+    const late = deferred<Response>(), reread = deferred<unknown>();
+    if (mode === 'verified') await mapProof();
+    else {
+      await click('纳管员工'); fill('准确员工标识', 'old-staff'); respond = () => late.promise;
+      await click('核验员工'); await waitFor(() => expect(calls).toHaveLength(1));
+    }
+    routes[lifecyclePaths.user('7')] = () => reread.promise;
+    view.update(<UserLifecyclePanel userId="7" refreshRevision={1} />);
+    expect(screen.queryByLabelText('准确员工标识')).toBeNull();
+    expect(screen.queryByRole('button', { name: '确认纳管' })).toBeNull();
+    await waitFor(() => expect(vi.mocked(context.session.json).mock.calls.filter(call => call[0] === lifecyclePaths.user('7'))).toHaveLength(2));
+    expect(screen.queryByText('人工状态')).toBeNull();
+    if (mode === 'pending') {
+      expect(calls[0].init.signal?.aborted).toBe(true);
+      await act(async () => late.resolve(json(proof({ displayName: '旧证明姓名', connectionId: 'staff' }))));
+      expect(screen.queryByText(/旧证明姓名/)).toBeNull();
+    }
+    await act(async () => reread.resolve(user({ version: 4, enabled: false, manualEnabled: false })));
+    await screen.findByText('人工状态'); await click('纳管员工'); disabled('确认纳管');
+    expect((screen.getByLabelText('准确员工标识') as HTMLInputElement).value).toBe('');
+  });
+  it.each(['mapping', 'restoration', 'emergency'])('%s 放弃未知写入后必须重读、重新核验，再以新原因和新标识确认', async mode => {
+    const opening = mode === 'mapping' ? '纳管员工' : mode === 'restoration' ? '人工复职' : '由本人替换 备用管理员';
+    const confirming = mode === 'mapping' ? '确认纳管' : mode === 'restoration' ? '确认解除生命周期限制' : '确认先建后换';
+    const verifying = mode === 'mapping' ? '核验员工' : mode === 'restoration' ? '核对复职事实' : '验证本人本地凭据';
+    if (mode === 'mapping') { mount(); await mapProof(); }
+    else if (mode === 'restoration') await restoreProof();
+    else {
+      mount(<LifecyclePage />); await click(opening); fill('本人当前密码', 'old-password');
+      respond = () => json(proof()); await click(verifying); await screen.findByText('核验有效，请核对后明确确认。');
+    }
+    fill('操作原因', '原操作原因'); respond = () => Promise.reject(new TypeError('network'));
+    await click(confirming); await screen.findByRole('button', { name: '放弃核对' });
+    const original = calls.at(-1)!, readsBefore = vi.mocked(context.session.json).mock.calls.length, reread = deferred<unknown>();
+    const target = mode === 'emergency' ? '1' : '7';
+    routes[lifecyclePaths.user(target)] = () => reread.promise;
+    await click('放弃核对');
+    expect(screen.queryByRole('button', { name: confirming })).toBeNull();
+    expect(screen.queryByText('核验有效，请核对后明确确认。')).toBeNull();
+    await waitFor(() => expect(vi.mocked(context.session.json).mock.calls.length).toBeGreaterThan(readsBefore));
+    disabled(opening);
+    const fresh = mode === 'restoration' ? { ...restricted(), version: 4 } : user({ userId: target, version: 4 });
+    await act(async () => reread.resolve(fresh));
+    await waitFor(() => expect(screen.getByRole('button', { name: opening }).hasAttribute('disabled')).toBe(false));
+    await click(opening); fill('操作原因', '新操作原因'); disabled(confirming);
+    if (mode === 'mapping') fill('准确员工标识', 'exact-staff-id');
+    if (mode === 'emergency') fill('本人当前密码', 'fresh-password');
+    const verificationCalls = calls.length;
+    const freshProof = proof({ proof: 'q'.repeat(43), version: 4 });
+    respond = () => json({ ...freshProof,
+      displayName: '员工甲', connectionId: 'staff', employeeName: '员工甲', departmentId: '2', departmentName: '研发部',
+      clearanceLevel: 2, roles: [], manualEnabled: false, restriction: 'OFFBOARDED', eventBoundary: 20, mappingVersion: mode === 'restoration' ? 3 : -1 });
+    await click(verifying); await screen.findByText('核验有效，请核对后明确确认。');
+    expect(calls).toHaveLength(verificationCalls + 1);
+    respond = () => Promise.reject(new TypeError('network')); await click(confirming);
+    await screen.findByRole('button', { name: '按原内容重试' });
+    const current = calls.at(-1)!;
+    expect(current.body.reason).toBe('新操作原因'); expect(current.body.requestId).not.toBe(original.body.requestId);
+    expect(new Headers(current.init.headers).get('X-Request-Id')).toBe(current.body.requestId);
+    expect(current.body.proof ?? (current.body.verification as Record<string, unknown> | undefined)?.proof).toBe('q'.repeat(43));
+    expect(current.body.version ?? (current.body.verification as Record<string, unknown> | undefined)?.version).toBe(4);
+    expect(current.body).not.toHaveProperty('password');
+  });
+});

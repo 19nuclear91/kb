@@ -2,7 +2,7 @@ package com.zhishiku.kb.ai.auth;
 
 import com.zhishiku.kb.common.api.ApiException;
 import com.zhishiku.kb.common.security.AuthenticationCheck;
-import com.zhishiku.kb.common.security.IdentityException;
+import com.zhishiku.kb.common.security.AccountRevokedException;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -61,7 +61,7 @@ class OutputPermitServiceTest {
 
     @Test
     void refreshFailureCancelsSilentSourceWithoutWaitingForDataOrPersistence() {
-        when(client.check("token")).thenReturn(Mono.just(valid), Mono.error(IdentityException.forbidden("private")));
+        when(client.check("token")).thenReturn(Mono.just(valid), Mono.error(new AccountRevokedException(403)));
         var cancelled = new AtomicBoolean();
         var error = new AtomicReference<Throwable>();
         OutputPermitService.protect(service, "token", null, () -> Flux.never().doOnCancel(() -> cancelled.set(true)))
@@ -79,7 +79,7 @@ class OutputPermitServiceTest {
         when(client.check("token")).thenReturn(Mono.just(valid), response.asMono());
         var permit = service.acquire("token", null).block();
         nanos.set(Duration.ofSeconds(3).toNanos());
-        timer.advanceTimeBy(Duration.ofSeconds(3));
+        timer.advanceTimeBy(Duration.ofMillis(100));
         nanos.set(Duration.ofSeconds(11).toNanos());
         response.tryEmitValue(valid);
         assertThat(permit.isDisposed()).isTrue();
@@ -128,6 +128,56 @@ class OutputPermitServiceTest {
         assertThat(((OutputRevokedException) stopped.get()).code()).isEqualTo("AUTHENTICATION_UNAVAILABLE");
         response.tryEmitValue(valid);
         assertThatThrownBy(permit::require).isInstanceOf(OutputRevokedException.class);
+    }
+
+    @Test
+    void pausedTimerStillRejectsRefreshBeyondTwoSecondsBeforeOldPermitExpires() {
+        Sinks.One<AuthenticationCheck> response = Sinks.one();
+        when(client.check("token")).thenReturn(Mono.just(valid), response.asMono());
+        var permit = service.acquire("token", null).block();
+        var failure = new AtomicReference<Throwable>();
+        permit.guard(Flux.never()).subscribe(ignored -> {}, failure::set);
+        nanos.set(Duration.ofSeconds(3).toNanos());
+        timer.advanceTimeBy(Duration.ofMillis(100));
+        // 只推进单调时钟，不执行定时器的 2 秒超时任务；旧许可仍未到 10 秒。
+        nanos.set(Duration.ofMillis(5001).toNanos());
+        response.tryEmitValue(valid);
+        assertThat(permit.isDisposed()).isTrue();
+        assertThat(((OutputRevokedException) failure.get()).code()).isEqualTo("AUTHENTICATION_UNAVAILABLE");
+    }
+
+    @Test
+    void successfulRefreshDeadlineStartsAtRequestRatherThanResponse() {
+        Sinks.One<AuthenticationCheck> response = Sinks.one();
+        when(client.check("token")).thenReturn(Mono.just(valid), response.asMono());
+        var permit = service.acquire("token", null).block();
+        nanos.set(Duration.ofSeconds(3).toNanos());
+        timer.advanceTimeBy(Duration.ofMillis(100));
+        nanos.set(Duration.ofSeconds(4).toNanos());
+        response.tryEmitValue(valid);
+        nanos.set(Duration.ofMillis(12999).toNanos());
+        permit.require();
+        nanos.set(Duration.ofSeconds(13).toNanos());
+        assertThatThrownBy(permit::require).isInstanceOf(OutputRevokedException.class);
+    }
+
+    @Test
+    void oldLateResponseCannotChangeActiveReplacementBindingOrDeadline() {
+        Sinks.One<AuthenticationCheck> oldResponse = Sinks.one();
+        when(client.check("token")).thenReturn(Mono.just(valid), oldResponse.asMono(), Mono.just(valid));
+        var first = service.acquire("token", new OutputPermitService.Binding(7, 2, "first")).block();
+        nanos.set(Duration.ofSeconds(3).toNanos());
+        timer.advanceTimeBy(Duration.ofMillis(100));
+        first.dispose();
+        nanos.set(Duration.ofSeconds(4).toNanos());
+        var second = service.acquire("token", new OutputPermitService.Binding(7, 2, "second")).block();
+        nanos.set(Duration.ofSeconds(9).toNanos());
+        oldResponse.tryEmitValue(new AuthenticationCheck(7, 99, false));
+        assertThat(first.isDisposed()).isTrue();
+        assertThat(second.binding()).isEqualTo(new OutputPermitService.Binding(7, 2, "second"));
+        second.require();
+        nanos.set(Duration.ofSeconds(14).toNanos());
+        assertThatThrownBy(second::require).isInstanceOf(OutputRevokedException.class);
     }
 
     @Test

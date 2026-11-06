@@ -8,6 +8,7 @@ import type { AdminDepartment, AdminUser } from './types';
 const context = vi.hoisted(() => ({ session: {} as Session, state: { phase: 'ready', me: null as unknown, epoch: 1 } }));
 vi.mock('../SessionProvider', () => ({ useSession: () => context }));
 import { UsersPage } from './UsersPage';
+import { lifecyclePaths } from './lifecycle/api';
 
 type Handler = (path: string) => unknown;
 const alice: AdminUser = { userId: '1', username: 'alice', displayName: '小林', departmentId: '2', clearanceLevel: 1, enabled: true, version: 1 };
@@ -367,5 +368,62 @@ describe('用户角色分配与解除', () => {
     view.setCodes([perm.userRead]);
     await waitFor(() => expect(screen.queryByText('解除角色绑定')).toBeNull());
     expect(within(drawer()).queryByRole('button', { name: /解除角色/ })).toBeNull(); expect(within(drawer()).queryByRole('button', { name: '分配角色' })).toBeNull();
+  });
+});
+
+describe('普通账号操作同步生命周期事实', () => {
+  const facts = (target: AdminUser, changes = {}) => ({ userId: target.userId, version: target.version, mappingVersion: -1,
+    manualEnabled: target.enabled, enabled: target.enabled, kind: 'NONE', restriction: 'CLEAR', connectionId: null,
+    lastEventId: null, updatedAt: null, restoredAt: null, ...changes });
+  function lifecycleRoutes(target: AdminUser) {
+    routes[lifecyclePaths.user(target.userId)] = () => facts(target);
+    routes[lifecyclePaths.status] = () => ({ subscriptionEnabled: false, configured: true, connected: false, connectionId: 'staff',
+      emergencyReady: true, lastConnectedAt: null, counts: { managed: 0, restricted: 0, unmapped: 0, review: 0, failed: 0 } });
+  }
+  const panel = () => within(drawer()).getByRole('region', { name: '账号生命周期' });
+  it.each([alice, bob])('$username 普通启停成功后同步重读，刷新期间不保留可操作的旧摘要', async target => {
+    lifecycleRoutes(target);
+    const pending = deferred<unknown>(), next = !target.enabled;
+    respond = () => {
+      routes[`/api/admin/identity/users/${target.userId}`] = () => ({ ...target, enabled: next, version: 3 });
+      routes[lifecyclePaths.user(target.userId)] = () => pending.promise;
+      return json({ ...target, enabled: next, version: 3 });
+    };
+    page([...all, perm.lifecycleRead, perm.lifecycleManage]); await open(target.username);
+    await within(panel()).findByText('人工状态');
+    fireEvent.click(within(drawer()).getByRole('button', { name: target.enabled ? '停用账号' : '启用账号' }));
+    fireEvent.click(within(dialog()).getByRole('button', { name: target.enabled ? '确认停用' : '确认启用' }));
+    await within(drawer()).findByText(next ? '账号已启用。' : '账号已停用。');
+    await waitFor(() => expect(reads(lifecyclePaths.user(target.userId))).toHaveLength(2));
+    expect(reads(`/api/admin/identity/users/${target.userId}`)).toHaveLength(2);
+    expect(within(panel()).queryByText('人工状态')).toBeNull();
+    expect(within(panel()).queryByRole('button', { name: '纳管员工' })).toBeNull();
+    await act(async () => pending.resolve(facts(target, { enabled: next, manualEnabled: next, version: 3 })));
+    expect(await within(panel()).findAllByText(next ? '启用' : '停用')).toHaveLength(2);
+    expect(within(panel()).queryByText(next ? '停用' : '启用')).toBeNull();
+    expect(writes).toHaveLength(1);
+  });
+  it.each([
+    { target: bob, action: '启用账号', confirm: '确认启用', reason: 'LIFECYCLE_RESTRICTED', kind: 'MANAGED', restriction: 'OFFBOARDED', text: '离职停权', read: 'users/7' },
+    { target: alice, action: '停用账号', confirm: '确认停用', reason: 'EMERGENCY_MANAGER_REQUIRED', kind: 'EMERGENCY', restriction: 'CLEAR', text: '独立应急管理员', read: 'users/1' },
+    { target: alice, action: '重置密码', confirm: '确认重置', reason: 'EMERGENCY_MANAGER_REQUIRED', kind: 'EMERGENCY', restriction: 'CLEAR', text: '独立应急管理员', read: 'users/1' },
+    { target: alice, action: '解除角色 ROLE_ADMIN', confirm: '确认解除', reason: 'EMERGENCY_MANAGER_REQUIRED', kind: 'EMERGENCY', restriction: 'CLEAR', text: '独立应急管理员', read: 'users/1/roles' },
+  ])('$action 遇到 $reason 后同步重读普通事实与生命周期摘要', async scenario => {
+    const { target } = scenario; lifecycleRoutes(target);
+    respond = () => {
+      routes[lifecyclePaths.user(target.userId)] = () => facts(target, { kind: scenario.kind, restriction: scenario.restriction,
+        mappingVersion: 3, connectionId: scenario.kind === 'MANAGED' ? 'staff' : null, version: 3 });
+      return failure(409, scenario.reason);
+    };
+    page([...all, perm.lifecycleRead]); await open(target.username);
+    await within(panel()).findByText('无限制');
+    fireEvent.click(within(drawer()).getByRole('button', { name: scenario.action }));
+    if (scenario.action === '重置密码') { fill(dialog(), '新密码', 'private'); fill(dialog(), '确认新密码', 'private'); }
+    fireEvent.click(within(dialog()).getByRole('button', { name: scenario.confirm }));
+    await waitFor(() => expect(reads(lifecyclePaths.user(target.userId))).toHaveLength(2));
+    expect(reads(`/api/admin/identity/${scenario.read}`)).toHaveLength(2);
+    expect(await within(panel()).findByText(scenario.text)).toBeTruthy();
+    expect(writes).toHaveLength(1); expect(writes[0].path).not.toContain('/restore');
+    expect(screen.queryByText('账号已启用。')).toBeNull(); expect(screen.queryByText('账号已停用。')).toBeNull();
   });
 });

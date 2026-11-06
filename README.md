@@ -8,7 +8,8 @@
 
 | 范围 | 当前实现 | 说明 |
 | --- | --- | --- |
-| 登录与身份 | 本地登录、强制改密、账号与部门管理、角色与功能权限、外部身份绑定 | 钉钉、企业微信、飞书浏览器 SSO 默认关闭，只登录已有绑定账号，不自动建号。见[身份管理](docs/admin-identity-web.md)、[企业 SSO](docs/enterprise-sso-configuration.md) |
+| 登录与身份 | 本地登录、强制改密、认证代次、账号与部门管理、角色与功能权限、外部身份绑定 | 钉钉、企业微信、飞书浏览器 SSO 默认关闭，只登录已有绑定账号，不自动建号。见[身份管理](docs/admin-identity-web.md)、[企业 SSO](docs/enterprise-sso-configuration.md)、[认证撤销](docs/authentication-epoch.md) |
+| 员工生命周期 | 钉钉 Stream 离职事件、独立员工纳管、持久停权、人工复职及本地应急保障 | 默认关闭且独立于 SSO；本地员工账号也可显式纳管，普通启用不能替代复职。见[生命周期运维](docs/lifecycle-operations.md)、[协调发布](docs/lifecycle-rollout.md) |
 | 页面加载与恢复 | 按身份和路由加载业务及管理页面，拆分文档列表/详情与登录/账户依赖 | 加载状态和异常局限于页面区域，导航与退出保持可用；失败后可主动刷新，不自动重放写入。见[前端路由加载](kb-web/README.md#路由加载与恢复) |
 | 空间与授权 | 空间创建、归档、授权、批量授予与撤销，文档例外授权 | 空间为授权主单位；主体支持用户、角色和部门树。见[空间与文档管理](docs/admin-space-document-web.md) |
 | 文档生命周期 | 原件上传、多版本、处理状态、失败重试、独立操作资格重核、软删除、搬迁、密级调整 | 新版本上传被拒后暂停并重核，不自动重传；用户端删除与管理端删除分别校验编辑和空间管理资格；搬迁会清空文档例外授权。见[用户端说明](kb-web/README.md)、[文档密级管理](docs/document-security-level.md) |
@@ -19,7 +20,7 @@
 | 引用与会话 | 固定文档/版本/分块引用，SSE 单轮接口，私有多轮会话与历史、停止生成、额度结算 | 多轮会话及真实模型调用默认关闭；历史回答读取会重新校验来源权限。见[引用溯源](docs/citation-provenance.md)、[会话历史](docs/conversation-history.md)、[模型接入](docs/chat-model-adapter.md) |
 | 解析与索引运维 | 数据库任务队列、领取租约、心跳、退避重试、死信重放、结构化分块、Embedding profile 与重建 | **第三方解析适配器尚未提供**；缺少适配器时不领取普通解析任务。见[解析接入](docs/third-party-document-parsing.md)、[索引运维页面](docs/embedding-parse-operations-web.md) |
 | 审计与运营 | 管理/登录审计查询、AI 用量与调用审计、知识库运营报表、对象存储对账 | AI 用量采集默认关闭，对象存储对账默认只报告、不删除。见[审计页面](docs/admin-audit-web.md)、[AI 用量](docs/admin-ai-usage-web.md)、[运营报表](docs/knowledge-operations-reports.md) |
-| 监控与告警 | Prometheus 指标、可选追踪、可信数据库快照、独立结算监控、20 类聚合告警、三组 Grafana 面板及钉钉投递 | 独立部署，不接入业务事务；通知采用受控模板与管理入口，不逐任务外发。见[遥测运维](docs/telemetry-operations.md)、[监控告警](docs/monitoring-alerts-operations.md)、[监控部署](docs/monitoring-deployment-operations.md) |
+| 监控与告警 | Prometheus 指标、可选追踪、可信数据库快照、独立结算监控、29 类聚合告警、三组 Grafana 面板及钉钉投递 | 独立部署，不接入业务事务；通知采用受控模板与管理入口，不逐任务外发。见[遥测运维](docs/telemetry-operations.md)、[监控告警](docs/monitoring-alerts-operations.md)、[生命周期监控](docs/lifecycle-operations.md#监控语义与排障顺序)、[监控部署](docs/monitoring-deployment-operations.md) |
 | 检索评测 | 通过真实搜索 API 采集结果，离线计算质量指标、基线差异及质量门禁 | `kb-eval-collector` 负责采集，`kb-eval` 负责离线评测，均为独立 Java CLI。见[采集说明](docs/retrieval-result-collection.md)、[评测说明](docs/retrieval-evaluation.md) |
 
 权限同时包含功能资格与资源授权。拥有管理权限不自动获得文档阅读、下载、编辑或审核资格，文档可见性还受密级、空间归档和版本发布状态约束。功能权限按持久化 permission code 精确匹配，不依据角色名称放行；相关目录见 [Permission.java](kb-app/src/main/java/com/zhishiku/kb/app/auth/model/Permission.java)。
@@ -39,6 +40,8 @@
 | `kb-web` | 5173（Vite 默认） | React / TypeScript / Ant Design 用户端与管理端；独立安装和构建，不属于 Maven reactor |
 
 浏览器通过同源 `/api/**` 访问网关；网关将业务请求转发到 `kb-app`，将 `/api/ai/**` 转发到 `kb-ai`。网关、应用与 AI 通过 Redis 共享 Sa-Token 会话。当前路由使用配置的服务地址，不依赖注册中心。
+
+受保护请求同时核对当前启用事实和服务端认证代次：app 直接查询，gateway / AI 经独立签名的内部认证接口查询，不跨请求缓存通过结果。三个服务必须配置相同的 `KB_AUTH_INTERNAL_SECRET`（至少 32 UTF-8 字节），gateway / AI 的 `KB_APP_BASE_URL` 指向固定内部 app；该检查不依赖 SSO、生命周期订阅或多轮会话开关。缺少配置或身份依赖不可用时失败关闭，不能仅凭 Redis 中仍有令牌继续访问。
 
 架构背景见[架构决策记录](架构决策记录.md)，配套图见[架构图](架构图-v3.html)。历史设计与实际实现有差异时，以当前代码和配置为准。
 
@@ -89,7 +92,7 @@ mvn -pl kb-app spring-boot:run '-Dspring-boot.run.profiles=dev'
 
 第一条命令安装模块间依赖并打包，跳过测试；成功后再运行第二条。等待 `kb-app` 完成 Flyway 迁移和 Embedding profile 登记，再启动 Worker。
 
-正式迁移位于 [db/migration](kb-app/src/main/resources/db/migration)，当前最高版本为 **V28**，包含 V18.1。V3/V6 位于 [db/dev](kb-app/src/main/resources/db/dev)，仅 `dev` profile 加载。不要在已有生产库上切换到 `dev` 来补种子，也不要用 Flyway repair 跳过迁移问题。
+正式迁移位于 [db/migration](kb-app/src/main/resources/db/migration)，当前最高版本为 **V35**，包含 V18.1；V29–V35 引入人工启用状态、认证代次、生命周期登记/事件/权限、轮次代次及输出停止证据。V3/V6 位于 [db/dev](kb-app/src/main/resources/db/dev)，仅 `dev` profile 加载。不要在已有生产库上切换到 `dev` 来补种子，也不要用 Flyway repair 跳过迁移问题；存量系统升级须遵守[生命周期协调发布](docs/lifecycle-rollout.md)。
 
 ### 3. 分别启动其他服务
 
@@ -182,6 +185,19 @@ npm run dev
 
 网关基础配置与 `application-dev.yml` 均将 `/api/conversations/**` 转发到 app，将 `/api/ai/**` 转发到 AI，并保持 `/internal/**` 不对浏览器转发。路由存在不代表会话已启用，仍需完成上述开关与服务配置。外层反向代理还需关闭 SSE 缓冲，并允许足够的连接空闲时间。
 
+### 钉钉员工离职与认证撤销
+
+生命周期订阅使用独立的 `kb.identity.lifecycle.dingtalk` 配置，默认 `enabled=false`，只接收一个配置企业内部应用的 Stream 事件。成员核验、受管关系、持久限制和恢复任务不随接收开关关闭；SSO 绑定不等于纳管，平台故障也不代表所有员工离职。
+
+启用前按[钉钉接入配置](docs/dingtalk-stream-adapter.md)核对企业、内部应用凭据、`client-id` 与事件 `unified-app-id`、成员可见范围和 `user_leave_org` 订阅；不能假定两个应用标识相同。秘密通过受控渠道注入，不复用 SSO、Office、轮次协议或通知机器人密钥。
+
+- **先应急、再纳管、最后启用订阅。** 合格的非受管候选本人使用本地密码会话、完成改密并再次验证密码后登记；系统保护最后一个合格保障的全部资格收缩路径，轮换先建后换。见[应急保障](docs/lifecycle-emergency.md)。
+- **四项权限分别分配。** `identity:lifecycle:read`、`identity:lifecycle:manage`、`identity:lifecycle:restore`、`identity:emergency:manage` 互不蕴含，普通账号写资格或管理员角色名称不能代替。受控接口见[生命周期管理 API](docs/lifecycle-management-api.md)。
+- **普通启停与复职分开。** 离职限制需独立核对和确认解除；人工停用仍保留，旧令牌永久失效。普通管理写入及相关冲突重读会刷新独立生命周期摘要；未知结果保留原绑定，放弃后须重读事实并重新核验确认，不自动重发。见[管理页面](docs/admin-identity-web.md#员工生命周期管理补充)。
+- **输出停止与结算分开。** 所有单轮、多轮和占位输出受最长 10 秒的独立身份许可约束，失败或过期先停止输出并取消上游，再按原执行受限收尾。内部可信撤销与依赖未知使用不同归因，不能把任意 401/403 都记为已确认离职。
+
+访问撤销目标从有效事件可靠持久接收起算为 30 秒，不包含钉钉投递前延迟；不能以 Redis 清理或费用结算完成替代停止输出，也不能承诺撤回已交付内容或供应商停止计费。真实跨实例时限尚未实测，接入、监控证据和发布边界见[生命周期运维](docs/lifecycle-operations.md)与[协调发布方案](docs/lifecycle-rollout.md)。
+
 ### 其他可选能力
 
 | 能力 | 默认行为与启用入口 |
@@ -213,7 +229,7 @@ app / Worker / AI / gateway 管理端口
 - Worker 的 parse / embedding、app 的 settlement 使用来源级完整快照，导出可用性和最后成功时间；默认每 30 秒采样，监控 SQL 默认超时 3 秒。抓取不查询数据库，采样失败保留旧值但标记不可用，不伪造空队列。
 - 数据库 Gauge 先按实例筛选存活与新鲜样本，再在同一环境、部署内取 `max` 去重；Counter 逐序列处理重置后汇总，直方图合桶后计算分位数。一个部署 ID 只代表一套业务数据库。
 - 持久结算直接监控 `PENDING`、`REVIEW` 和最老终结年龄，包含退避中或已领取的 PENDING，排除正常 `RESERVED` / `SETTLED`；会话及 AI 观测开关关闭后仍监控遗留账本。
-- 固定目录包含 20 类告警，覆盖预期服务失联、指标契约缺失、采样故障、解析与索引、检索与模型、结算及通知链路。维护状态、低流量、取消与正常拒绝按各自规则处理，阈值是可调整初值，不是已验证的生产 SLO。
+- 固定目录包含 29 类告警，覆盖预期服务失联、指标契约缺失、采样故障、解析与索引、检索与模型、结算及通知链路；新增 9 类生命周期告警区分连接、积压、应急、输入拒绝、事件冲突、依赖故障、许可逾期、已确认撤销超时和目标不可确认。维护状态、低流量、取消与正常拒绝按各自规则处理，阈值是可调整初值，不是已验证的生产 SLO。
 
 | 预置面板 | 固定 UID | 主要内容 |
 | --- | --- | --- |
@@ -244,6 +260,7 @@ app / Worker / AI / gateway 管理端口
 | 版本审核、站内通知、个人账户 | `/reviews`、`/notifications`、`/account` |
 | AI 助手 | `/assistant` |
 | 用户、部门、角色 | `/admin/users`、`/admin/departments`、`/admin/roles` |
+| 员工生命周期、事件处置与应急保障 | `/admin/identity/lifecycle`（账号详情另有独立权限面板） |
 | 空间、文档管理、全局标签 | `/admin/spaces`、`/admin/documents`、`/admin/document-tags` |
 | 向量重建、解析死信 | `/admin/embedding`、`/admin/parse/dead-letters` |
 | 管理与登录审计 | `/admin/audits` |
@@ -278,6 +295,14 @@ try {
 仓库包含权限、业务状态、Mapper 映射、模块边界、AI 无数据库依赖、响应式链路及前端模拟 DOM 等测试。真实 PostgreSQL 烟测由 `KB_TEST_POSTGRES_URL`、`KB_TEST_POSTGRES_USER`、`KB_TEST_POSTGRES_PASSWORD` 指向专用测试库；未配置 URL 时相关用例跳过，跳过不代表数据库行为已验证。
 
 [db/verify_paradedb.sql](db/verify_paradedb.sql)、[db/verify_permission.sql](db/verify_permission.sql)、[db/verify_identity_department.sql](db/verify_identity_department.sql) 提供数据库检查脚本，部分依赖开发种子或创建测试数据，使用前阅读脚本并选择测试库。真实迁移、索引行为、权限隔离、并发发布、SSE 转发和供应商兼容性需要在目标环境另行验证；各专项文档保留其具体离线验证范围。
+
+### 钉钉员工离职变更核验
+
+`dingtalk-employee-offboarding` 已同步 7 份主规格并归档，含 36 项新增及 3 项修改要求。行为契约见[生命周期主规格](openspec/specs/enterprise-account-lifecycle/spec.md)，独立核验和修复历史见[归档报告](openspec/changes/archive/2026-11-06-dingtalk-employee-offboarding/verification.md)。
+
+归档前最新独立运行：后端显式离线白名单 **87 类 / 493 项**、前端相关白名单 **7 文件 / 141 项**通过，类型检查和生产构建通过，监控配置行为 **163 项**通过。核验结论为 **0 CRITICAL / 0 WARNING / 1 SUGGESTION**；104 个场景的代码/直接或组合证据映射不等于全部经过动态验收。这些不是全量测试，本次同步、归档和 README 更新未重新运行业务测试。
+
+监控输入生成不等于规则执行：最新核验因缺少 `promtool`，规则语法和合成时序执行仍为 **Not verified**；没有执行真实数据库迁移/并发、企业联调、跨实例 30 秒实测或部署演练。归档保留上述限制，不将其改写为全部验证通过。同步时 7 份目标主规格严格校验通过、58 份主规格普通校验通过；全库严格校验仍有一项与本变更无关的 `admin-web-access` 既有超长描述警告，未改动该规格。
 
 ### 前端路由懒加载与包体分析
 
@@ -357,6 +382,7 @@ java -jar .\kb-eval\target\kb-eval-0.1.0-SNAPSHOT.jar --help
 
 - **显式提供生产配置。** app / Worker 需要 `KB_DB_URL`、`KB_DB_USERNAME`、`KB_DB_PASSWORD`、S3 配置和 Embedding profile 清单；app / gateway / AI 需共享 Redis 会话配置，网关配置下游地址与明确的 `KB_CORS_ALLOWED_ORIGINS`。生产启动会校验配置，不使用 `dev` 绕过。
 - **由 app 单点迁移。** 正式环境只加载 `db/migration`，不加载 V3/V6。升级先核对对应功能的迁移、权限目录和读写协议兼容性；Worker 的 Flyway 保持关闭。
+- **协调发布身份撤销协议。** V29–V35 升级前排空旧 app / gateway / AI 及在途生成、Office 连接和旧写入，配置独立认证秘密后再恢复流量；无可信代次的历史令牌统一重登，不回填代次。不能直接回退到绕过新门禁的旧二进制，也不能通过关闭订阅解除既有限制。见[生命周期发布与止损](docs/lifecycle-rollout.md)。
 - **引导首个管理员。** 新的正式库通过 `KB_BOOTSTRAP_ADMIN_USERNAME`、`KB_BOOTSTRAP_ADMIN_PASSWORD` 创建管理员，可配置显示名、字典内密级与部门，首次登录强制改密。存在有效管理员时引导跳过，不重置既有密码或恢复已撤销权限；默认引导密级为 0，管理资格不授予文档阅读权。
 - **隔离管理网络。** 四个业务服务配置独立的 `KB_MANAGEMENT_PORT` 与明确的 `KB_MANAGEMENT_ADDRESS`；管理端点没有应用内认证，需由网络层限制访问。健康探针和指标抓取改用管理端口，不为容器访问便利放宽为通配绑定，见[遥测运维](docs/telemetry-operations.md)。通知适配器使用独立的 `KB_NOTIFIER_*` 端口与地址配置。
 - **部署前端静态产物。** `npm run build` 生成 `kb-web/dist`；先上传新哈希资产，再原子切换 HTML，并为已打开的标签页保留旧资产，回退时也保留被回退版本的资产。HTML 禁止缓存或要求重新验证，哈希资产可长期缓存；页面路由回退到 `index.html`，缺失 JS/CSS 返回真实 404，`/api/**` 保留后端真实状态和 SSE 流。详见[前端运维](docs/user-web-operations.md)。

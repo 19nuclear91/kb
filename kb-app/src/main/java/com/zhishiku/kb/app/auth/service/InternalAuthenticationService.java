@@ -1,6 +1,8 @@
 package com.zhishiku.kb.app.auth.service;
 
 import com.zhishiku.kb.common.api.ApiException;
+import com.zhishiku.kb.common.security.AccountRevokedException;
+import com.zhishiku.kb.common.security.IdentityException;
 import com.zhishiku.kb.common.security.AuthenticationCheck;
 import com.zhishiku.kb.common.security.AuthenticationSignature;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,7 +47,14 @@ public class InternalAuthenticationService {
         } catch (RuntimeException failed) {
             throw ApiException.unavailable("内部认证暂不可用");
         }
-        var result = sessions.check(token);
-        return new AuthenticationCheck(result.userId(), result.authEpoch(), result.mustChangePassword(), result.checkedAt());
+        try {
+            var result = sessions.check(token);
+            return new AuthenticationCheck(result.userId(), result.authEpoch(), result.mustChangePassword(), result.checkedAt());
+        } catch (IdentityException denied) {
+            if (denied.httpStatus() == 401 || denied.httpStatus() == 403) {
+                throw new AccountRevokedException(denied.httpStatus());
+            }
+            throw denied;
+        }
     }
 }

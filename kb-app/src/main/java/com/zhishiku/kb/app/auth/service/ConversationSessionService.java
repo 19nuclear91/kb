@@ -1,6 +1,7 @@
 package com.zhishiku.kb.app.auth.service;
 
 import com.zhishiku.kb.common.api.ApiException;
+import com.zhishiku.kb.common.security.AccountRevokedException;
 import com.zhishiku.kb.common.security.IdentityException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -31,6 +32,9 @@ public class ConversationSessionService {
             gate.require(session.userId());
             return session;
         } catch (ApiException error) {
+            if (error.httpStatus() == 401 || error.httpStatus() == 403) {
+                throw new AccountRevokedException(error.httpStatus());
+            }
             throw new ResponseStatusException(org.springframework.http.HttpStatusCode.valueOf(error.httpStatus()),
                     "会话身份不可用");
         }

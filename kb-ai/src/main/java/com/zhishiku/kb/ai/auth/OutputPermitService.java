@@ -1,6 +1,6 @@
 package com.zhishiku.kb.ai.auth;
 
-import com.zhishiku.kb.common.api.ApiException;
+import com.zhishiku.kb.common.security.AccountRevokedException;
 import com.zhishiku.kb.common.security.AuthenticationCheck;
 import com.zhishiku.kb.common.security.OutputStopReport;
 import jakarta.annotation.PreDestroy;
@@ -131,6 +131,14 @@ public class OutputPermitService {
         permit.require();
     }
 
+    /** 清理阶段同样复用原许可确认撤销；输出尚未建立时不虚构停止记录。 */
+    public static void revokeCurrent(ContextView context, AccountRevokedException denied) {
+        Permit permit = context.getOrDefault(CONTEXT, null);
+        if (permit != null) {
+            permit.revoke(failure(denied));
+        }
+    }
+
     private static void validate(AuthenticationCheck current, Binding expected) {
         if (current.mustChangePassword() || (expected.userId() > 0 && current.userId() != expected.userId())
                 || (expected.authEpoch() > 0 && current.authEpoch() != expected.authEpoch())) {
@@ -142,8 +150,8 @@ public class OutputPermitService {
         if (error instanceof OutputRevokedException revoked) {
             return revoked;
         }
-        boolean denied = error instanceof ApiException api && (api.httpStatus() == 401 || api.httpStatus() == 403);
-        return new OutputRevokedException(denied ? "ACCOUNT_REVOKED" : "AUTHENTICATION_UNAVAILABLE");
+        return new OutputRevokedException(error instanceof AccountRevokedException
+                ? "ACCOUNT_REVOKED" : "AUTHENTICATION_UNAVAILABLE");
     }
 
     @PreDestroy
@@ -210,6 +218,11 @@ public class OutputPermitService {
                 return source.<T>handle((value, sink) -> {
                     require();
                     sink.next(value);
+                }).onErrorMap(AccountRevokedException.class, denied -> {
+                    // 执行入口可能先于许可刷新发现撤销；同一许可负责取消及一次停止观测。
+                    var revoked = failure(denied);
+                    revoke(revoked);
+                    return revoked;
                 }).takeUntilOther(stopped.asMono()).concatWith(Flux.defer(() -> {
                     synchronized (this) {
                         return rejection == null ? Flux.empty() : Flux.error(rejection);

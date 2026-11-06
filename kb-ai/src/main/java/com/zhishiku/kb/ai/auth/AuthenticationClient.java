@@ -2,6 +2,7 @@ package com.zhishiku.kb.ai.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.zhishiku.kb.common.api.ApiException;
+import com.zhishiku.kb.common.security.AccountRevokedException;
 import com.zhishiku.kb.common.security.AuthHeaders;
 import com.zhishiku.kb.common.security.AuthenticationCheck;
 import com.zhishiku.kb.common.security.AuthenticationSignature;
@@ -55,8 +56,9 @@ public class AuthenticationClient {
             }).exchangeToMono(response -> {
                 int status = response.statusCode().value();
                 if (status != 200) {
-                    ApiException error = status == 401 ? IdentityException.unauthorized("登录状态无效或已过期")
-                            : status == 403 ? IdentityException.forbidden("身份访问被拒绝") : unavailable();
+                    ApiException error = AccountRevokedException.confirmed(status,
+                            response.headers().header(AccountRevokedException.HEADER))
+                            ? new AccountRevokedException(status) : unavailable();
                     return response.releaseBody().then(Mono.<AuthenticationCheck>error(error));
                 }
                 return response.bodyToMono(JsonNode.class).switchIfEmpty(Mono.error(unavailable()))

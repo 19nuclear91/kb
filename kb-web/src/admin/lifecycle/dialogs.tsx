@@ -19,7 +19,12 @@ function useLifecycleWrite(scope: string, props: Props, confirmed: (value: unkno
     if (outcome.status === 'confirmed') props.onDone(confirmed(outcome.value));
     else if (outcome.status === 'rejected') { invalidate?.(); if ([404, 409].includes(outcome.error.status)) props.onRefresh(); }
   };
-  return { write, submit: async (build: () => WriteIntent) => after(await write.submit(build)), retry: async () => after(await write.retry()) };
+  // 生命周期放弃即退出旧确认并重读；新操作必须重新核验，不改变其他管理流程的 reset。
+  const restart = () => {
+    if (write.busy) return;
+    invalidate?.(); write.reset(); props.onClose(); props.onRefresh();
+  };
+  return { write: { ...write, reset: restart }, submit: async (build: () => WriteIntent) => after(await write.submit(build)), retry: async () => after(await write.retry()) };
 }
 
 export function MappingDialog({ user, connectionId, ...props }: Props & { user: LifecycleUser; connectionId: string }) {
