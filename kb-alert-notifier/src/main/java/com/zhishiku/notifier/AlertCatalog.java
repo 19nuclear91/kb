@@ -8,6 +8,9 @@ import java.util.Set;
 
 final class AlertCatalog {
     static final Set<String> NAMES = Set.of("KbServiceUnavailable", "KbServiceReplicaUnavailable",
+            "KbLifecycleInputRejected", "KbLifecycleEventConflict", "KbLifecycleRevocationSlow",
+            "KbLifecycleDisconnected", "KbLifecycleBacklogOld", "KbLifecycleEmergencyUnavailable",
+            "KbOutputPermitOverdue", "KbLifecycleDependencyFailures", "KbRevocationTargetUnconfirmed",
             "KbMonitoringContractMissing", "KbMetricSampleUnavailable", "KbParserNotConfigured",
             "KbParseQueueAging", "KbParseDeadLetters", "KbParseLeaseLoss", "KbEmbeddingBlocked",
             "KbEmbeddingMaintenanceLong", "KbSearchFailures", "KbSearchRetrievalSlow", "KbSearchDegradation",
@@ -16,7 +19,7 @@ final class AlertCatalog {
     static final Set<String> SERVICES = Set.of("app", "worker", "ai", "gateway", "notifier",
             "prometheus", "alertmanager", "grafana");
     private static final Map<String, Set<String>> PATHS = Map.of(
-            "admin", Set.of("/admin/parse/dead-letters", "/admin/embedding", "/admin/ai/audits"),
+            "admin", Set.of("/admin/parse/dead-letters", "/admin/embedding", "/admin/ai/audits", "/admin/identity/lifecycle"),
             "grafana", Set.of("/d/kb-overview", "/d/kb-parse-index", "/d/kb-search-ai"));
     private final Map<String, Entry> entries;
 

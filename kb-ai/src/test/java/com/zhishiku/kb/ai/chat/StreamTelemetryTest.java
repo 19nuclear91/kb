@@ -1,5 +1,7 @@
 package com.zhishiku.kb.ai.chat;
 
+import com.zhishiku.kb.ai.auth.PermitFixtures;
+
 import com.zhishiku.kb.ai.telemetry.StreamTelemetry;
 import io.micrometer.core.instrument.MockClock;
 import io.micrometer.core.instrument.simple.SimpleConfig;
@@ -26,7 +28,7 @@ class StreamTelemetryTest {
         var meters = new SimpleMeterRegistry(SimpleConfig.DEFAULT, clock);
         try {
             var chat = mock(ChatService.class);
-            var controller = new ChatController(chat, new AiProperties("http://app.invalid", 5, 1000, 60));
+            var controller = PermitFixtures.controller(chat, new AiProperties("http://app.invalid", 5, 1000, 60));
             controller.setTelemetry(new StreamTelemetry(meters));
             when(chat.chat(anyString(), anyString())).thenReturn(Flux.defer(() -> {
                 clock.add(Duration.ofMillis(250));
@@ -61,7 +63,7 @@ class StreamTelemetryTest {
             var beans = new StaticListableBeanFactory();
             beans.addBean("model", (ChatModelClient) (question, citations) -> Flux.never());
             var props = new AiProperties("http://app.invalid", 5, 100000, 1);
-            var controller = new ChatController(new ChatService(retrieval, beans.getBeanProvider(ChatModelClient.class), props), props);
+            var controller = PermitFixtures.controller(PermitFixtures.chat(retrieval, beans.getBeanProvider(ChatModelClient.class), props), props);
             controller.setTelemetry(new StreamTelemetry(meters));
             StepVerifier.withVirtualTime(() -> controller.chat("q", "t")).expectNextCount(1)
                     .thenAwait(Duration.ofSeconds(2)).expectNextMatches(event -> "error".equals(event.event())).verifyComplete();

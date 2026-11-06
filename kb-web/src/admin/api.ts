@@ -82,6 +82,10 @@ export function intentKey(intent: WriteIntent): string { return `${intent.method
 
 /** 服务端管理写投影的有限原因及其唯一合法 HTTP 状态；提示文本固定，不读取服务端 message。 */
 export const adminReasons = {
+  EMERGENCY_MANAGER_REQUIRED: [409, '需保留合格的独立应急管理员；请先由新候选本人完成登记或轮换。'],
+  LIFECYCLE_RESTRICTED: [409, '账号存在生命周期限制，普通启用不能解除；请使用人工复职核对。'],
+  LIFECYCLE_CONFIRMATION_STALE: [409, '核验已过期或相关事实发生变化，请重新读取并核验。'],
+  DEPENDENCY_UNAVAILABLE: [503, '当前依赖不可用，无法确认操作结果，请稍后核对。'],
   SPACE_NOT_EMPTY: [409, '空间仍有文档，请改用归档或先处理文档。'],
   SOURCE_MISMATCH: [409, '文档归属已变化，请重新读取后确认。'],
   TARGET_ARCHIVED: [409, '目标空间已归档，请重新选择。'],

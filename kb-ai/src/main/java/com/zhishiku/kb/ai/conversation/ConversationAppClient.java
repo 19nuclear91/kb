@@ -89,6 +89,15 @@ public class ConversationAppClient {
 
     public Mono<SettlementIntent> finish(ExecutionKey key, String status, long position, boolean confirmed,
                                          Long prompt, Long completion) {
+        return finish(key, status, position, confirmed, prompt, completion, null);
+    }
+
+    public Mono<SettlementIntent> finishRevoked(ExecutionKey key, long position, boolean confirmed, Long prompt, Long completion) {
+        return finish(key, "CANCELLED", position, confirmed, prompt, completion, "ACCOUNT_REVOKED");
+    }
+
+    private Mono<SettlementIntent> finish(ExecutionKey key, String status, long position, boolean confirmed,
+                                          Long prompt, Long completion, String cancellationReason) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("execution", key);
         body.put("status", status);
@@ -96,6 +105,9 @@ public class ConversationAppClient {
         body.put("finalUsage", confirmed);
         body.put("promptTokens", prompt);
         body.put("completionTokens", completion);
+        if (cancellationReason != null) {
+            body.put("cancellationReason", cancellationReason);
+        }
         return call("finish", body, null, true).flatMap(value -> value.has("turnId") ? Mono.just(convert(value,
                 SettlementIntent.class)) : Mono.empty());
     }

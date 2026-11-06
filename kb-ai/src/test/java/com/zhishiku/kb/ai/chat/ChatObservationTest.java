@@ -1,5 +1,7 @@
 package com.zhishiku.kb.ai.chat;
 
+import com.zhishiku.kb.ai.auth.PermitFixtures;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import reactor.core.publisher.Flux;
@@ -18,10 +20,10 @@ class ChatObservationTest {
     void noResultsAndPlaceholderNeverDispatchModel() {
         var retrieval = mock(RetrievalClient.class); var observer = mock(ChatObservation.class);
         when(retrieval.retrieve(any(), any())).thenReturn(Mono.just(List.of()));
-        new ChatService(retrieval).chat("问题", "token", observer).blockLast();
+        PermitFixtures.chat(retrieval).chat("问题", "token", observer).blockLast();
         verify(observer).result("NO_RESULTS"); verify(observer, never()).dispatch();
         when(retrieval.retrieve(any(), any())).thenReturn(Mono.just(List.of(new RetrievalClient.Citation(1, "t", 1, 2, "c"))));
-        StepVerifier.withVirtualTime(() -> new ChatService(retrieval).chat("问题", "token", observer))
+        StepVerifier.withVirtualTime(() -> PermitFixtures.chat(retrieval).chat("问题", "token", observer))
                 .thenAwait(java.time.Duration.ofSeconds(20)).thenConsumeWhile(event -> true).verifyComplete();
         verify(observer).result("PLACEHOLDER"); verify(observer, never()).dispatch();
     }
@@ -36,7 +38,7 @@ class ChatObservationTest {
             assertThat(dispatched).hasValue(1); calls.incrementAndGet();
             return Flux.just(ChatModelClient.StreamEvent.delta("ok"), ChatModelClient.StreamEvent.usage(0, 0));
         });
-        var service = new ChatService(retrieval, models);
+        var service = PermitFixtures.chat(retrieval, models);
         ChatObservation observer = new ChatObservation() {
             public Mono<Void> dispatch() { return Mono.fromRunnable(dispatched::incrementAndGet); }
         };

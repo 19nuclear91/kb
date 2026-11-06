@@ -1,6 +1,8 @@
 package com.zhishiku.kb.app.auth.mapper;
 
 import com.zhishiku.kb.app.auth.model.DepartmentRecord;
+import com.zhishiku.kb.app.auth.model.AuthenticationIdentity;
+import com.zhishiku.kb.app.auth.model.EmergencyIdentityFact;
 import com.zhishiku.kb.app.auth.model.ExternalIdentityRecord;
 import com.zhishiku.kb.app.auth.model.IdentityRecord;
 import com.zhishiku.kb.app.auth.model.LocalCredentialRecord;
@@ -21,12 +23,26 @@ import java.util.List;
  */
 @Mapper
 public interface IdentityDepartmentMapper {
+    @Select("""
+            SELECT u.id AS user_id, u.auth_epoch,
+                   (u.enabled AND u.manual_enabled AND COALESCE(l.restriction, 'CLEAR') = 'CLEAR') AS enabled,
+                   COALESCE(d.enabled, false) AS department_enabled, u.must_change_password,
+                   statement_timestamp() AS checked_at
+              FROM sys_user u LEFT JOIN sys_dept d ON d.id = u.dept_id
+                   LEFT JOIN sys_identity_lifecycle l ON l.user_id = u.id
+             WHERE u.id = #{userId}
+            """)
+    AuthenticationIdentity findAuthenticationIdentity(@Param("userId") long userId);
 
     /**
      * 所有管理资格收缩路径共用固定键，必须在读取资格事实与取得实体行锁前调用。
      */
     @Select("SELECT 1 FROM pg_advisory_xact_lock(741306011)")
     int lockManagement();
+
+    /** 固定管理锁之后、用户行锁之前；尚无登记的插入竞争由管理锁串行化。 */
+    @Select("SELECT user_id FROM sys_identity_lifecycle WHERE user_id = #{userId} FOR UPDATE")
+    Long lockLifecycleForUser(@Param("userId") long userId);
 
     @Select("""
             SELECT ur.user_id, ur.role_id, rp.permission
@@ -37,6 +53,38 @@ public interface IdentityDepartmentMapper {
                AND rp.permission IN ('identity:role:assign', 'identity:role:write')
             """)
     List<UserRolePermission> findEnabledManagementPermissions();
+
+    String EMERGENCY_FACTS = "SELECT u.id AS user_id, u.dept_id AS department_id, COALESCE(l.kind, 'NONE') AS kind, "
+            + "u.enabled, u.manual_enabled, COALESCE(d.enabled, false) AS department_enabled, "
+            + "(u.password_hash IS NOT NULL AND length(btrim(u.password_hash)) > 0) AS local_password, "
+            + "u.must_change_password, COALESCE(l.restriction, 'CLEAR') AS restriction "
+            + "FROM sys_user u LEFT JOIN sys_dept d ON d.id = u.dept_id "
+            + "LEFT JOIN sys_identity_lifecycle l ON l.user_id = u.id ";
+
+    @Select(EMERGENCY_FACTS + "WHERE l.kind = 'EMERGENCY' ORDER BY u.id")
+    List<EmergencyIdentityFact> findEmergencyIdentities();
+
+    @Select(EMERGENCY_FACTS + "WHERE u.id = #{userId}")
+    EmergencyIdentityFact findEmergencyCandidate(@Param("userId") long userId);
+
+    @Select("""
+            SELECT ur.user_id, ur.role_id, rp.permission FROM sys_user_role ur
+              JOIN sys_role_permission rp ON rp.role_id = ur.role_id
+              JOIN sys_identity_lifecycle l ON l.user_id = ur.user_id AND l.kind = 'EMERGENCY'
+            """)
+    List<UserRolePermission> findEmergencyPermissions();
+
+    @Select("""
+            SELECT ur.user_id, ur.role_id, rp.permission FROM sys_user_role ur
+              JOIN sys_role_permission rp ON rp.role_id = ur.role_id WHERE ur.user_id = #{userId}
+            """)
+    List<UserRolePermission> findUserManagementPermissions(@Param("userId") long userId);
+
+    @Select("""
+            SELECT EXISTS(SELECT 1 FROM sys_identity_lifecycle
+                           WHERE kind IN ('MANAGED', 'EMERGENCY') OR restriction <> 'CLEAR')
+            """)
+    boolean lifecycleProtectionRequired();
 
     @Select("""
             SELECT id, parent_id, code, name, path, enabled, version, created_at, updated_at
@@ -117,19 +165,25 @@ public interface IdentityDepartmentMapper {
     long countEnabledUsers(@Param("id") long id);
 
     @Select("""
-            SELECT id, username, display_name, dept_id, clearance_level, enabled, version, created_at, updated_at
+            SELECT id, username, display_name, dept_id AS department_id, clearance_level, enabled, version, created_at, updated_at,
+                   manual_enabled, auth_epoch,
+                   COALESCE((SELECT restriction FROM sys_identity_lifecycle WHERE user_id = sys_user.id), 'CLEAR') AS lifecycle_restriction
               FROM sys_user WHERE id = #{id}
             """)
     IdentityRecord findIdentity(@Param("id") long id);
 
     @Select("""
-            SELECT id, username, display_name, dept_id, clearance_level, enabled, version, created_at, updated_at
+            SELECT id, username, display_name, dept_id AS department_id, clearance_level, enabled, version, created_at, updated_at,
+                   manual_enabled, auth_epoch,
+                   COALESCE((SELECT restriction FROM sys_identity_lifecycle WHERE user_id = sys_user.id), 'CLEAR') AS lifecycle_restriction
               FROM sys_user ORDER BY id
             """)
     List<IdentityRecord> listIdentities();
 
     @Select("""
-            SELECT id, username, display_name, dept_id, clearance_level, enabled, version, created_at, updated_at
+            SELECT id, username, display_name, dept_id AS department_id, clearance_level, enabled, version, created_at, updated_at,
+                   manual_enabled, auth_epoch,
+                   COALESCE((SELECT restriction FROM sys_identity_lifecycle WHERE user_id = sys_user.id), 'CLEAR') AS lifecycle_restriction
               FROM sys_user WHERE id = #{id} FOR UPDATE
             """)
     IdentityRecord findIdentityForUpdate(@Param("id") long id);
@@ -145,12 +199,21 @@ public interface IdentityDepartmentMapper {
 
     @Update("""
             UPDATE sys_user
-               SET enabled = #{enabled}, updated_at = now(), version = version + 1
+               SET manual_enabled = #{manualEnabled}, enabled = #{enabled}, auth_epoch = #{authEpoch},
+                   updated_at = now(), version = version + 1
              WHERE id = #{userId} AND version = #{version}
             """)
-    int setUserEnabled(@Param("userId") long userId,
-                       @Param("enabled") boolean enabled,
-                       @Param("version") long version);
+    int setUserAccessState(@Param("userId") long userId,
+                           @Param("manualEnabled") boolean manualEnabled,
+                           @Param("enabled") boolean enabled,
+                           @Param("authEpoch") long authEpoch,
+                           @Param("version") long version);
+
+    @Insert("""
+            INSERT INTO sys_identity_session_cleanup (user_id, revoked_through_epoch)
+            VALUES (#{userId}, #{authEpoch}) ON CONFLICT DO NOTHING
+            """)
+    int enqueueSessionCleanup(@Param("userId") long userId, @Param("authEpoch") long authEpoch);
 
     /**
      * 调整用户密级，受 version 乐观锁保护。

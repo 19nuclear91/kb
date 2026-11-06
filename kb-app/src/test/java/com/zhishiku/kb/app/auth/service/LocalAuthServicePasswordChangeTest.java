@@ -48,7 +48,7 @@ class LocalAuthServicePasswordChangeTest {
         encoder = new BCryptPasswordEncoder(4);
         service = new LocalAuthService(mapper, mock(IdentityService.class), encoder,
                 mock(LoginThrottle.class), mock(LoginAuditService.class), identityAudit,
-                new AuthPasswordProperties(8));
+                new AuthPasswordProperties(8), mock(EpochSessionService.class));
     }
 
     @Test

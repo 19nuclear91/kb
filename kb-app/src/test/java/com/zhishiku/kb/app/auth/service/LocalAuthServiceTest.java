@@ -43,6 +43,7 @@ class LocalAuthServiceTest {
     private LoginThrottle throttle;
     private LoginAuditService audit;
     private LocalAuthService service;
+    private final EpochSessionService sessions = mock(EpochSessionService.class);
 
     @BeforeEach
     void setUp() {
@@ -52,7 +53,7 @@ class LocalAuthServiceTest {
         throttle = mock(LoginThrottle.class);
         audit = mock(LoginAuditService.class);
         service = new LocalAuthService(mapper, identityService, encoder, throttle, audit,
-                mock(IdentityAuditService.class), new AuthPasswordProperties(8));
+                mock(IdentityAuditService.class), new AuthPasswordProperties(8), sessions);
     }
 
     private LocalCredentialRecord credential(String hash, boolean mustChange) {
@@ -78,11 +79,12 @@ class LocalAuthServiceTest {
                 .thenReturn(new IdentitySummary(7L, "alice", "Alice", 42L, (short) 1, true, 3L));
 
         try (MockedStatic<StpUtil> stp = mockStatic(StpUtil.class)) {
-            stp.when(StpUtil::getTokenValue).thenReturn("token-abc");
+            when(sessions.issue(7L, EpochSessionService.Method.LOCAL)).thenReturn("token-abc");
 
             LoginResult result = service.login("alice", "correct-horse");
 
-            stp.verify(() -> StpUtil.login(7L));
+            verify(sessions).issue(7L, EpochSessionService.Method.LOCAL);
+            stp.verifyNoInteractions();
             assertThat(result.getTokenName()).isEqualTo(AuthHeaders.SA_TOKEN);
             assertThat(result.getTokenValue()).isEqualTo("token-abc");
             assertThat(result.getLoginId()).isEqualTo(7L);

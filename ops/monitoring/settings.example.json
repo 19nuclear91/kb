@@ -27,6 +27,15 @@
     "settlementAgeSeconds":300
   },
   "waitSeconds": {
+    "KbLifecycleInputRejected":30,
+    "KbLifecycleEventConflict":30,
+    "KbLifecycleRevocationSlow":30,
+    "KbRevocationTargetUnconfirmed":30,
+    "KbLifecycleDisconnected":60,
+    "KbLifecycleBacklogOld":300,
+    "KbLifecycleEmergencyUnavailable":60,
+    "KbOutputPermitOverdue":30,
+    "KbLifecycleDependencyFailures":60,
     "KbServiceUnavailable":120,
     "KbServiceReplicaUnavailable":300,
     "KbMonitoringContractMissing":120,

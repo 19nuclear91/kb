@@ -25,6 +25,10 @@ spring:
     max-in-memory-size: 4MB
 
 kb:
+  auth:
+    internal:
+      secret: ${KB_AUTH_INTERNAL_SECRET:}
+      app-base-url: ${KB_APP_BASE_URL:}
   telemetry:
     tracing:
       enabled: ${KB_TELEMETRY_TRACING_ENABLED:false}

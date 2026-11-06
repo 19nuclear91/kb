@@ -1,4 +1,5 @@
 import { lazyPage } from './lazyPage';
+export const LifecyclePage = lazyPage(() => import('../admin/lifecycle/LifecyclePage').then(module => ({ default: module.LifecyclePage })));
 
 export const AccountPage = lazyPage(() => import('../pages/AccountPage').then(module => ({ default: module.AccountPage })));
 export const DocumentsPage = lazyPage(() => import('../pages/DocumentsPage').then(module => ({ default: module.DocumentsPage })));

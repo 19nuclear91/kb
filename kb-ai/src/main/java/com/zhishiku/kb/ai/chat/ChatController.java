@@ -2,6 +2,8 @@ package com.zhishiku.kb.ai.chat;
 
 import com.zhishiku.kb.common.security.AuthHeaders;
 import com.zhishiku.kb.ai.telemetry.StreamTelemetry;
+import com.zhishiku.kb.ai.auth.OutputPermitService;
+import com.zhishiku.kb.ai.auth.OutputRevokedException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -49,6 +51,12 @@ public class ChatController {
     private final ChatQuotaAuditService quotaAudit;
     private AiObservedChat observed;
     private StreamTelemetry telemetry = StreamTelemetry.NOOP;
+    private OutputPermitService permits;
+
+    @Autowired
+    public void setOutputPermits(OutputPermitService permits) {
+        this.permits = permits;
+    }
 
     @Autowired
     public void setTelemetry(StreamTelemetry telemetry) {
@@ -110,7 +118,10 @@ public class ChatController {
     }
 
     private Flux<ServerSentEvent<Object>> stream(String question, String tokenValue) {
-        return telemetry.observe(() -> unobservedStream(question, tokenValue));
+        return OutputPermitService.protect(permits, tokenValue, null,
+                        () -> telemetry.observe(() -> unobservedStream(question, tokenValue)))
+                .onErrorResume(OutputRevokedException.class, error -> Flux.just(ServerSentEvent.builder()
+                        .event("error").data((Object) new ChatEvent.Error(error.getMessage(), error.code())).build()));
     }
 
     private Flux<ServerSentEvent<Object>> unobservedStream(String question, String tokenValue) {

@@ -1,5 +1,7 @@
 package com.zhishiku.kb.ai.chat;
 
+import com.zhishiku.kb.ai.auth.PermitFixtures;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import reactor.core.publisher.Flux;
@@ -26,7 +28,7 @@ class ChatServiceAdapterTest {
                 new RetrievalClient.Citation(10L, "说明", 2, 20L, "正文"))));
         when(clients.getIfAvailable()).thenReturn(model);
 
-        ChatService service = new ChatService(retrieval, clients);
+        ChatService service = PermitFixtures.chat(retrieval, clients);
 
         StepVerifier.create(service.chat("问题", "token"))
                 .expectNext(new ChatEvent.Citation(10L, "说明", 2, 20L))
@@ -56,7 +58,7 @@ class ChatServiceAdapterTest {
                 new RetrievalClient.Citation(10L, "说明", 2, 20L, "正文"))));
         when(clients.getIfAvailable()).thenReturn(model);
 
-        ChatService service = new ChatService(retrieval, clients);
+        ChatService service = PermitFixtures.chat(retrieval, clients);
 
         StepVerifier.create(service.chat("问题", "token"))
                 .expectNext(new ChatEvent.Citation(10L, "说明", 2, 20L))
@@ -201,6 +203,6 @@ class ChatServiceAdapterTest {
         when(clients.getIfAvailable()).thenReturn(model);
         AiProperties props = new AiProperties("http://app.invalid", 5, 15_000, 30,
                 8_000, budget, 60, 8);
-        return new ChatService(retrieval, clients, props);
+        return PermitFixtures.chat(retrieval, clients, props);
     }
 }

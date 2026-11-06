@@ -87,7 +87,7 @@ function Assert-MonitoringSettings($Settings, $Catalog) {
         $range = $thresholds[$key]
         Assert-Number $Settings.thresholds[$key] $range[0] $range[1] $range[2]
     }
-    if ($Catalog -isnot [array] -or $Catalog.Count -ne 20) { throw '告警目录不完整' }
+    if ($Catalog -isnot [array] -or $Catalog.Count -ne 29) { throw '告警目录不完整' }
     $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $allServices = $services + @('notifier','prometheus','alertmanager','grafana')
     foreach ($entry in $Catalog) {
@@ -100,7 +100,7 @@ function Assert-MonitoringSettings($Settings, $Catalog) {
         foreach ($service in $entry.services) { if ($service -cnotin $allServices) { throw '告警包含未知服务' } }
         Assert-Keys $entry.link @('root','path')
         $paths = switch -CaseSensitive ($entry.link.root) {
-            'admin' { @('/admin/parse/dead-letters','/admin/embedding','/admin/ai/audits') }
+            'admin' { @('/admin/parse/dead-letters','/admin/embedding','/admin/ai/audits','/admin/identity/lifecycle') }
             'grafana' { @('/d/kb-overview','/d/kb-parse-index','/d/kb-search-ai') }
             default { throw '未知管理根地址类别' }
         }

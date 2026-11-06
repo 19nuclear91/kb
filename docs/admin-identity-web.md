@@ -92,7 +92,7 @@
 | 部门新建、改名、移动、启停 | `identity:dept:write` | 页面本身需 `identity:dept:read` |
 | 角色新建、改名、删除、单项授权/撤权 | `identity:role:write` | 页面本身需 `identity:role:read` |
 
-上述写操作都还需要当前页面的读取资格；这是可视界面的前提，不改变后端写接口可单独授权的事实。本次不新增权限 code、依赖或部署单元。
+上述写操作都还需要当前页面的读取资格；这是可视界面的前提，不改变后端写接口可单独授权的事实。此处原有身份管理页面不另设权限；员工生命周期新增的后端权限见下文补充。
 
 ## 账号管理
 
@@ -143,3 +143,21 @@ mvn -o -q -pl kb-app -am test '-Dtest=IdentityManagementFeedbackTest,GlobalExcep
 后端各类计数：IdentityManagementFeedbackTest 70、IdentityClearanceControllerTest 12、IdentityServiceClearanceTest 10、RoleManagementServiceTest 10、DepartmentServiceTest 8、IdentityServiceCreateUserTest 8、RoleManagementControllerTest 8（4 个业务方法，其中一个参数化 5 组）、IdentityServiceTest 7、IdentityServiceRoleTest 6、IdentityServiceLastAdminTest 5、IdentityServicePasswordResetTest 5、ModuleBoundaryTest 5、IdentityManagementControllerTest 3、GlobalExceptionHandlerTest 2。运行日志中的两条 `GlobalExceptionHandler -- 未处理异常` 来自验证未识别异常保持原处理的用例，属预期输出。
 
 前端测试使用内存响应、受控 Promise/流和模拟 DOM；后端仅运行服务/Mapper 替身、standaloneSetup MockMvc 与 ArchUnit。未执行 `RoleManagementControllerTest#everyRoleEndpointHasOperationAndResponses` 文档注解断言、全量 Maven 测试、集成测试或文档文案测试；未启动开发服务器、应用、网关、浏览器、数据库、Redis、MinIO、容器或真实外部服务，也未监听端口。
+
+## 员工生命周期管理补充
+
+`/admin/identity/lifecycle` 为独立懒加载入口，要求 `identity:lifecycle:read`。账号详情的生命周期面板也独立检查该权限；普通账号读取资格不会触发生命周期摘要请求。本次后端新增的四项权限分别为读取、映射/事件管理、复职和应急登记，互不蕴含，前端消费完整 code，不按角色名称推断资格。
+
+受管账号的摘要展示“受管来源：钉钉”及允许展示的连接标识，只需生命周期读取资格，不额外请求映射写接口，不展示员工标识。受管记录缺失有效连接标识时返回不可确认状态。
+
+账号详情分别展示人工启停、生命周期限制和最终启停。纳管支持本地登录员工，但必须输入权威目录中的准确员工标识，经服务端核验当前成员并明确确认；没有姓名或手机号关联入口，也不修改 SSO 绑定。退出纳管不能解除离职限制，服务端还会拒绝未解决事件或在途复职。
+
+复职先读取当前成员、部门、角色、密级和人工状态，五分钟证明有效期间填写原因并确认；确认时服务端再次核验。人工停用继续生效，普通启用遇到生命周期限制返回 409 并引导人工复职。已解除限制的账号仍须重新登录。
+
+事件页每次请求最多 20 条，游标继续读取；已读条数不是全局总数。全局摘要来自独立服务端聚合。未匹配、待核对、失败与已停权分别呈现，重试只提交内部事件编号、原因和请求标识，不能替换事件载荷。员工项不返回原始员工 ID；历史停权结果不代表账号的当前状态。
+
+应急页只允许当前候选本人输入本地密码；SSO/开发会话由服务端拒绝。选择既有登记账号进行轮换时先登记本人、再退役旧保障，原子执行；不收集他人密码。密码在发起核验时清空，确认请求只含短时证明。成功后重读当前保障资格，资格不足或最后保障冲突不展示成功。
+
+敏感输入、密码、证明与未决写入绑定仅在组件内存中保存，不进入 URL、浏览器持久存储或日志。身份/目标变化、权限事实变化或页面隐藏会卸载操作域、中止请求并隔离迟到结果。核验失败不会自动提交；写入响应未知时保留原原因、版本、证明和请求标识，只允许显式“按原内容重试”、重读事实或放弃核对。过期证明仍可用于原请求回执核对，不能用于新的确认。关闭页面或放弃核对不能撤回已经发送的写入。
+
+验证采用 jsdom、API mock 与可控时间，不启动前端服务或外部组件；另运行 TypeScript 检查及生产构建。相关测试位于 `kb-web/src/admin/lifecycle/lifecycle.test.tsx`。

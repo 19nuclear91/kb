@@ -2,6 +2,9 @@ package com.zhishiku.kb.app.auth.sso;
 
 import cn.dev33.satoken.config.SaTokenConfig;
 import cn.dev33.satoken.stp.StpLogic;
+import cn.dev33.satoken.session.SaSession;
+import com.zhishiku.kb.app.auth.model.AuthenticationIdentity;
+import com.zhishiku.kb.app.auth.service.EpochSessionService;
 import cn.dev33.satoken.stp.parameter.SaLoginParameter;
 import com.zhishiku.kb.app.auth.mapper.IdentityDepartmentMapper;
 import com.zhishiku.kb.app.auth.mapper.SsoBindingMapper;
@@ -13,12 +16,14 @@ import com.zhishiku.kb.common.security.IdentityException;
 import java.time.Clock;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import com.zhishiku.kb.app.auth.service.SessionTokenIndex;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -104,7 +109,7 @@ class SsoSecurityServiceTest {
         verify(proof).current(7, false);
     }
     @Test void bindingRequiresSameOriginalTokenAndLoginCreatesIndependentUnpublishedSession() {
-        var logic = mock(StpLogic.class); var service = new SsoSession(logic);
+        var logic = mock(StpLogic.class); var service = new SsoSession(epochs(logic));
         when(logic.getLoginIdByToken("original")).thenReturn("7");
         when(logic.getLoginIdByToken("replacement")).thenReturn("7");
         when(logic.getLoginIdByToken("other")).thenReturn("8");
@@ -113,8 +118,10 @@ class SsoSecurityServiceTest {
         for (String token : new String[]{null, "missing", "replacement", "other"})
             assertThatThrownBy(() -> service.original(f, token)).isInstanceOf(SsoException.class);
         when(logic.getConfigOrGlobal()).thenReturn(new SaTokenConfig());
-        when(logic.createLoginSession(eq(7L), any(SaLoginParameter.class))).thenReturn("independent");
-        assertThat(service.issue(7)).isEqualTo("independent");
+        when(logic.createLoginSession(eq(7L), any(SaLoginParameter.class)))
+                .thenAnswer(call -> call.getArgument(1, SaLoginParameter.class).getToken());
+        String issued = service.issue(7);
+        assertThat(issued).hasSize(43);
         var parameter = ArgumentCaptor.forClass(SaLoginParameter.class);
         verify(logic).createLoginSession(eq(7L), parameter.capture());
         assertThat(parameter.getValue().getIsShare()).isFalse();
@@ -122,18 +129,27 @@ class SsoSecurityServiceTest {
         assertThat(parameter.getValue().getToken()).hasSize(43);
         assertThat(parameter.getValue().getTimeout()).isPositive();
         verify(logic, never()).setTokenValue(anyString());
-        service.revoke("independent"); verify(logic).logoutByTokenValue("independent");
+        service.revoke(issued); verify(logic).logoutByTokenValue(issued);
         verify(logic, never()).logout(any(Object.class));
     }
     @Test void partiallyFailedIssuanceAttemptsToRevokeOnlyItsKnownRandomToken() {
         var logic = mock(StpLogic.class);
         when(logic.getConfigOrGlobal()).thenReturn(new SaTokenConfig().setTimeout(-1));
         when(logic.createLoginSession(eq(7L), any(SaLoginParameter.class))).thenThrow(new IllegalStateException("redis failed"));
-        assertThatThrownBy(() -> new SsoSession(logic).issue(7)).isInstanceOf(SsoException.class);
+        assertThatThrownBy(() -> new SsoSession(epochs(logic)).issue(7)).isInstanceOf(SsoException.class);
         var parameter = ArgumentCaptor.forClass(SaLoginParameter.class);
         verify(logic).createLoginSession(eq(7L), parameter.capture());
         verify(logic).logoutByTokenValue(parameter.getValue().getToken());
         verify(logic, never()).logout(any(Object.class));
         assertThat(parameter.getValue().getTimeout()).isEqualTo(2592000);
+    }
+
+    private static EpochSessionService epochs(StpLogic logic) {
+        var users = mock(IdentityDepartmentMapper.class);
+        when(users.findAuthenticationIdentity(7)).thenReturn(new AuthenticationIdentity(7, 1, true, true, false));
+        var tokenSession = mock(SaSession.class);
+        when(tokenSession.get(EpochSessionService.METADATA)).thenReturn("7:1:LOCAL");
+        when(logic.getTokenSessionByToken(anyString(), anyBoolean())).thenReturn(tokenSession);
+        return new EpochSessionService(users, logic, mock(SessionTokenIndex.class));
     }
 }

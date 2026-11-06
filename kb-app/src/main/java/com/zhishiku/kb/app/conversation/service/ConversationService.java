@@ -196,7 +196,7 @@ public class ConversationService {
                     row.getLastBatchSeq(), allowed ? row.getSavedCodepoints() : 0, row.getUsageStatus(),
                     row.getPromptTokens(),
                     row.getCompletionTokens(), settlement == null ? null : settlement.getState(),
-                    settlement == null ? null : settlement.getChargedTokens()));
+                    settlement == null ? null : settlement.getChargedTokens(), row.getCancellationReason()));
         }
         return views;
     }

@@ -77,6 +77,7 @@ export function AdminGuard({ code, title, children, spaces = false, allow }: { c
 
 /** 服务端既有身份管理权限 code；各项互不蕴含，前端不新增 code。 */
 export const perm = {
+  lifecycleRead: 'identity:lifecycle:read', lifecycleManage: 'identity:lifecycle:manage', lifecycleRestore: 'identity:lifecycle:restore', emergencyManage: 'identity:emergency:manage',
   userRead: 'identity:user:read', userWrite: 'identity:user:write', password: 'identity:user:password', clearance: 'identity:clearance:write',
   roleRead: 'identity:role:read', roleAssign: 'identity:role:assign', roleWrite: 'identity:role:write', deptRead: 'identity:dept:read', deptWrite: 'identity:dept:write',
   spaceCreate: 'space:create', spaceManageAll: 'space:manage-all', grantManage: 'space:grant-manage', securityLevelWrite: 'document:security-level:write',
@@ -90,6 +91,7 @@ export const canOpenSpaces = (access: AdminAccess) => (access.spaceStatus === 'r
 /** 文档管理面板入口：知识空间条件之外再加密级调整权限；入口显示不代表任何文档可管理，面板各区块独立判定。 */
 export const canOpenDocuments = (access: AdminAccess) => canOpenSpaces(access) || access.has(perm.securityLevelWrite);
 export const adminNavigation = [
+  { path: '/admin/identity/lifecycle', label: '员工生命周期', mark: 'A13', visible: (access: AdminAccess) => access.has(perm.lifecycleRead) },
   { path: '/admin/users', label: '账号管理', mark: 'A1', visible: (access: AdminAccess) => access.has(perm.userRead) },
   { path: '/admin/departments', label: '部门管理', mark: 'A2', visible: (access: AdminAccess) => access.has(perm.deptRead) },
   { path: '/admin/roles', label: '角色管理', mark: 'A3', visible: (access: AdminAccess) => access.has(perm.roleRead) },

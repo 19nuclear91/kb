@@ -1,70 +1,49 @@
 package com.zhishiku.kb.app.auth.sso;
 
-import cn.dev33.satoken.exception.NotLoginException;
-import cn.dev33.satoken.stp.StpLogic;
-import cn.dev33.satoken.stp.StpUtil;
-import cn.dev33.satoken.stp.parameter.SaLoginParameter;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.zhishiku.kb.app.auth.service.EpochSessionService;
+import com.zhishiku.kb.common.api.ApiException;
 import org.springframework.stereotype.Component;
 
-/**
- * 隔离 Sa-Token，签发阶段不向响应写 Cookie 或 header。
- */
+/** 企业登录与绑定复用统一认证代次，签发阶段不写 Cookie 或响应头。 */
 @Component
 public class SsoSession {
-    private final StpLogic logic;
+    private final EpochSessionService sessions;
 
-    @Autowired
-    public SsoSession() {
-        this(StpUtil.getStpLogic());
-    }
-
-    SsoSession(StpLogic logic) {
-        this.logic = logic;
+    public SsoSession(EpochSessionService sessions) {
+        this.sessions = sessions;
     }
 
     public long require(String token) {
-        if (token == null || token.isBlank() || token.length() > 4096)
-            throw new SsoException(401, "CREDENTIAL_REJECTED");
         try {
-            Object id = logic.getLoginIdByToken(token);
-            if (id == null) throw new SsoException(401, "CREDENTIAL_REJECTED");
-            logic.checkActiveTimeout(token);
-            long user = Long.parseLong(id.toString());
-            if (user <= 0) throw new SsoException(401, "CREDENTIAL_REJECTED");
-            return user;
-        } catch (SsoException safe) {
-            throw safe;
-        } catch (NotLoginException invalid) {
-            throw new SsoException(401, "CREDENTIAL_REJECTED");
-        } catch (NumberFormatException invalid) {
-            throw new SsoException(401, "CREDENTIAL_REJECTED");
-        } catch (RuntimeException failed) {
-            throw SsoException.storage();
+            return sessions.check(token).userId();
+        } catch (ApiException failed) {
+            throw safe(failed);
         }
     }
 
-    public void original(SsoFlow f, String token) {
-        if (require(token) != f.getOwnerUserId() || !SsoCrypto.digest(token).equals(f.getSessionDigest()))
+    public void original(SsoFlow flow, String token) {
+        if (require(token) != flow.getOwnerUserId() || !SsoCrypto.digest(token).equals(flow.getSessionDigest())) {
             throw new SsoException(403, "INVALID_FLOW");
+        }
     }
 
     public String issue(long user) {
-        String candidate = SsoCrypto.random();
         try {
-            var config = logic.getConfigOrGlobal();
-            long timeout = config.getTimeout() > 0 ? config.getTimeout() : 2592000;
-            return logic.createLoginSession(user, new SaLoginParameter(config).setToken(candidate).setTimeout(timeout)
-                    .setIsConcurrent(true).setIsShare(false).setMaxLoginCount(-1).setIsWriteHeader(false));
-        } catch (RuntimeException unavailable) {
-            try {
-                logic.logoutByTokenValue(candidate);
-            } catch (RuntimeException failed) { /* 未交付令牌仍受有限 TTL 约束。 */ }
-            throw SsoException.storage();
+            return sessions.issue(user, EpochSessionService.Method.SSO);
+        } catch (ApiException failed) {
+            throw safe(failed);
         }
     }
 
     public void revoke(String token) {
-        logic.logoutByTokenValue(token);
+        sessions.revoke(token);
+    }
+
+    private static SsoException safe(ApiException failed) {
+        return switch (failed.httpStatus()) {
+            case 401 -> new SsoException(401, "CREDENTIAL_REJECTED");
+            case 403 -> new SsoException(403, "USER_DISABLED");
+            default -> SsoException.storage();
+        };
     }
 }

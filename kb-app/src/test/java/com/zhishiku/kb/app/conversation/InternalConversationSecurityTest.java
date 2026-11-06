@@ -2,6 +2,7 @@ package com.zhishiku.kb.app.conversation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhishiku.kb.app.auth.service.ConversationSessionService;
+import com.zhishiku.kb.app.auth.service.EpochSessionService;
 import com.zhishiku.kb.app.conversation.service.ConversationProperties;
 import com.zhishiku.kb.app.conversation.service.ConversationService;
 import com.zhishiku.kb.app.conversation.service.InternalConversationService;
@@ -22,8 +23,31 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 
 class InternalConversationSecurityTest {
+    @Test
+    void beginBindsVerifiedSessionEpochAndRevokedFinishHasOnlyRestrictedAuthority() {
+        var sessions = mock(ConversationSessionService.class);
+        var writes = mock(TurnExecutionService.class);
+        var service = new InternalConversationService(mock(InternalRequestAuthenticator.class), sessions,
+                mock(ConversationService.class), writes, new ObjectMapper());
+        when(sessions.session("token")).thenReturn(new EpochSessionService.Session(1, 7, EpochSessionService.Method.LOCAL, false));
+        service.invoke("begin", "POST", "/internal/conversations/begin",
+                "{\"conversationId\":9,\"question\":\"q\",\"requestId\":\"r\",\"expectedLastTurnSeq\":0}".getBytes(StandardCharsets.UTF_8),
+                "token", null);
+        verify(writes).begin(1, 7, 9, "q", "r", 0L);
+        String input = "{\"execution\":{\"conversationId\":9,\"turnId\":\"00000000-0000-0000-0000-000000000001\","
+                + "\"ownerUserId\":1,\"executionEpoch\":0,\"authEpoch\":7,\"ticket\":\"ticket\"},\"status\":\"CANCELLED\","
+                + "\"lastBatchSeq\":0,\"finalUsage\":false,\"cancellationReason\":\"ACCOUNT_REVOKED\"}";
+        service.invoke("finish", "POST", "/internal/conversations/finish", input.getBytes(StandardCharsets.UTF_8), null, null);
+        verify(writes).finish(any(), eq("CANCELLED"), eq(0L), eq(false), eq(null), eq(null), eq("ACCOUNT_REVOKED"));
+        assertStatus(() -> service.invoke("finish", "POST", "/internal/conversations/finish",
+                input.replace("\"authEpoch\":7,", "").getBytes(StandardCharsets.UTF_8), null, null), 400);
+    }
+
     @Test
     void userTokenCannotReplaceServiceSignatureAndTamperedBodyIsRejectedBeforeSession() {
         var properties = new ConversationProperties();

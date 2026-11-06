@@ -23,7 +23,7 @@ function Baseline {
     foreach ($service in @('app','worker','ai','gateway','notifier','prometheus','alertmanager','grafana')) {
         Add-Series $series 'up' $service '1+0x220'
     }
-    foreach ($pair in @(@('worker','parse'),@('worker','embedding'),@('app','settlement'))) {
+    foreach ($pair in @(@('worker','parse'),@('worker','embedding'),@('app','settlement'),@('app','lifecycle'))) {
         Add-Series $series 'kb_monitoring_sample_available' $pair[0] '1+0x220' @{source=$pair[1]}
         Add-Series $series 'kb_monitoring_sample_last_success_timestamp_seconds' $pair[0] '0+30x220' @{source=$pair[1]}
     }
@@ -32,6 +32,9 @@ function Baseline {
     }
     Add-Series $series 'kb_parse_parser_configured' 'worker' '1+0x220'
     Add-Series $series 'kb_search_inflight' 'app' '0+0x220'
+    foreach ($name in @('subscription_enabled','connected','emergency_required','emergency_ready')) { Add-Series $series "kb_lifecycle_$name" 'app' '0+0x220' }
+    foreach ($name in @('active','overdue_seconds')) { Add-Series $series "kb_ai_output_permit_$name" 'ai' '0+0x220' }
+    foreach ($queue in @('ITEM','CLEANUP')) { Add-Series $series 'kb_lifecycle_oldest_record_age_seconds' 'app' '0+0x220' @{queue=$queue} }
     Add-Series $series 'kb_alert_notifier_inflight' 'notifier' '0+0x220'
     foreach ($name in @('kb_parse_queue_depth','kb_parse_dead_letter_depth','kb_parse_queue_oldest_age_seconds')) { Add-Series $series $name 'worker' '0+0x220' }
     foreach ($state in @('ACTIVE','UNINITIALIZED','QUIESCING','REBUILDING','VERIFYING','BLOCKED','UNKNOWN')) {
@@ -51,6 +54,15 @@ foreach ($entry in $catalog) {
     $series = Baseline
     $service = $entry.services[0]
     switch -CaseSensitive ($entry.name) {
+        'KbLifecycleInputRejected' { Add-Series $series 'kb_lifecycle_input_rejections_total' 'app' '0+1x150 150+0x70' @{reason='MESSAGE_LIMIT';source='dingtalk'} }
+        'KbLifecycleEventConflict' { Add-Series $series 'kb_lifecycle_reception_total' 'app' '0+1x150 150+0x70' @{outcome='CONFLICT';source='dingtalk'} }
+        'KbLifecycleRevocationSlow' { Add-Series $series 'kb_lifecycle_output_stop_delay_seconds' 'app' '31+0x150 0+0x70' @{bound='lower'} }
+        'KbRevocationTargetUnconfirmed' { Add-Series $series 'kb_lifecycle_output_stop_delay_seconds' 'app' '31+0x150 0+0x70' @{bound='upper'} }
+        'KbLifecycleDisconnected' { Add-Series $series 'kb_lifecycle_subscription_enabled' 'app' '1+0x220'; Add-Series $series 'kb_lifecycle_connected' 'app' '0+0x150 1+0x70' }
+        'KbLifecycleBacklogOld' { Add-Series $series 'kb_lifecycle_oldest_record_age_seconds' 'app' '600+0x150 0+0x70' @{queue='ITEM'} }
+        'KbLifecycleEmergencyUnavailable' { Add-Series $series 'kb_lifecycle_emergency_required' 'app' '1+0x220'; Add-Series $series 'kb_lifecycle_emergency_ready' 'app' '0+0x150 1+0x70' }
+        'KbOutputPermitOverdue' { Add-Series $series 'kb_ai_output_permit_overdue_seconds' 'ai' '3+0x150 0+0x70' }
+        'KbLifecycleDependencyFailures' { Add-Series $series 'kb_lifecycle_dependency_failures_total' 'app' '0+1x150 150+0x70' @{operation='MEMBER'} }
         'KbServiceUnavailable' { Add-Series $series 'up' 'app' '0+0x150 1+0x70' }
         'KbServiceReplicaUnavailable' { Add-Series $series 'up' 'app' '0+0x150 1+0x70' @{} 'app-2' }
         'KbMonitoringContractMissing' { Add-Series $series 'kb_monitoring_feature_enabled' 'app' ((@('_') * 151 -join ' ') + ' 0+0x70') @{feature='conversation'} }
@@ -111,6 +123,64 @@ $baseline = Baseline
 $tests.Add(@{name='healthy-no-traffic';interval='30s';input_series=@($baseline.Values);
     alert_rule_test=@($catalog | ForEach-Object { Alert-Check $_.name '70m' $false $_.services[0] })})
 # 缺失目标、未来时间、陈旧样本和重新成功后的恢复。
+foreach ($kind in @('disabled-retains-backlog','disabled-retains-emergency','invalid','stale','no-observed-events','ai-stop-after-active-removed','ai-dependency-refresh','completed-conflict','employee-limit','evidence-uncertain','evidence-upper-only','ai-bound','evidence-dropped')) {
+    $series = Baseline
+    $checks = @()
+    switch ($kind) {
+        'evidence-dropped' {
+            Add-Series $series 'kb_ai_output_stop_reports_total' 'ai' '0+1x220' @{outcome='DROPPED'}
+            $checks = @((Alert-Check 'KbLifecycleDependencyFailures' '70m' $true 'ai'))
+        }
+        'completed-conflict' {
+            Add-Series $series 'kb_lifecycle_reception_total' 'app' '0+1x220' @{source='dingtalk';outcome='CONFLICT'}
+            $checks = @((Alert-Check 'KbLifecycleEventConflict' '70m' $true 'app'),(Alert-Check 'KbLifecycleBacklogOld' '70m' $false 'app'),(Alert-Check 'KbLifecycleDependencyFailures' '70m' $false 'app'))
+        }
+        'employee-limit' {
+            Add-Series $series 'kb_lifecycle_input_rejections_total' 'app' '0+1x220' @{source='dingtalk';reason='EMPLOYEE_LIMIT'}
+            $checks = @((Alert-Check 'KbLifecycleInputRejected' '70m' $true 'app'))
+        }
+        'evidence-uncertain' {
+            Add-Series $series 'kb_lifecycle_output_stop_samples' 'app' '1+0x220' @{quality='UNCERTAIN'}
+            $checks = @((Alert-Check 'KbRevocationTargetUnconfirmed' '70m' $true 'app'),(Alert-Check 'KbLifecycleRevocationSlow' '70m' $false 'app'))
+        }
+        'evidence-upper-only' {
+            Add-Series $series 'kb_lifecycle_output_stop_delay_seconds' 'app' '29+0x220' @{bound='lower'}
+            Add-Series $series 'kb_lifecycle_output_stop_delay_seconds' 'app' '31+0x220' @{bound='upper'}
+            $checks = @((Alert-Check 'KbRevocationTargetUnconfirmed' '70m' $true 'app'),(Alert-Check 'KbLifecycleRevocationSlow' '70m' $false 'app'))
+        }
+        'ai-bound' {
+            Add-Series $series 'kb_ai_output_permit_revocation_stop_upper_bound_seconds_max' 'ai' '31+0x220'
+            $checks = @((Alert-Check 'KbRevocationTargetUnconfirmed' '70m' $true 'ai'))
+        }
+        'disabled-retains-backlog' {
+            Add-Series $series 'kb_lifecycle_oldest_record_age_seconds' 'app' '600+0x220' @{queue='CLEANUP'}
+            $checks = @((Alert-Check 'KbLifecycleBacklogOld' '70m' $true 'app'),(Alert-Check 'KbLifecycleDisconnected' '70m' $false 'app'))
+        }
+        'disabled-retains-emergency' {
+            Add-Series $series 'kb_lifecycle_emergency_required' 'app' '1+0x220'
+            $checks = @((Alert-Check 'KbLifecycleEmergencyUnavailable' '70m' $true 'app'))
+        }
+        { $_ -in @('invalid','stale') } {
+            Add-Series $series 'kb_lifecycle_oldest_record_age_seconds' 'app' '600+0x220' @{queue='ITEM'}
+            if ($kind -eq 'invalid') { Add-Series $series 'kb_monitoring_sample_available' 'app' '0+0x220' @{source='lifecycle'} }
+            else { Add-Series $series 'kb_monitoring_sample_last_success_timestamp_seconds' 'app' '1+0x220' @{source='lifecycle'} }
+            $checks = @((Alert-Check 'KbMetricSampleUnavailable' '70m' $true 'app'),(Alert-Check 'KbLifecycleBacklogOld' '70m' $false 'app'))
+        }
+        'no-observed-events' {
+            $checks = @((Alert-Check 'KbOutputPermitOverdue' '70m' $false 'ai'),(Alert-Check 'KbLifecycleBacklogOld' '70m' $false 'app'))
+        }
+        'ai-stop-after-active-removed' {
+            Add-Series $series 'kb_ai_output_permit_stop_overdue_seconds_max' 'ai' '3+0x220' @{reason='OUTPUT_PERMIT_EXPIRED'}
+            $checks = @((Alert-Check 'KbOutputPermitOverdue' '70m' $true 'ai'))
+        }
+        'ai-dependency-refresh' {
+            Add-Series $series 'kb_ai_output_permit_acquisition_failures_total' 'ai' '0+0x220' @{reason='AUTHENTICATION_UNAVAILABLE'}
+            Add-Series $series 'kb_ai_output_permit_stops_total' 'ai' '0+1x220' @{reason='AUTHENTICATION_UNAVAILABLE'}
+            $checks = @((Alert-Check 'KbLifecycleDependencyFailures' '70m' $true 'ai'))
+        }
+    }
+    $tests.Add(@{name="lifecycle-$kind";interval='30s';input_series=@($series.Values);alert_rule_test=$checks})
+}
 foreach ($kind in @('missing-target','future','stale','never-sampled')) {
     $series = Baseline
     $alert = 'KbMetricSampleUnavailable'
@@ -247,7 +317,7 @@ foreach ($replica in @(1,2)) {
 Add-Series $series 'kb_conversation_settlement_pending' 'app' '2+0x220'
 Add-Series $series 'kb_conversation_settlement_review' 'app' '1+0x220'
 $positive = [Collections.Generic.List[object]]::new()
-foreach ($case in @(@('kb-overview.json',0,8),@('kb-overview.json',2,5),
+foreach ($case in @(@('kb-overview.json',0,8),@('kb-overview.json',2,6),
     @('kb-parse-index.json',0,10),@('kb-parse-index.json',6,7),@('kb-parse-index.json',7,4),
     @('kb-search-ai.json',0,0),@('kb-search-ai.json',13,0),@('kb-search-ai.json',14,2),@('kb-search-ai.json',15,1))) {
     $query = $panels[$case[0]].panels[$case[1]].targets[0].expr.Replace('$environment','staging').Replace('$deployment','kb-main')
@@ -289,7 +359,7 @@ foreach ($dashboard in $panels.Values) {
 $tests.Add(@{name='dashboard-deployment-isolation';interval='30s';input_series=@((Baseline).Values);promql_expr_test=@($queries.ToArray())})
 $result = @{rule_files=@('config/rules.json');evaluation_interval='30s';group_eval_order=@('kb-recording','kb-alerts');tests=@($tests.ToArray())}
 [IO.File]::WriteAllText((Join-Path $OutputDirectory 'rules.test.json'), (ConvertTo-Json $result -Depth 64), [Text.UTF8Encoding]::new($false))
-Write-Output "已生成 $($tests.Count) 组合成时序，含 20 类告警和 $($queries.Count) 个面板查询"
+Write-Output "已生成 $($tests.Count) 组合成时序，含 $($catalog.Count) 类告警和 $($queries.Count) 个面板查询"
 # 显式不部署 AI 使用真实的另一份生成规则，不以缺少 up 反推预期状态。
 $optional = Read-MonitoringJson (Join-Path $root 'settings.example.json')
 $optional.services[2].expected = $false

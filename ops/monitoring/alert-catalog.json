@@ -1,4 +1,13 @@
 [
+  {"name":"KbLifecycleInputRejected","services":["app"],"severity":"warning","family":"lifecycle-input","summary":"离职接入拒绝了范围外、损坏、超限或无法处理的输入，请核对固定异常类别和接入配置。","link":{"root":"admin","path":"/admin/identity/lifecycle"}},
+  {"name":"KbLifecycleEventConflict","services":["app"],"severity":"critical","family":"lifecycle-conflict","summary":"离职事件业务身份出现内容冲突，首份依据和既有限制保留，请人工核对来源。","link":{"root":"admin","path":"/admin/identity/lifecycle"}},
+  {"name":"KbLifecycleRevocationSlow","services":["app"],"severity":"critical","family":"lifecycle-target","summary":"关联接收与本地停止的耗时下界超过 30 秒，请核对持久证据和输出许可运行状态。","link":{"root":"admin","path":"/admin/identity/lifecycle"}},
+  {"name":"KbRevocationTargetUnconfirmed","services":["app","ai"],"severity":"critical","family":"lifecycle-target","summary":"撤销停止证据不完整、耗时上界超过 30 秒或许可长期逾期；30 秒目标不可确认。","link":{"root":"admin","path":"/admin/identity/lifecycle"}},
+  {"name":"KbLifecycleDisconnected","services":["app"],"severity":"critical","family":"lifecycle-connection","summary":"离职订阅已启用但连接持续不可用，请核对出站网络、应用配置与接收状态。","link":{"root":"admin","path":"/admin/identity/lifecycle"}},
+  {"name":"KbLifecycleBacklogOld","services":["app"],"severity":"warning","family":"lifecycle-backlog","summary":"生命周期处置或会话清理积压持续过久，未匹配与待核对不能视为成功停权。","link":{"root":"admin","path":"/admin/identity/lifecycle"}},
+  {"name":"KbLifecycleEmergencyUnavailable","services":["app"],"severity":"critical","family":"lifecycle-emergency","summary":"持久应急保障要求仍生效，但当前没有合格保障；关闭订阅不能解除此要求。","link":{"root":"admin","path":"/admin/identity/lifecycle"}},
+  {"name":"KbOutputPermitOverdue","services":["ai"],"severity":"critical","family":"lifecycle-output","summary":"AI 输出许可本地停止超过硬截止容差，请核对进程调度与认证依赖；此指标不是跨服务停权时延。","link":{"root":"admin","path":"/admin/identity/lifecycle"}},
+  {"name":"KbLifecycleDependencyFailures","services":["app","ai"],"severity":"warning","family":"lifecycle-dependency","summary":"生命周期或输出许可依赖持续失败，请核对采样和当前状态；不能据此认定员工已离职。","link":{"root":"admin","path":"/admin/identity/lifecycle"}},
   {"name":"KbServiceUnavailable","services":["app","worker","ai","gateway","notifier","prometheus","alertmanager","grafana"],"severity":"critical","family":"availability","summary":"预期服务没有存活目标，请检查目标配置与管理网络。","link":{"root":"grafana","path":"/d/kb-overview"}},
   {"name":"KbServiceReplicaUnavailable","services":["app","worker","ai","gateway","notifier","prometheus","alertmanager","grafana"],"severity":"warning","family":"availability","summary":"部分服务副本失联，其余副本仍可抓取。","link":{"root":"grafana","path":"/d/kb-overview"}},
   {"name":"KbMonitoringContractMissing","services":["app","worker","ai","notifier"],"severity":"warning","family":"sampling","summary":"存活目标缺少固定指标契约，不得将缺失解释为零。","link":{"root":"grafana","path":"/d/kb-overview"}},

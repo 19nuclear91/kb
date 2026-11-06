@@ -1,5 +1,7 @@
 package com.zhishiku.kb.ai.chat;
 
+import com.zhishiku.kb.ai.auth.PermitFixtures;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import reactor.core.publisher.Flux;
@@ -30,7 +32,7 @@ class ChatServiceLifecycleTest {
     @Test
     void placeholderKeepsVersionedReferenceAndCompletesWithZeroUsage() {
         RetrievalClient retrieval = retrieval(List.of(SOURCE));
-        ChatService service = new ChatService(retrieval, null, PROPS);
+        ChatService service = PermitFixtures.chat(retrieval, null, PROPS);
 
         StepVerifier.withVirtualTime(() -> service.chat("问题", "token").collectList())
                 .thenAwait(Duration.ofSeconds(10))
@@ -52,7 +54,7 @@ class ChatServiceLifecycleTest {
     @Test
     void placeholderDoesNotTurnMissingTitleIntoLiteralNullOrFail() {
         var source = new RetrievalClient.Citation(10L, null, null, 20L, "正文");
-        ChatService service = new ChatService(retrieval(List.of(source)), null, PROPS);
+        ChatService service = PermitFixtures.chat(retrieval(List.of(source)), null, PROPS);
 
         StepVerifier.withVirtualTime(() -> service.chat("问题", "token").collectList())
                 .thenAwait(Duration.ofSeconds(10))
@@ -72,15 +74,14 @@ class ChatServiceLifecycleTest {
     void emptyRetrievalKeepsUniformReplyAndDoesNotCallModel() {
         RetrievalClient retrieval = retrieval(List.of());
         ObjectProvider<ChatModelClient> models = mock(ObjectProvider.class);
-        ChatService service = new ChatService(retrieval, models, PROPS);
+        ChatService service = PermitFixtures.chat(retrieval, models, PROPS);
 
         StepVerifier.create(service.chat("问题", "token"))
                 .expectNext(new ChatEvent.Delta("未找到与问题相关的内容。"))
                 .assertNext(ChatServiceLifecycleTest::assertZeroUsage)
                 .verifyComplete();
         StepVerifier.create(service.chat("问题", null))
-                .expectNext(new ChatEvent.Delta("未找到与问题相关的内容。"))
-                .assertNext(ChatServiceLifecycleTest::assertZeroUsage)
+                .expectNextMatches(event -> event instanceof ChatEvent.Error error && "ACCOUNT_REVOKED".equals(error.code()))
                 .verifyComplete();
 
         verify(models, times(0)).getIfAvailable();
@@ -154,7 +155,7 @@ class ChatServiceLifecycleTest {
     private static ChatService service(ChatModelClient model) {
         ObjectProvider<ChatModelClient> models = mock(ObjectProvider.class);
         when(models.getIfAvailable()).thenReturn(model);
-        return new ChatService(retrieval(List.of(SOURCE)), models, PROPS);
+        return PermitFixtures.chat(retrieval(List.of(SOURCE)), models, PROPS);
     }
 
     @Test
@@ -163,7 +164,7 @@ class ChatServiceLifecycleTest {
         ObjectProvider<ChatModelClient> models = mock(ObjectProvider.class);
         var observation = mock(ChatObservation.class);
         when(retrieval.retrieve(any(), any())).thenReturn(Mono.error(new RetrievalFailure(RetrievalFailure.Kind.TIMEOUT)));
-        var service = new ChatService(retrieval, models, PROPS);
+        var service = PermitFixtures.chat(retrieval, models, PROPS);
         StepVerifier.create(service.chat("q", "token", observation))
                 .expectNext(new ChatEvent.Error(RetrievalFailure.MESSAGE, RetrievalFailure.CODE)).verifyComplete();
         verify(retrieval).retrieve("q", "token");

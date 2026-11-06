@@ -1,7 +1,7 @@
 package com.zhishiku.kb.app.auth.service;
 
-import cn.dev33.satoken.stp.StpUtil;
-import org.springframework.http.HttpStatus;
+import com.zhishiku.kb.common.api.ApiException;
+import com.zhishiku.kb.common.security.IdentityException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -11,20 +11,28 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ConversationSessionService {
     private final ConversationIdentityGate gate;
+    private final EpochSessionService sessions;
 
-    public ConversationSessionService(ConversationIdentityGate gate) {
+    public ConversationSessionService(ConversationIdentityGate gate, EpochSessionService sessions) {
         this.gate = gate;
+        this.sessions = sessions;
     }
 
     public long user(String token) {
-        Object id = token == null ? null : StpUtil.getLoginIdByToken(token);
-        if (id == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "登录状态无效");
+        return session(token).userId();
+    }
+
+    public EpochSessionService.Session session(String token) {
         try {
-            long user = Long.parseLong(id.toString());
-            gate.require(user);
-            return user;
-        } catch (NumberFormatException error) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "登录状态无效");
+            var session = sessions.check(token);
+            if (session.mustChangePassword()) {
+                throw IdentityException.passwordChangeRequired("请先修改密码");
+            }
+            gate.require(session.userId());
+            return session;
+        } catch (ApiException error) {
+            throw new ResponseStatusException(org.springframework.http.HttpStatusCode.valueOf(error.httpStatus()),
+                    "会话身份不可用");
         }
     }
 }

@@ -1,12 +1,10 @@
 package com.zhishiku.kb.app.auth.service;
 
-import cn.dev33.satoken.stp.StpUtil;
 import com.zhishiku.kb.app.auth.mapper.PermissionMapper;
 import com.zhishiku.kb.app.auth.model.LoginResult;
 import com.zhishiku.kb.common.api.ApiException;
 import com.zhishiku.kb.common.security.AuthHeaders;
 import com.zhishiku.kb.common.security.QuotaPrincipal;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -17,15 +15,12 @@ public class AuthService {
 
     private final PermissionMapper permissionMapper;
     private final IdentityService identityService;
+    private final EpochSessionService sessions;
 
-    public AuthService(PermissionMapper permissionMapper) {
-        this(permissionMapper, null);
-    }
-
-    @Autowired
-    public AuthService(PermissionMapper permissionMapper, IdentityService identityService) {
+    public AuthService(PermissionMapper permissionMapper, IdentityService identityService, EpochSessionService sessions) {
         this.permissionMapper = permissionMapper;
         this.identityService = identityService;
+        this.sessions = sessions;
     }
 
     /**
@@ -37,10 +32,10 @@ public class AuthService {
         } else if (permissionMapper.findClearanceLevel(userId) == null) {
             throw ApiException.badRequest("用户不存在或已停用");
         }
-        StpUtil.login(userId);
+        String token = sessions.issue(userId, EpochSessionService.Method.DEV);
         return LoginResult.builder()
                 .tokenName(AuthHeaders.SA_TOKEN)
-                .tokenValue(StpUtil.getTokenValue())
+                .tokenValue(token)
                 .loginId(userId)
                 .build();
     }

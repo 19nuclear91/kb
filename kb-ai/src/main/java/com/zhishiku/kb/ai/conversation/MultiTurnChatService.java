@@ -8,6 +8,8 @@ import com.zhishiku.kb.ai.chat.RetrievalFailure;
 import com.zhishiku.kb.ai.budget.BudgetCapability;
 import com.zhishiku.kb.ai.conversation.config.ConversationProperties;
 import com.zhishiku.kb.ai.telemetry.StreamTelemetry;
+import com.zhishiku.kb.ai.auth.OutputPermitService;
+import com.zhishiku.kb.ai.auth.OutputRevokedException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
@@ -41,6 +43,12 @@ public class MultiTurnChatService {
     private final ObjectProvider<MultiTurnModel> models;
     private com.zhishiku.kb.ai.observation.AiObservationClient observation;
     private StreamTelemetry telemetry = StreamTelemetry.NOOP;
+    private OutputPermitService permits;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setOutputPermits(OutputPermitService permits) {
+        this.permits = permits;
+    }
 
     @org.springframework.beans.factory.annotation.Autowired
     public void setTelemetry(StreamTelemetry telemetry) {
@@ -82,6 +90,8 @@ public class MultiTurnChatService {
         private Long prompt;
         private Long completion;
         private volatile boolean terminal;
+        private volatile boolean outputStopped;
+        private volatile boolean accountRevoked;
         private SettlementIntent intent;
         private Mono<Void> closing;
 
@@ -170,7 +180,8 @@ public class MultiTurnChatService {
                                     Flux<MultiTurnModel.Event> source = noResults
                                             ? Flux.just(new MultiTurnModel.Event(NO_RESULTS, false, null, null))
                                             :
-                                            app.dispatch(key).thenMany(Flux.defer(() -> {
+                                            app.dispatch(key).thenMany(Flux.deferContextual(context -> {
+                                                OutputPermitService.requireCurrent(context);
                                                 if (!plan.capability().equals(state.model.budgetCapability())) {
                                                     return Flux.error(new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                                                             "多轮模型能力暂不可用"));
@@ -182,9 +193,18 @@ public class MultiTurnChatService {
                     });
             Flux<ServerSentEvent<Object>> keepAlive = Flux.interval(Duration.ofMillis(ai.keepAliveMs()))
                     .onBackpressureDrop().map(t -> ServerSentEvent.builder().comment("keep-alive").<Object>build());
-            return Flux.merge(1, body, keepAlive).takeUntil(e -> "done".equals(e.event()) || "error".equals(e.event()))
+            var binding = new OutputPermitService.Binding(key.ownerUserId(), key.authEpoch(), key.turnId().toString());
+            return OutputPermitService.protect(permits, state.token, binding,
+                            () -> Flux.merge(1, body, keepAlive).takeUntil(e -> "done".equals(e.event()) || "error".equals(e.event())))
                     .transform(StreamTelemetry::captureFailures)
-                    .onErrorResume(error -> cleanup(state, "FAILED").thenMany(Flux.just(event("error", failure(state, error)))))
+                    .onErrorResume(error -> {
+                        if (error instanceof OutputRevokedException stopped) {
+                            state.outputStopped = true;
+                            state.accountRevoked = "ACCOUNT_REVOKED".equals(stopped.code());
+                        }
+                        return cleanup(state, state.accountRevoked ? "CANCELLED" : "FAILED")
+                                .thenMany(Flux.just(event("error", failure(state, error))));
+                    })
                     .doFinally(signal -> {
                         if (signal == SignalType.CANCEL && !state.terminal)
                             cleanup(state, "CANCELLED").subscribe(ignored -> {
@@ -200,7 +220,8 @@ public class MultiTurnChatService {
                 Flux.interval(Duration.ofMillis(properties.getBatchMs())).onBackpressureDrop().map(t -> Command.flush());
         Flux<Command> renew = Flux.interval(Duration.ofMillis(Math.min(properties.getRenewalMs(),
                 ai.quotaRenewalIntervalMs()))).onBackpressureDrop().map(t -> Command.renew());
-        return Flux.merge(1, data, batch, renew).takeUntil(command -> command.kind == 3).concatMap(command -> {
+        return Flux.merge(1, data, batch, renew).takeUntil(command -> command.kind == 3).concatMap(command -> Flux.deferContextual(context -> {
+            OutputPermitService.requireCurrent(context);
             if (command.kind == 1) return flush(state).thenMany(Flux.empty());
             if (command.kind == 2)
                 return app.renew(state.result.execution()).then(state.lease.renewAsync()).thenMany(Flux.empty());
@@ -230,7 +251,7 @@ public class MultiTurnChatService {
                     state.buffer.codePointCount(0, state.buffer.length()) >= properties.getBatchCodepoints() ?
                             flush(state, false) : Mono.empty();
             return save.thenMany(text.isEmpty() ? Flux.empty() : Flux.just(event("delta", Map.of("text", text))));
-        }, 1);
+        }), 1);
     }
 
     private Mono<Void> flush(Prepared state) {
@@ -284,8 +305,9 @@ public class MultiTurnChatService {
     }
 
     private Mono<Void> finish(Prepared state, String status) {
-        return Mono.defer(() -> app.finish(state.result.execution(), status, state.position, state.finalUsage,
-                        state.prompt, state.completion))
+        return Mono.defer(() -> state.accountRevoked
+                        ? app.finishRevoked(state.result.execution(), state.position, state.finalUsage, state.prompt, state.completion)
+                        : app.finish(state.result.execution(), status, state.position, state.finalUsage, state.prompt, state.completion))
                 .doOnNext(intent -> {
                     state.intent = intent;
                     state.terminal = true;
@@ -297,9 +319,11 @@ public class MultiTurnChatService {
     private Mono<Void> cleanup(Prepared state, String status) {
         synchronized (state) {
             if (state.result == null || state.result.replayed() || state.terminal) return Mono.empty();
-            if (state.closing == null)
-                state.closing = flush(state).onErrorResume(error -> Mono.empty()).then(finish(state, status))
+            if (state.closing == null) {
+                state.closing = (state.outputStopped ? Mono.<Void>empty() : flush(state).onErrorResume(error -> Mono.empty()))
+                        .then(finish(state, status))
                         .timeout(Duration.ofMillis(properties.getCleanupTimeoutMs())).onErrorResume(error -> Mono.empty()).cache();
+            }
             return state.closing;
         }
     }
@@ -326,7 +350,10 @@ public class MultiTurnChatService {
         data.put("conversationId", state.result.conversationId());
         data.put("turnId", state.result.turnId());
         data.put("message", error instanceof RetrievalFailure ? RetrievalFailure.MESSAGE : "生成或保存暂未完成，请查看历史状态。");
-        if (error instanceof RetrievalFailure) {
+        if (error instanceof OutputRevokedException stopped) {
+            data.put("code", stopped.code());
+            data.put("message", stopped.getMessage());
+        } else if (error instanceof RetrievalFailure) {
             data.put("code", RetrievalFailure.CODE);
         } else if (error instanceof InputBudgetExceededException) {
             data.put("code", InputBudgetExceededException.CODE);

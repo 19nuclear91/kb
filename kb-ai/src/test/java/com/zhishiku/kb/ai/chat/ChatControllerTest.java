@@ -1,5 +1,7 @@
 package com.zhishiku.kb.ai.chat;
 
+import com.zhishiku.kb.ai.auth.PermitFixtures;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.codec.ServerSentEvent;
@@ -49,7 +51,7 @@ class ChatControllerTest {
         when(quota.acquire(any(), anyInt())).thenReturn(Mono.just(lease));
         when(lease.failAsync()).thenReturn(Mono.error(new IllegalStateException("private")));
         when(lease.cancelAsync()).thenReturn(Mono.empty());
-        StepVerifier.create(new ChatController(service, PROPS, quota).chat("q", "token"))
+        StepVerifier.create(PermitFixtures.controller(service, PROPS, quota).chat("q", "token"))
                 .expectNextMatches(event -> "error".equals(event.event()) && error.equals(event.data())).verifyComplete();
         verify(service).chat("q", "token");
         verify(lease).failAsync();
@@ -68,7 +70,7 @@ class ChatControllerTest {
                 new ChatEvent.Delta("好"),
                 new ChatEvent.Done(0, 0, 12L)));
 
-        ChatController controller = new ChatController(service, PROPS);
+        ChatController controller = PermitFixtures.controller(service, PROPS);
 
         StepVerifier.create(controller.chat("测试", "1"))
                 .expectNextMatches(sse -> "delta".equals(sse.event()))
@@ -86,7 +88,7 @@ class ChatControllerTest {
         when(service.chat(any(), any())).thenReturn(Flux.just(
                 new ChatEvent.Error("处理请求时出错，请稍后重试。")));
 
-        ChatController controller = new ChatController(service, PROPS);
+        ChatController controller = PermitFixtures.controller(service, PROPS);
 
         StepVerifier.create(controller.chat("测试", "1"))
                 .expectNextMatches(sse -> "error".equals(sse.event()))
@@ -111,7 +113,7 @@ class ChatControllerTest {
                             new ChatEvent.Done(0, 0, 1L));
                 }));
 
-        ChatController controller = new ChatController(service, PROPS);
+        ChatController controller = PermitFixtures.controller(service, PROPS);
 
         StepVerifier.create(controller.chat("测试", "1"))
                 .expectNextCount(2)
@@ -134,7 +136,7 @@ class ChatControllerTest {
                 Flux.just((ChatEvent) new ChatEvent.Done(0, 0, 500L))
                         .delayElements(Duration.ofMillis(500)));
 
-        ChatController controller = new ChatController(service, fastHeartbeat);
+        ChatController controller = PermitFixtures.controller(service, fastHeartbeat);
 
         Long keepAlives = controller.chat("测试", "1")
                 .takeUntil(sse -> "done".equals(sse.event()))
@@ -197,7 +199,7 @@ class ChatControllerTest {
         when(quota.acquire(any(), anyInt())).thenReturn(Mono.error(
                 new ChatQuotaAuditService.QuotaExceededException("部门配额已用尽")));
 
-        ChatController controller = new ChatController(service, PROPS, quota);
+        ChatController controller = PermitFixtures.controller(service, PROPS, quota);
 
         StepVerifier.create(controller.chat("测试", "token"))
                 .expectNextMatches(sse -> "error".equals(sse.event())
@@ -215,7 +217,7 @@ class ChatControllerTest {
         when(quota.acquire(any(), anyInt())).thenReturn(Mono.error(
                 new QuotaPrincipalRejectedException("当前用户或部门已停用，无法使用 AI 配额")));
 
-        ChatController controller = new ChatController(service, PROPS, quota);
+        ChatController controller = PermitFixtures.controller(service, PROPS, quota);
 
         StepVerifier.create(controller.chat("测试", "token"))
                 .expectNextMatches(sse -> "error".equals(sse.event())
@@ -239,7 +241,7 @@ class ChatControllerTest {
         AtomicInteger settlements = new AtomicInteger();
         when(lease.completeAsync(37, 11)).thenReturn(Mono.fromRunnable(settlements::incrementAndGet));
         when(lease.cancelAsync()).thenReturn(Mono.empty());
-        ChatController controller = new ChatController(service, PROPS, quota);
+        ChatController controller = PermitFixtures.controller(service, PROPS, quota);
         Flux<ServerSentEvent<Object>> stream = controller.chat("测试", "token");
         verifyNoInteractions(service, quota);
 
@@ -275,7 +277,7 @@ class ChatControllerTest {
         AtomicBoolean settled = new AtomicBoolean();
         when(lease.failAsync()).thenReturn(Mono.fromRunnable(() -> settled.set(true)));
         when(lease.cancelAsync()).thenReturn(Mono.empty());
-        ChatController controller = new ChatController(service, PROPS, quota);
+        ChatController controller = PermitFixtures.controller(service, PROPS, quota);
 
         StepVerifier.create(controller.chat("测试", "token"))
                 .expectNextMatches(sse -> "citation".equals(sse.event()) && sse.data() == citation)
@@ -301,7 +303,7 @@ class ChatControllerTest {
                 .concatWith(Flux.never()).doOnCancel(() -> cancelled.set(true)));
         when(quota.acquire(any(), anyInt())).thenReturn(Mono.just(lease));
         when(lease.cancelAsync()).thenReturn(Mono.empty());
-        ChatController controller = new ChatController(service, PROPS, quota);
+        ChatController controller = PermitFixtures.controller(service, PROPS, quota);
 
         StepVerifier.create(controller.chat("测试", "token"))
                 .expectNextMatches(sse -> "citation".equals(sse.event()) && sse.data() == citation)

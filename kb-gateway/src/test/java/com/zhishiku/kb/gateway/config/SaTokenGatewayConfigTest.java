@@ -91,10 +91,9 @@ class SaTokenGatewayConfigTest {
     @DisplayName("登录路由排除，其余 /api/** 仍受保护（任务 2.7）")
     void loginIsExcludedWhileTheRestOfApiStaysProtected() {
         assertThat(filter.includeList).contains("/api/**");
-        assertThat(filter.excludeList)
-                .containsExactlyInAnyOrder("/api/auth/dev-login", "/api/auth/login");
+        assertThat(filter.excludeList).isEmpty();
 
-        assertThat(matchesAny(filter.excludeList, "/api/auth/login")).isTrue();
+        assertThat(matchesAny(filter.excludeList, "/api/auth/login")).isFalse();
         assertThat(matchesAny(filter.excludeList, "/api/space/documents")).isFalse();
         assertThat(matchesAny(filter.includeList, "/api/space/documents")).isTrue();
         assertThat(matchesAny(filter.excludeList, "/api/admin/embedding/rebuilds")).isFalse();

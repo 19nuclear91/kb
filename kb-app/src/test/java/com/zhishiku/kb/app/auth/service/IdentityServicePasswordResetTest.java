@@ -58,6 +58,7 @@ class IdentityServicePasswordResetTest {
     @BeforeEach
     void setUp() {
         mapper = mock(IdentityDepartmentMapper.class);
+        when(mapper.findIdentityForUpdate(USER_ID)).thenAnswer(call -> mapper.findIdentity(USER_ID));
         audit = mock(IdentityAuditService.class);
         encoder = new BCryptPasswordEncoder(4);
         service = new IdentityService(mapper, null, audit, mock(SecurityLevelDictionary.class),

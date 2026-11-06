@@ -71,7 +71,7 @@ class IdentityServiceLastAdminTest {
         lastHolder();
         assertThatThrownBy(() -> service.setEnabled(7L, false, 0L, 1L, "disable"))
                 .isInstanceOfSatisfying(IdentityException.class, IdentityServiceLastAdminTest::lastManager);
-        verify(mapper, never()).setUserEnabled(anyLong(), anyBoolean(), anyLong());
+        verify(mapper, never()).setUserAccessState(anyLong(), anyBoolean(), anyBoolean(), anyLong(), anyLong());
         verify(audit, never()).success(any(), any(), any(), any(), any(), any(), any());
         var order = inOrder(mapper);
         order.verify(mapper).lockManagement();
@@ -95,13 +95,13 @@ class IdentityServiceLastAdminTest {
     @Test
     void disablingAnAdminWithAnotherHolderProceeds() {
         anotherHolder();
-        when(mapper.setUserEnabled(7L, false, 0L)).thenReturn(1);
+        when(mapper.setUserAccessState(7L, false, false, 2L, 0L)).thenReturn(1);
         when(mapper.findIdentity(7L)).thenReturn(user(false));
         assertThat(service.setEnabled(7L, false, 0L, 1L, "disable").enabled()).isFalse();
         var order = inOrder(mapper);
         order.verify(mapper).lockManagement();
         order.verify(mapper).findEnabledManagementPermissions();
-        order.verify(mapper).setUserEnabled(7L, false, 0L);
+        order.verify(mapper).setUserAccessState(7L, false, false, 2L, 0L);
     }
 
     @Test

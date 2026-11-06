@@ -1,10 +1,7 @@
 package com.zhishiku.kb.app.config;
 
-import cn.dev33.satoken.context.SaHolder;
-import cn.dev33.satoken.interceptor.SaInterceptor;
-import cn.dev33.satoken.stp.StpUtil;
 import com.zhishiku.kb.app.auth.mapper.IdentityDepartmentMapper;
-import com.zhishiku.kb.common.security.SsoPublicEndpoints;
+import com.zhishiku.kb.app.auth.service.EpochSessionService;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -16,20 +13,17 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class SaTokenConfig implements WebMvcConfigurer {
 
     private final IdentityDepartmentMapper identityDepartmentMapper;
+    private final EpochSessionService sessions;
 
-    public SaTokenConfig(IdentityDepartmentMapper identityDepartmentMapper) {
+    public SaTokenConfig(IdentityDepartmentMapper identityDepartmentMapper, EpochSessionService sessions) {
         this.identityDepartmentMapper = identityDepartmentMapper;
+        this.sessions = sessions;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new SsoSecurityHeadersInterceptor()).addPathPatterns("/api/auth/sso/**");
-        registry.addInterceptor(new SaInterceptor(handle -> {
-                    var request = SaHolder.getRequest();
-                    if (!SsoPublicEndpoints.matches(request.getMethod(), request.getRequestPath())) StpUtil.checkLogin();
-                }))
-                .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/auth/dev-login", "/api/auth/login");
+        registry.addInterceptor(new EpochAuthenticationInterceptor(sessions)).addPathPatterns("/api/**");
         // 注册顺序即执行顺序：强制改密判定在登录校验之后，每请求读库（设计 D6）
         registry.addInterceptor(new PasswordChangeRequiredInterceptor(identityDepartmentMapper))
                 .addPathPatterns("/api/**");

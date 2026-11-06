@@ -2,16 +2,68 @@ package com.zhishiku.kb.app.auth.service;
 
 import com.zhishiku.kb.app.auth.mapper.IdentityDepartmentMapper;
 import com.zhishiku.kb.app.auth.model.ManagementChange;
+import com.zhishiku.kb.app.auth.model.EmergencyIdentityFact;
+import com.zhishiku.kb.common.security.IdentityException;
 import com.zhishiku.kb.app.auth.model.UserRolePermission;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class ManagementInvariantTest {
+    @Test
+    void secondExitRechecksCommittedFirstExitInsteadOfUsingOldQualification() {
+        var mapper = mock(IdentityDepartmentMapper.class);
+        var identities = new java.util.ArrayList<EmergencyIdentityFact>();
+        identities.add(emergency("EMERGENCY", true, true, false));
+        identities.add(new EmergencyIdentityFact(8, 2L, "EMERGENCY", true, true, true, true, false, "CLEAR"));
+        when(mapper.findEmergencyIdentities()).thenAnswer(call -> List.copyOf(identities));
+        when(mapper.findEmergencyPermissions()).thenReturn(java.util.stream.Stream.of(7L, 8L)
+                .flatMap(id -> ManagementInvariant.EMERGENCY_PERMISSIONS.stream()
+                        .map(code -> new UserRolePermission(id, 1L, code))).toList());
+        when(mapper.lifecycleProtectionRequired()).thenReturn(true);
+        var guard = new ManagementInvariant(mapper);
+        guard.requireEmergencyAfter(ManagementChange.disableUser(7));
+        identities.removeIf(identity -> identity.userId() == 7);
+        assertThatThrownBy(() -> guard.requireEmergencyAfter(ManagementChange.disableUser(8)))
+                .isInstanceOf(IdentityException.class);
+        assertThat(identities).hasSize(1);
+    }
+
+    @Test
+    void emergencyUsesExplicitUnionOfPermissionsAndRejectsDepartmentCredentialOrManagedFailures() {
+        var mapper = mock(IdentityDepartmentMapper.class);
+        var guard = new ManagementInvariant(mapper);
+        when(mapper.findEmergencyPermissions()).thenReturn(ManagementInvariant.EMERGENCY_PERMISSIONS.stream()
+                .map(code -> new UserRolePermission(7L, (long) code.length(), code)).toList());
+        when(mapper.findEmergencyIdentities()).thenReturn(List.of(emergency("EMERGENCY", true, true, false)));
+        assertThat(guard.emergencyRemainsAfter(ManagementChange.unchanged())).isTrue();
+        assertThat(guard.emergencyRemainsAfter(ManagementChange.disableUser(7))).isFalse();
+        for (var invalid : List.of(emergency("EMERGENCY", false, true, false), emergency("EMERGENCY", true, false, false),
+                emergency("EMERGENCY", true, true, true), emergency("MANAGED", true, true, false))) {
+            when(mapper.findEmergencyIdentities()).thenReturn(List.of(invalid));
+            assertThat(guard.emergencyRemainsAfter(ManagementChange.unchanged())).isFalse();
+        }
+    }
+
+    @Test
+    void roleNameNeverQualifiesAndSubscriptionToggleCannotDisablePersistentProtection() {
+        var mapper = mock(IdentityDepartmentMapper.class);
+        when(mapper.findEmergencyIdentities()).thenReturn(List.of(emergency("EMERGENCY", true, true, false)));
+        when(mapper.findEmergencyPermissions()).thenReturn(List.of(new UserRolePermission(7L, 1L, "ROLE_ADMIN")));
+        when(mapper.lifecycleProtectionRequired()).thenReturn(true);
+        var guard = new ManagementInvariant(mapper);
+        assertThatThrownBy(() -> guard.requireEmergencyAfter(ManagementChange.unchanged()))
+                .isInstanceOfSatisfying(IdentityException.class, error -> assertThat(error.httpStatus()).isEqualTo(409));
+    }
+
+    private static EmergencyIdentityFact emergency(String kind, boolean department, boolean password, boolean mustChange) {
+        return new EmergencyIdentityFact(7, 2L, kind, true, true, department, password, mustChange, "CLEAR");
+    }
     @Test
     void qualificationComesFromUserUnionAcrossRolesAndUsesAfterProjection() {
         var mapper = mock(IdentityDepartmentMapper.class);

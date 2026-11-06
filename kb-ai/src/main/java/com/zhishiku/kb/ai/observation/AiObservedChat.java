@@ -8,6 +8,8 @@ import com.zhishiku.kb.ai.chat.ChatQuotaAuditService;
 import com.zhishiku.kb.ai.chat.ChatService;
 import com.zhishiku.kb.ai.chat.QuotaPrincipalRejectedException;
 import com.zhishiku.kb.ai.telemetry.StreamTelemetry;
+import com.zhishiku.kb.ai.auth.OutputPermitService;
+import com.zhishiku.kb.ai.auth.OutputRevokedException;
 import com.zhishiku.kb.common.aiusage.AiObservation;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,12 @@ public class AiObservedChat {
     private final ChatService chat;
     private final AiProperties ai;
     private final AiObservationProperties properties;
+    private OutputPermitService permits;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setOutputPermits(OutputPermitService permits) {
+        this.permits = permits;
+    }
 
     public AiObservedChat(AiObservationClient client, ChatQuotaAuditService quota, ChatService chat,
                           AiProperties ai, AiObservationProperties properties) {
@@ -37,6 +45,11 @@ public class AiObservedChat {
     public boolean enabled() { return client.enabled(); }
 
     public Flux<ServerSentEvent<Object>> stream(String question, String token) {
+        return OutputPermitService.protect(permits, token, null, () -> streamWithinPermit(question, token))
+                .onErrorResume(OutputRevokedException.class, error -> Flux.just(sse(new ChatEvent.Error(error.getMessage(), error.code()))));
+    }
+
+    private Flux<ServerSentEvent<Object>> streamWithinPermit(String question, String token) {
         if (question == null || question.isBlank()) return Flux.just(sse(new ChatEvent.Error("问题不能为空。")));
         if (question.codePointCount(0, question.length()) > ai.maxQuestionChars()) return Flux.just(sse(new ChatEvent.Error("问题过长，请缩短后重试。")));
         return Flux.usingWhen(client.open(token).map(Run::new), run -> run.body(question, token),

@@ -20,6 +20,11 @@ public enum AuditScope {
     USER_MOVE_DEPARTMENT("user"),
     USER_ENABLE("user"),
     USER_DISABLE("user"),
+    USER_LIFECYCLE_RESTRICT("user"),
+    USER_LIFECYCLE_RESTORE("user"),
+    USER_EMERGENCY_CHANGE("user"),
+    USER_LIFECYCLE_MAPPING("user"),
+    LIFECYCLE_EVENT_RETRY("lifecycle-event"),
 
     /**
      * 用户密级调整。升级与降级共用这一个操作域。

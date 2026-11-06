@@ -1,5 +1,7 @@
 package com.zhishiku.kb.ai.chat;
 
+import com.zhishiku.kb.ai.auth.PermitFixtures;
+
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -33,7 +35,7 @@ class SafeChatLoggingTest {
                 new IllegalStateException("response=" + CANARY,
                         new RuntimeException("cause=" + CANARY))));
         try (CapturedLog log = new CapturedLog(ChatService.class)) {
-            StepVerifier.create(new ChatService(retrieval).chat(CANARY, CANARY))
+            StepVerifier.create(PermitFixtures.chat(retrieval).chat(CANARY, CANARY))
                     .expectNext(new ChatEvent.Error("处理请求时出错，请稍后重试。"))
                     .verifyComplete();
             log.assertSafe("stage=chat");
@@ -47,7 +49,7 @@ class SafeChatLoggingTest {
                 new IllegalStateException("token=" + CANARY,
                         new RuntimeException("body=" + CANARY))));
         try (CapturedLog log = new CapturedLog(ChatController.class)) {
-            StepVerifier.create(new ChatController(service, PROPS).chat(CANARY, CANARY))
+            StepVerifier.create(PermitFixtures.controller(service, PROPS).chat(CANARY, CANARY))
                     .expectNextMatches(sse -> "error".equals(sse.event())
                             && sse.data() instanceof ChatEvent.Error error
                             && !error.message().contains(CANARY))

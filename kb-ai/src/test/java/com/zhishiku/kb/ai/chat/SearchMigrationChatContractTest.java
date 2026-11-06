@@ -1,5 +1,7 @@
 package com.zhishiku.kb.ai.chat;
 
+import com.zhishiku.kb.ai.auth.PermitFixtures;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import reactor.core.publisher.Flux;
@@ -30,7 +32,7 @@ class SearchMigrationChatContractTest {
                 120, 340, "section:access", false);
         when(retrieval.retrieve("问题", "token")).thenReturn(Mono.just(List.of(source)));
         when(providers.getIfAvailable()).thenReturn(model);
-        ChatController controller = new ChatController(new ChatService(retrieval, providers, PROPS), PROPS);
+        ChatController controller = PermitFixtures.controller(PermitFixtures.chat(retrieval, providers, PROPS), PROPS);
 
         StepVerifier.create(controller.chat("问题", "token"))
                 .assertNext(sse -> {
@@ -50,7 +52,7 @@ class SearchMigrationChatContractTest {
         RetrievalClient retrieval = mock(RetrievalClient.class);
         ObjectProvider<ChatModelClient> providers = mock(ObjectProvider.class);
         when(retrieval.retrieve("问题", "token")).thenReturn(Mono.just(List.of()));
-        ChatController controller = new ChatController(new ChatService(retrieval, providers, PROPS), PROPS);
+        ChatController controller = PermitFixtures.controller(PermitFixtures.chat(retrieval, providers, PROPS), PROPS);
 
         StepVerifier.create(controller.chat("问题", "token"))
                 .expectNextMatches(sse -> "delta".equals(sse.event())

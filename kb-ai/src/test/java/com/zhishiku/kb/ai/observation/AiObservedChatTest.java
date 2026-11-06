@@ -1,5 +1,7 @@
 package com.zhishiku.kb.ai.observation;
 
+import com.zhishiku.kb.ai.auth.PermitFixtures;
+
 import com.zhishiku.kb.ai.chat.AiProperties;
 import com.zhishiku.kb.ai.chat.ChatEvent;
 import com.zhishiku.kb.ai.chat.ChatModelClient;
@@ -45,7 +47,7 @@ class AiObservedChatTest {
     private final ChatQuotaAuditService.Lease lease = mock(ChatQuotaAuditService.Lease.class);
     private final ChatService chat = mock(ChatService.class);
     private final AiObservationProperties props = new AiObservationProperties(new MockEnvironment());
-    private final AiObservedChat observed = new AiObservedChat(client, quota, chat,
+    private final AiObservedChat observed = PermitFixtures.observed(client, quota, chat,
             new AiProperties("http://app", 8, 60000, 60), props);
     private final String leaseId = UUID.randomUUID().toString();
 

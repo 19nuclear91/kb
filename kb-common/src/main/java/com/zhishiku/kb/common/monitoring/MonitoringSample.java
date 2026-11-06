@@ -26,7 +26,7 @@ public final class MonitoringSample {
     private volatile Snapshot snapshot;
 
     public MonitoringSample(String source, Map<Series, Double> initial) {
-        if (!java.util.Set.of("parse", "embedding", "settlement").contains(source)) {
+        if (!java.util.Set.of("parse", "embedding", "settlement", "lifecycle").contains(source)) {
             throw new IllegalArgumentException("Unknown monitoring source");
         }
         this.source = source;

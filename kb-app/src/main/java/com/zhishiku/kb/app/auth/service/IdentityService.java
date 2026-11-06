@@ -1,5 +1,6 @@
 package com.zhishiku.kb.app.auth.service;
 
+import com.zhishiku.kb.app.auth.lifecycle.IdentityAccessState;
 import com.zhishiku.kb.app.auth.mapper.IdentityDepartmentMapper;
 import com.zhishiku.kb.app.auth.mapper.PermissionMapper;
 import com.zhishiku.kb.app.auth.model.DepartmentRecord;
@@ -125,6 +126,8 @@ public class IdentityService {
             return;
         }
         IdentityWriteSupport.id(roleId, "roleId");
+        management.lock();
+        mapper.lockLifecycleForUser(userId);
         requireIdentity(userId);
         RoleRecord role = mapper.findRoleById(roleId);
         if (role == null) {
@@ -156,6 +159,7 @@ public class IdentityService {
             return;
         }
         IdentityWriteSupport.id(roleId, "roleId");
+        mapper.lockLifecycleForUser(userId);
         requireIdentity(userId);
         management.requireAfter(ManagementChange.unbindRole(userId, roleId));
         if (mapper.deleteUserRole(userId, roleId) != 1) {
@@ -200,7 +204,9 @@ public class IdentityService {
             throw IdentityException.badRequest(
                     "新密码长度不能少于 " + passwordProperties.minLength() + " 位");
         }
-        requireIdentity(userId);
+        management.lock();
+        requireIdentityForUpdate(userId);
+        management.requireEmergencyAfter(ManagementChange.disableUser(userId));
         Boolean mustChange = mapper.findMustChangePasswordById(userId);
         mapper.updatePassword(userId, passwordEncoder.encode(newPassword), true);
         // 审计明细只记标记状态，不含任何密码或哈希值
@@ -219,6 +225,7 @@ public class IdentityService {
     @Transactional
     public IdentitySummary moveToDepartment(long userId, long departmentId, long version,
                                             Long actorUserId, String requestId) {
+        management.lock();
         if (audit != null && hasRequest(requestId) && audit.existing(AuditScope.USER_MOVE_DEPARTMENT, requestId) != null) {
             return get(userId);
         }
@@ -231,10 +238,14 @@ public class IdentityService {
         }
         DepartmentRecord target = mapper.findDepartment(departmentId);
         if (target == null) throw IdentityException.notFound("目标部门不存在");
-        if (!Boolean.TRUE.equals(target.getEnabled())) throw IdentityException.disabled("目标部门已停用");
+        if (!Boolean.TRUE.equals(target.getEnabled())) {
+            management.requireEmergencyAfter(ManagementChange.disableUser(userId));
+            throw IdentityException.disabled("目标部门已停用");
+        }
         if (mapper.moveUserToDepartment(userId, departmentId, version) != 1) {
             throw versionConflict("用户已被其他操作更新");
         }
+        management.requireEmergencyAfter(ManagementChange.unchanged());
         IdentitySummary result = get(userId);
         auditSuccess(AuditScope.USER_MOVE_DEPARTMENT, requestId, actorUserId, userId, "move_department",
                 state(before), state(result));
@@ -249,22 +260,21 @@ public class IdentityService {
     @Transactional
     public IdentitySummary setEnabled(long userId, boolean enabled, long version,
                                       Long actorUserId, String requestId) {
-        if (!enabled) management.lock();
+        management.lock();
         AuditScope auditScope = enabled ? AuditScope.USER_ENABLE : AuditScope.USER_DISABLE;
+        IdentityRecord before = requireIdentityForUpdate(userId);
+        IdentityAccessState previous = IdentityAccessState.from(before);
+        IdentityAccessState next = previous.manual(enabled);
         if (audit != null && hasRequest(requestId) && audit.existing(auditScope, requestId) != null) {
             return get(userId);
         }
         IdentityWriteSupport.version(version);
-        IdentityRecord before = requireIdentityForUpdate(userId);
-        if (versionOf(before, "用户") != version) throw versionConflict("用户已被其他操作更新");
-        if (!enabled && Boolean.FALSE.equals(before.getEnabled())) {
-            auditSuccess(AuditScope.USER_DISABLE, requestId, actorUserId, userId, "disable", state(before),
-                    state(before));
-            return summary(before);
+        if (versionOf(before, "用户") != version) {
+            throw versionConflict("用户已被其他操作更新");
         }
-        if (enabled && Boolean.TRUE.equals(before.getEnabled())) {
-            auditSuccess(AuditScope.USER_ENABLE, requestId, actorUserId, userId, "enable", state(before),
-                    state(before));
+        if (previous.equals(next)) {
+            auditSuccess(auditScope, requestId, actorUserId, userId, enabled ? "enable" : "disable",
+                    previous.auditJson(), next.auditJson());
             return summary(before);
         }
         if (enabled) {
@@ -272,15 +282,16 @@ public class IdentityService {
             if (departmentId == null || !isDepartmentEnabled(departmentId)) {
                 throw IdentityException.disabled("用户主部门已停用");
             }
-        } else {
+        } else if (previous.enabled()) {
             management.requireAfter(ManagementChange.disableUser(userId));
         }
-        if (mapper.setUserEnabled(userId, enabled, version) != 1) {
+        if (mapper.setUserAccessState(userId, next.manualEnabled(), next.enabled(), next.authEpoch(), version) != 1) {
             throw versionConflict("用户已被其他操作更新");
         }
+        mapper.enqueueSessionCleanup(userId, previous.authEpoch());
         IdentitySummary result = get(userId);
         auditSuccess(auditScope, requestId, actorUserId, userId,
-                enabled ? "enable" : "disable", state(before), state(result));
+                enabled ? "enable" : "disable", previous.auditJson(), next.auditJson());
         return result;
     }
 
@@ -321,6 +332,7 @@ public class IdentityService {
             throw IdentityException.badRequest(
                     securityLevels.rejectionMessage("clearanceLevel", clearanceLevel));
         }
+        management.lock();
         IdentityRecord before = requireIdentityForUpdate(userId);
         if (versionOf(before, "用户") != version) {
             throw versionConflict("用户已被其他操作更新");
@@ -496,8 +508,11 @@ public class IdentityService {
     }
 
     private IdentityRecord requireIdentityForUpdate(long userId) {
+        mapper.lockLifecycleForUser(userId);
         IdentityRecord record = mapper.findIdentityForUpdate(userId);
-        if (record == null) throw IdentityException.notFound("用户不存在");
+        if (record == null) {
+            throw IdentityException.notFound("用户不存在");
+        }
         return record;
     }
 

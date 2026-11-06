@@ -34,6 +34,9 @@ final class Markdown {
         if (webhook.entry().name().startsWith("KbSettlement") || webhook.entry().path().equals("/admin/ai/audits")) {
             base += "结算以指标面板为准；AI 审计仅覆盖启用采集后的记录，缺少记录不等于无积压。\n\n";
         }
+        if (webhook.entry().path().equals("/admin/identity/lifecycle")) {
+            base += "生命周期告警请在授权管理页核对；未匹配、待核对和依赖未知不代表成功停权，通知不会自动恢复账号。\n\n";
+        }
         List<String> lines = new ArrayList<>();
         for (Webhook.Alert alert : webhook.alerts()) {
             lines.add("- " + alert.status() + "；开始 " + alert.startsAt()

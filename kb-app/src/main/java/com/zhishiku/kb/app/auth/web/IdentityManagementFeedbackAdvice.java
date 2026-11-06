@@ -108,6 +108,9 @@ public class IdentityManagementFeedbackAdvice {
             case "DEPARTMENT_NOT_EMPTY" -> "部门仍有启用的子部门或用户，请先处理。";
             case "ROLE_IN_USE" -> "角色仍有引用，请先处理绑定或授权。";
             case "LAST_MANAGER_REQUIRED" -> "该操作会使系统失去最后一名合格管理员。";
+            case "EMERGENCY_MANAGER_REQUIRED" -> "必须保留具备完整管理资格的独立本地应急管理员。";
+            case "LIFECYCLE_RESTRICTED" -> "账号存在生命周期限制，需先完成复职核对。";
+            case "LIFECYCLE_CONFIRMATION_STALE" -> "核对事实已变化，请重新核验。";
             case "IDENTIFIER_CONFLICT" -> "用户名或编码已存在。";
             case "SPACE_NOT_EMPTY" -> "空间仍有文档，请改用归档或先处理文档。";
             case "SOURCE_MISMATCH" -> "文档归属已变化，请重新读取后确认。";

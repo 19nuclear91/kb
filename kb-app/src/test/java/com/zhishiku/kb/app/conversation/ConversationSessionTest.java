@@ -1,31 +1,33 @@
 package com.zhishiku.kb.app.conversation;
 
-import cn.dev33.satoken.stp.StpUtil;
 import com.zhishiku.kb.app.auth.service.ConversationIdentityGate;
 import com.zhishiku.kb.app.auth.service.ConversationSessionService;
+import com.zhishiku.kb.app.auth.service.EpochSessionService;
+import com.zhishiku.kb.common.security.IdentityException;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 
 class ConversationSessionTest {
     @Test
-    void historyNeedsLiveTokenAndNewLoginKeepsStableUser() {
+    void historyNeedsCurrentEpochAndNewLoginKeepsStableUser() {
         var gate = mock(ConversationIdentityGate.class);
-        var service = new ConversationSessionService(gate);
-        try (var auth = mockStatic(StpUtil.class)) {
-            auth.when(() -> StpUtil.getLoginIdByToken("old")).thenReturn("1");
-            auth.when(() -> StpUtil.getLoginIdByToken("new")).thenReturn("1");
-            assertThat(service.user("old")).isEqualTo(1);
-            assertThat(service.user("new")).isEqualTo(1);
-            auth.when(() -> StpUtil.getLoginIdByToken("old")).thenReturn(null);
-            assertThatThrownBy(() -> service.user("old")).isInstanceOfSatisfying(ResponseStatusException.class,
-                    e -> assertThat(e.getStatusCode().value()).isEqualTo(401));
-            assertThatThrownBy(() -> service.user(null)).isInstanceOf(ResponseStatusException.class);
-        }
+        var sessions = mock(EpochSessionService.class);
+        var service = new ConversationSessionService(gate, sessions);
+        when(sessions.check("old")).thenReturn(new EpochSessionService.Session(1, 1, EpochSessionService.Method.LOCAL, false));
+        when(sessions.check("new")).thenReturn(new EpochSessionService.Session(1, 3, EpochSessionService.Method.LOCAL, false));
+        assertThat(service.user("old")).isEqualTo(1);
+        assertThat(service.user("new")).isEqualTo(1);
+        doThrow(IdentityException.unauthorized("旧代次")).when(sessions).check("old");
+        doThrow(IdentityException.unauthorized("无会话")).when(sessions).check(null);
+        assertThatThrownBy(() -> service.user("old")).isInstanceOfSatisfying(ResponseStatusException.class,
+                error -> assertThat(error.getStatusCode().value()).isEqualTo(401));
+        assertThatThrownBy(() -> service.user(null)).isInstanceOf(ResponseStatusException.class);
+        assertThat(service.user("new")).isEqualTo(1);
     }
 }
-

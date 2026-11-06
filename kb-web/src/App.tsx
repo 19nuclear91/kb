@@ -1,4 +1,5 @@
 import { PageLoadBoundary } from './routing/PageLoadBoundary';
+import { LifecyclePage } from './routing/lazyPages';
 import { AccountPage, DocumentsPage, DocumentDetailPage, SearchPage, FavoritesPage, ReviewsPage, NotificationsPage, AssistantPage, UsersPage, DepartmentsPage, RolesPage, SpacesPage, SpaceDetailPage, DocumentsIndexPage, DocumentPanelPage, EmbeddingPage, ParseDeadLettersPage, AuditsPage, AiUsagePage, AiAuditsPage, OperationsReportsPage, DocumentTagsPage } from './routing/lazyPages';
 import { Button, Space, Spin, Alert } from 'antd';
 import { NavLink, Navigate, Route, Routes, Outlet, useLocation } from 'react-router-dom';
@@ -47,6 +48,7 @@ export function AppRoutes() {
       <Route path="/notifications" element={<PageLoadBoundary><NotificationsPage /></PageLoadBoundary>} />
       <Route path="/search" element={<PageLoadBoundary><SearchPage /></PageLoadBoundary>} /><Route path="/assistant" element={<PageLoadBoundary><AssistantPage /></PageLoadBoundary>} /><Route path="/assistant/:conversationId" element={<PageLoadBoundary><AssistantPage /></PageLoadBoundary>} />
       <Route path="/account" element={<PageLoadBoundary><AccountPage /></PageLoadBoundary>} />
+      <Route path="/admin/identity/lifecycle" element={<AdminGuard code={perm.lifecycleRead} title="员工生命周期"><PageLoadBoundary><LifecyclePage /></PageLoadBoundary></AdminGuard>} />
       <Route path="/admin/users" element={<AdminGuard code={perm.userRead} title="账号管理"><PageLoadBoundary><UsersPage /></PageLoadBoundary></AdminGuard>} />
       <Route path="/admin/departments" element={<AdminGuard code={perm.deptRead} title="部门管理"><PageLoadBoundary><DepartmentsPage /></PageLoadBoundary></AdminGuard>} />
       <Route path="/admin/roles" element={<AdminGuard code={perm.roleRead} title="角色管理"><PageLoadBoundary><RolesPage /></PageLoadBoundary></AdminGuard>} />

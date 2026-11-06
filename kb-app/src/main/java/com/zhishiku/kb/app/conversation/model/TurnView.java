@@ -42,6 +42,7 @@ public record TurnView(
         @Schema(description = "真实输入 token") Long promptTokens,
         @Schema(description = "真实输出 token") Long completionTokens,
         @Schema(description = "结算状态") String settlementState,
-        @Schema(description = "结算扣除额度") Long chargedTokens) {
+        @Schema(description = "结算扣除额度") Long chargedTokens,
+        @Schema(description = "固定取消原因；可为空") String cancellationReason) {
 }
 

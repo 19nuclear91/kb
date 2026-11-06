@@ -1,8 +1,6 @@
 package com.zhishiku.kb.app.config;
 
-import cn.dev33.satoken.context.SaHolder;
-import cn.dev33.satoken.context.model.SaRequest;
-import cn.dev33.satoken.interceptor.SaInterceptor;
+import com.zhishiku.kb.app.auth.service.EpochSessionService;
 import cn.dev33.satoken.stp.StpUtil;
 import com.zhishiku.kb.app.auth.mapper.IdentityDepartmentMapper;
 import com.zhishiku.kb.common.security.IdentityException;
@@ -23,39 +21,36 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class SsoAppGuardTest {
     @Test
     void sharedPredicateAndApplicationInterceptorOnlyExemptExactPublicMethods() throws Exception {
         var registry = new InterceptorRegistry();
-        new SaTokenConfig(mock(IdentityDepartmentMapper.class)).addInterceptors(registry);
+        var sessions = mock(EpochSessionService.class);
+        new SaTokenConfig(mock(IdentityDepartmentMapper.class), sessions).addInterceptors(registry);
         Field registrations = InterceptorRegistry.class.getDeclaredField("registrations");
         registrations.setAccessible(true);
         @SuppressWarnings("unchecked") var entries = (List<InterceptorRegistration>) registrations.get(registry);
         Field interceptor = InterceptorRegistration.class.getDeclaredField("interceptor");
         interceptor.setAccessible(true);
-        var auth = (SaInterceptor) interceptor.get(entries.get(1));
-        var request = mock(SaRequest.class);
-        try (var holder = mockStatic(SaHolder.class); var stp = mockStatic(StpUtil.class)) {
-            holder.when(SaHolder::getRequest).thenReturn(request);
+        var auth = (EpochAuthenticationInterceptor) interceptor.get(entries.get(1));
+        try (var stp = mockStatic(StpUtil.class)) {
             for (String[] route : publicRoutes()) {
-                when(request.getMethod()).thenReturn(route[0]);
-                when(request.getRequestPath()).thenReturn(route[1]);
                 assertThat(SsoPublicEndpoints.matches(route[0], route[1])).isTrue();
                 auth.preHandle(new MockHttpServletRequest(route[0], route[1]), new MockHttpServletResponse(),
                         new Object());
             }
-            stp.verify(StpUtil::checkLogin, never());
+            verifyNoInteractions(sessions);
             int protectedCount = 0;
             for (String[] route : protectedRoutes()) {
-                when(request.getMethod()).thenReturn(route[0]);
-                when(request.getRequestPath()).thenReturn(route[1]);
                 assertThat(SsoPublicEndpoints.matches(route[0], route[1])).isFalse();
                 auth.preHandle(new MockHttpServletRequest(route[0], route[1]), new MockHttpServletResponse(),
                         new Object());
                 protectedCount++;
             }
-            stp.verify(StpUtil::checkLogin, times(protectedCount));
+            verify(sessions, times(protectedCount)).check(null);
         }
     }
 

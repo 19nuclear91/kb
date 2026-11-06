@@ -49,4 +49,15 @@ public class IdentityRecord {
      * 最后更新时间。
      */
     private Instant updatedAt;
+    private Boolean manualEnabled;
+    private Long authEpoch;
+    private String lifecycleRestriction;
+
+    /** 既有调用方构建未纳管身份时的完整初始状态；数据库读取使用无参构造和显式投影。 */
+    public IdentityRecord(Long id, String username, String displayName, Long departmentId,
+                          Short clearanceLevel, Boolean enabled, Long version,
+                          Instant createdAt, Instant updatedAt) {
+        this(id, username, displayName, departmentId, clearanceLevel, enabled, version,
+                createdAt, updatedAt, enabled, 1L, "CLEAR");
+    }
 }

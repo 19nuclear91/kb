@@ -1,6 +1,8 @@
 package com.zhishiku.kb.ai.chat;
 
 import com.zhishiku.kb.ai.telemetry.StreamTelemetry;
+import com.zhishiku.kb.ai.auth.OutputPermitService;
+import com.zhishiku.kb.ai.auth.OutputRevokedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -30,6 +32,12 @@ public class ChatService {
     private final RetrievalClient retrievalClient;
     private final ObjectProvider<ChatModelClient> chatModelClients;
     private final AiProperties props;
+    private OutputPermitService permits;
+
+    @Autowired
+    public void setOutputPermits(OutputPermitService permits) {
+        this.permits = permits;
+    }
 
     /**
      * 兼容当前无模型 Bean 的部署和直接构造测试。
@@ -63,6 +71,11 @@ public class ChatService {
     }
 
     public Flux<ChatEvent> chat(String question, String tokenValue, ChatObservation observation) {
+        return OutputPermitService.protect(permits, tokenValue, null, () -> chatWithinPermit(question, tokenValue, observation))
+                .onErrorResume(OutputRevokedException.class, error -> Flux.just(new ChatEvent.Error(error.getMessage(), error.code())));
+    }
+
+    private Flux<ChatEvent> chatWithinPermit(String question, String tokenValue, ChatObservation observation) {
         long startedAt = System.currentTimeMillis();
 
         if (question == null || question.isBlank()) {
@@ -100,7 +113,13 @@ public class ChatService {
                             observation.result("PLACEHOLDER");
                             answer = stubAnswer(boundedCitations);
                         } else {
-                            answer = Mono.defer(observation::dispatch).thenMany(Flux.defer(() -> modelClient.streamEvents(question, boundedCitations)))
+                            answer = Mono.deferContextual(context -> {
+                                        OutputPermitService.requireCurrent(context);
+                                        return observation.dispatch();
+                                    }).thenMany(Flux.deferContextual(context -> {
+                                        OutputPermitService.requireCurrent(context);
+                                        return modelClient.streamEvents(question, boundedCitations);
+                                    }))
                                     .doOnNext(event -> { usage.accept(event); observation.usage(event); })
                                     .doOnComplete(observation::completedUsage)
                                     .filter(event -> event.text() != null)

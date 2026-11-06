@@ -19,6 +19,7 @@ public record ExecutionKey(
         @Schema(description = "轮次 ID") UUID turnId,
         @Schema(description = "稳定用户 ID") long ownerUserId,
         @Schema(description = "删除栅栏") long executionEpoch,
+        @Schema(description = "签发会话的认证代次") long authEpoch,
         @Schema(description = "临时执行票据") String ticket) {
     @Override
     public String toString() {

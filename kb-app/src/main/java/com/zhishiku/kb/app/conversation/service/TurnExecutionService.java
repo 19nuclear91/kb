@@ -33,6 +33,7 @@ import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -82,9 +83,12 @@ public class TurnExecutionService {
         return existing == null ? null : replay(existing, binding(question, expected));
     }
 
-    @Transactional
-    public BeginResult begin(long user, long conversation, String question, String requestId, Long expected) {
-        identity.require(user);
+    @Transactional(timeout = 5)
+    public BeginResult begin(long user, long authEpoch, long conversation, String question, String requestId, Long expected) {
+        if (authEpoch < 1) {
+            throw ConversationService.invalid();
+        }
+        identity.requireEpoch(user, authEpoch);
         validateQuestion(question, expected);
         String request = ConversationService.requestId(requestId, null);
         var row = conversations.owned(user, conversation, true);
@@ -106,6 +110,7 @@ public class TurnExecutionService {
         turn.setStatus("RUNNING");
         turn.setUsageStatus("NOT_INVOKED");
         turn.setExecutionEpoch(row.getExecutionEpoch());
+        turn.setAuthEpoch(authEpoch);
         turn.setTicketHash(RequestSignature.digest(ticket));
         turn.setExecutionTicketDigest(turn.getTicketHash());
         turn.setLeaseUntil(clock.instant().plusSeconds(properties.getLeaseSeconds()));
@@ -118,7 +123,7 @@ public class TurnExecutionService {
         ConversationService.checkWrite(mapper.updateConversation(row));
         if (observation != null) observation.begin(user, turn);
         return new BeginResult(conversation, turn.getId(), turn.getTurnSeq(), "RUNNING", false,
-                new ExecutionKey(conversation, turn.getId(), user, row.getExecutionEpoch(), ticket));
+                new ExecutionKey(conversation, turn.getId(), user, row.getExecutionEpoch(), authEpoch, ticket));
     }
 
     private BeginResult replay(TurnRow row, String digest) {
@@ -135,8 +140,9 @@ public class TurnExecutionService {
         return RequestSignature.digest(expected + "\\n" + question);
     }
 
-    @Transactional
+    @Transactional(timeout = 5)
     public void seal(long user, ExecutionKey key, String kind, List<UUID> parents, List<CitationView> citations) {
+        identity.requireEpoch(user, key.authEpoch());
         var handle = identity.require(user);
         if (user != key.ownerUserId() || parents == null || citations == null
                 || parents.size() > properties.getHistoryPairs() || citations.size() > properties.getMaxSources())
@@ -231,8 +237,9 @@ public class TurnExecutionService {
         return r;
     }
 
-    @Transactional
+    @Transactional(timeout = 5)
     public long append(ExecutionKey key, long sequence, String text) {
+        identity.requireEpoch(key.ownerUserId(), key.authEpoch());
         var conversation = conversations.owned(key.ownerUserId(), key.conversationId(), true);
         var turn = qualified(conversation, key, true);
         if (!turn.isSourceSealed() || sequence < 1 || text == null || text.isEmpty()
@@ -264,16 +271,18 @@ public class TurnExecutionService {
         return sequence;
     }
 
-    @Transactional
+    @Transactional(timeout = 5)
     public void renew(ExecutionKey key) {
+        identity.requireEpoch(key.ownerUserId(), key.authEpoch());
         var conversation = conversations.owned(key.ownerUserId(), key.conversationId(), true);
         var turn = qualified(conversation, key, true);
         turn.setLeaseUntil(clock.instant().plusSeconds(properties.getLeaseSeconds()));
         save(turn);
     }
 
-    @Transactional
+    @Transactional(timeout = 5)
     public void reserve(ExecutionKey key, long department, UUID lease, UUID event, long reserved) {
+        identity.requireEpoch(key.ownerUserId(), key.authEpoch());
         var conversation = conversations.owned(key.ownerUserId(), key.conversationId(), true);
         var turn = qualified(conversation, key, true);
         if (department <= 0 || lease == null || event == null || reserved != properties.getReservationTokens())
@@ -298,8 +307,9 @@ public class TurnExecutionService {
         if (observation != null) observation.reserved(settlement);
     }
 
-    @Transactional
+    @Transactional(timeout = 5)
     public void dispatch(ExecutionKey key) {
+        identity.requireEpoch(key.ownerUserId(), key.authEpoch());
         var conversation = conversations.owned(key.ownerUserId(), key.conversationId(), true);
         var turn = qualified(conversation, key, true);
         if (!turn.isSourceSealed() || !"MODEL".equals(turn.getAnswerKind()) || mapper.settlement(turn.getId()) == null)
@@ -312,27 +322,51 @@ public class TurnExecutionService {
         if (observation != null) observation.dispatched(turn);
     }
 
-    @Transactional
+    @Transactional(timeout = 5)
     public SettlementRow finish(ExecutionKey key, String status, long lastBatch, boolean finalUsage, Long prompt,
                                 Long completion) {
-        if (!Set.of("COMPLETED", "FAILED", "CANCELLED").contains(status)) throw ConversationService.invalid();
+        return finish(key, status, lastBatch, finalUsage, prompt, completion, null);
+    }
+
+    @Transactional(timeout = 5)
+    public SettlementRow finish(ExecutionKey key, String status, long lastBatch, boolean finalUsage, Long prompt,
+                                Long completion, String cancellationReason) {
+        if (!Set.of("COMPLETED", "FAILED", "CANCELLED").contains(status)
+                || (cancellationReason != null && !("ACCOUNT_REVOKED".equals(cancellationReason) && "CANCELLED".equals(status)))) {
+            throw ConversationService.invalid();
+        }
+        if ("COMPLETED".equals(status)) {
+            identity.requireEpoch(key.ownerUserId(), key.authEpoch());
+        }
         var conversation = conversations.owned(key.ownerUserId(), key.conversationId(), true);
         var turn = qualified(conversation, key, false);
+        boolean revoked = "ACCOUNT_REVOKED".equals(cancellationReason);
         if (!"RUNNING".equals(turn.getStatus())) {
-            if (!turn.getStatus().equals(status)) throw ConversationService.conflict();
+            if (!turn.getStatus().equals(status) || !Objects.equals(turn.getCancellationReason(), cancellationReason)) {
+                throw ConversationService.conflict();
+            }
             var old = mapper.settlement(turn.getId());
             if (old != null) {
                 var usage = UsageSettlement.calculate(turn.isModelDispatchIntent(), finalUsage, prompt, completion,
                         old.getReservedTokens());
                 if (!intent(old, status, usage).equals(old.getIntentDigest())) throw ConversationService.conflict();
             }
-            if (lastBatch != turn.getLastBatchSeq()) throw ConversationService.conflict();
+            if ((!revoked && lastBatch != turn.getLastBatchSeq()) || (revoked && (lastBatch < 0 || lastBatch > turn.getLastBatchSeq()))) {
+                throw ConversationService.conflict();
+            }
             return old;
         }
-        qualified(conversation, key, true);
-        if (lastBatch != turn.getLastBatchSeq() || ("COMPLETED".equals(status) && (!turn.isSourceSealed()
+        if ("COMPLETED".equals(status)) {
+            qualified(conversation, key, true);
+        } else if (!turn.getId().equals(conversation.getActiveTurnId())) {
+            throw ConversationService.conflict();
+        }
+        // 撤销时响应可能未知；只保留服务端已确认的前缀，不能借收尾追加新批次。
+        if ((!revoked && lastBatch != turn.getLastBatchSeq()) || (revoked && (lastBatch < 0 || lastBatch > turn.getLastBatchSeq()))
+                || ("COMPLETED".equals(status) && (!turn.isSourceSealed()
                 || ("NO_RESULTS".equals(turn.getAnswerKind()) && !ConversationService.NO_RESULTS.equals(turn.getAssistantText())))))
             throw ConversationService.conflict();
+        turn.setCancellationReason(cancellationReason);
         return close(conversation, turn, status, finalUsage, prompt, completion);
     }
 
@@ -387,7 +421,9 @@ public class TurnExecutionService {
             return;
         var turn = mapper.lockTurn(conversation.getActiveTurnId());
         if (turn != null && "RUNNING".equals(turn.getStatus()) && !turn.getLeaseUntil().isAfter(clock.instant())) {
-            close(conversation, turn, "INTERRUPTED", false, null, null);
+            boolean revoked = identity.revoked(conversation.getOwnerUserId(), turn.getAuthEpoch());
+            turn.setCancellationReason(revoked ? "ACCOUNT_REVOKED" : null);
+            close(conversation, turn, revoked ? "CANCELLED" : "INTERRUPTED", false, null, null);
         }
     }
 
@@ -420,7 +456,8 @@ public class TurnExecutionService {
         if (key.ticket() == null || key.ticket().length() > 64 || key.turnId() == null)
             throw ConversationService.conflict();
         var turn = mapper.lockTurn(key.turnId());
-        if (turn == null || turn.getConversationId() != conversation.getId()
+        if (turn == null || turn.getConversationId() != conversation.getId() || key.authEpoch() < 1
+                || !Objects.equals(turn.getAuthEpoch(), key.authEpoch())
                 || key.executionEpoch() != conversation.getExecutionEpoch() || turn.getExecutionEpoch() != key.executionEpoch()
                 || !RequestSignature.constantEquals(turn.getExecutionTicketDigest(),
                 RequestSignature.digest(key.ticket())))

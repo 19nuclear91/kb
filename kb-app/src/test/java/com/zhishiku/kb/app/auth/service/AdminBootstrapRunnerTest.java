@@ -260,7 +260,7 @@ class AdminBootstrapRunnerTest {
         verify(mapper, never()).insertDepartment(any());
         verify(mapper, never()).insertIdentity(any());
         verify(mapper, never()).insertUserRole(anyLong(), anyLong());
-        verify(mapper, never()).setUserEnabled(anyLong(), anyBoolean(), anyLong());
+        verify(mapper, never()).setUserAccessState(anyLong(), anyBoolean(), anyBoolean(), anyLong(), anyLong());
         verify(mapper, never()).updatePassword(anyLong(), anyString(), anyBoolean());
         verify(audit, never()).success(any(), anyString(), any(), any(), anyString(),
                 anyString(), anyString());
@@ -277,6 +277,7 @@ class AdminBootstrapRunnerTest {
                         .filter(code -> !code.equals("document:security-level:write")
                                 && !code.startsWith("embedding:") && !code.equals("audit:read")
                                 && !code.equals("identity:external:read") && !code.startsWith("ai:")
+                                && !code.startsWith("identity:lifecycle:") && !code.startsWith("identity:emergency:")
                                 && !code.equals("operations:reports:read") && !code.startsWith("document:tag:")).toList());
         when(mapper.findIdentityByUsername(USERNAME)).thenReturn(credential(31L));
         when(mapper.findIdentity(31L)).thenReturn(new IdentityRecord(31L, USERNAME, "系统管理员",
@@ -299,7 +300,11 @@ class AdminBootstrapRunnerTest {
                 && event.getFormattedMessage().contains("document:security-level:write")
                 && event.getFormattedMessage().contains("embedding:read")
                 && event.getFormattedMessage().contains("embedding:rebuild")
-                && event.getFormattedMessage().contains("operations:reports:read"));
+                && event.getFormattedMessage().contains("operations:reports:read")
+                && event.getFormattedMessage().contains("identity:lifecycle:read")
+                && event.getFormattedMessage().contains("identity:lifecycle:manage")
+                && event.getFormattedMessage().contains("identity:lifecycle:restore")
+                && event.getFormattedMessage().contains("identity:emergency:manage"));
     }
 
     private static List<UserRolePermission> qualifiedUser() {

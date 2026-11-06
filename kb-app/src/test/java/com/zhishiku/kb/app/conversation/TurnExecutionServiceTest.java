@@ -85,7 +85,7 @@ class TurnExecutionServiceTest {
     }
 
     ExecutionKey begin() {
-        return service.begin(1, 9, "问题", "r", 0L).execution();
+        return service.begin(1, 1, 9, "问题", "r", 0L).execution();
     }
 
     TurnRow turn(ExecutionKey key) {
@@ -115,15 +115,15 @@ class TurnExecutionServiceTest {
 
     @Test
     void beginIsSingleFlightAndReplayPrecedesExpectedSequence() {
-        var result = service.begin(1, 9, "问题", "r", 0L);
+        var result = service.begin(1, 1, 9, "问题", "r", 0L);
         var row = turn(result.execution());
         when(mapper.request(9, "r")).thenReturn(row);
-        var replay = service.begin(1, 9, "问题", "r", 0L);
+        var replay = service.begin(1, 1, 9, "问题", "r", 0L);
         assertThat(replay.replayed()).isTrue();
         assertThat(replay.execution()).isNull();
         assertThat(result.execution().ticket()).hasSize(43);
-        assertStatus(() -> service.begin(1, 9, "不同", "r", 0L), 409);
-        assertStatus(() -> service.begin(1, 9, "问题", "new", 1L), 409);
+        assertStatus(() -> service.begin(1, 1, 9, "不同", "r", 0L), 409);
+        assertStatus(() -> service.begin(1, 1, 9, "问题", "new", 1L), 409);
         var order = inOrder(mapper);
         order.verify(mapper).lock(9);
         order.verify(mapper).request(9, "r");
@@ -213,7 +213,7 @@ class TurnExecutionServiceTest {
         assertThat(result.getChargedTokens()).isEqualTo(12000);
         assertStatus(() -> service.finish(key, "COMPLETED", 0, true, 1L, 1L), 409);
         conversation.setActiveTurnId(null);
-        var next = service.begin(1, 9, "next", "r2", 1L).execution();
+        var next = service.begin(1, 1, 9, "next", "r2", 1L).execution();
         var expiredRow = turn(next);
         expiredRow.setLeaseUntil(Instant.EPOCH);
         assertStatus(() -> service.renew(next), 409);
@@ -236,7 +236,7 @@ class TurnExecutionServiceTest {
         assertThat(mapper.settlement(key.turnId()).getState()).isEqualTo("PENDING");
         assertStatus(() -> service.append(key, 1, "late"), 404);
         assertStatus(() -> service.finish(key, "COMPLETED", 0, false, null, null), 404);
-        assertStatus(() -> service.begin(1, 9, "问题", "r", 0L), 404);
+        assertStatus(() -> service.begin(1, 1, 9, "问题", "r", 0L), 404);
         assertStatus(() -> service.delete(2, 9), 404);
     }
 
@@ -247,9 +247,9 @@ class TurnExecutionServiceTest {
                 assertThat(method.getAnnotation(Transactional.class)).isNotNull();
         }
         var key = begin();
-        var wrong = new ExecutionKey(9, key.turnId(), 1, 0, "wrong");
+        var wrong = new ExecutionKey(9, key.turnId(), 1, 0, 1, "wrong");
         assertStatus(() -> service.renew(wrong), 409);
-        var other = new ExecutionKey(9, UUID.randomUUID(), 1, 0, key.ticket());
+        var other = new ExecutionKey(9, UUID.randomUUID(), 1, 0, 1, key.ticket());
         assertStatus(() -> service.renew(other), 409);
     }
 }

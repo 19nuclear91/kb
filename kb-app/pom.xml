@@ -14,6 +14,22 @@
     <description>模块化单体：用户权限 / 文档 / 检索 / 文件 / 基础 / 统计</description>
 
     <dependencies>
+        <!-- 复用官方协议/回调层；连接、线程与队列边界由生命周期适配器管理。 -->
+        <dependency>
+            <groupId>com.dingtalk.open</groupId>
+            <artifactId>app-stream-api</artifactId>
+            <version>1.3.12</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>junit</groupId>
+                    <artifactId>junit</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.dingtalk.open</groupId>
+                    <artifactId>app-stream-network-ws</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>com.zhishiku</groupId>
             <artifactId>kb-common</artifactId>

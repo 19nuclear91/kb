@@ -9,6 +9,7 @@ import { adminPaths, adminWrites, searchPath, searchText } from './api';
 import { useAdminResource, useAdminWrite, useCursorList, type AdminResource, type WriteOutcome } from './hooks';
 import type { AdminDepartment, AdminUser, RoleSummary, UserFilters } from './types';
 import { AdminModal, Note, PasswordFields, settle, WriteNotice } from './ui';
+import { UserLifecyclePanel } from './lifecycle/UserLifecyclePanel';
 
 type Departments = AdminResource<AdminDepartment[]>;
 const departmentLabel = (department: AdminDepartment) => `${department.name}（${department.code}）${department.enabled ? '' : ' · 已停用'}`;
@@ -112,6 +113,7 @@ function UserDetail({ userId, departments, onClose, onChanged }: { userId: strin
     {roleAssign && <div style={{ marginTop: 12 }}><Button disabled={!roleRead || roles.loading} onClick={() => setDialog('assign')}>分配角色</Button>
       {!roleRead && <Note>缺少 identity:role:read，无法列出完整角色候选；仍可解除已读取的绑定，不提供手工输入角色 ID。</Note>}</div>}
     <Note>绑定列表只显示角色摘要；角色包含的功能权限请在角色管理中查看。</Note>
+    <UserLifecyclePanel userId={userId} onChanged={() => { detail.reload(); onChanged(); }} />
   </>;
   return <Drawer title="账号详情" open size={520} onClose={close} maskClosable={!dialog}>
     {receipt && <Alert type="success" showIcon title={receipt} style={{ marginBottom: 16 }} />}

@@ -1,6 +1,5 @@
 package com.zhishiku.kb.app.auth.service;
 
-import cn.dev33.satoken.stp.StpUtil;
 import com.zhishiku.kb.app.auth.mapper.IdentityDepartmentMapper;
 import com.zhishiku.kb.app.auth.model.LocalCredentialRecord;
 import com.zhishiku.kb.app.auth.model.LoginResult;
@@ -40,6 +39,7 @@ public class LocalAuthService {
     private final LoginAuditService audit;
     private final IdentityAuditService identityAudit;
     private final AuthPasswordProperties passwordProperties;
+    private final EpochSessionService sessions;
 
     public LocalAuthService(IdentityDepartmentMapper mapper,
                             IdentityService identityService,
@@ -47,7 +47,7 @@ public class LocalAuthService {
                             LoginThrottle throttle,
                             LoginAuditService audit,
                             IdentityAuditService identityAudit,
-                            AuthPasswordProperties passwordProperties) {
+                            AuthPasswordProperties passwordProperties, EpochSessionService sessions) {
         this.mapper = mapper;
         this.identityService = identityService;
         this.passwordEncoder = passwordEncoder;
@@ -55,6 +55,7 @@ public class LocalAuthService {
         this.audit = audit;
         this.identityAudit = identityAudit;
         this.passwordProperties = passwordProperties;
+        this.sessions = sessions;
     }
 
     /**
@@ -86,16 +87,21 @@ public class LocalAuthService {
                     "登录被拒绝：" + rejected.errorCode());
             throw rejected;
         }
-        StpUtil.login(credential.getId());
-        throttle.clear(normalizedUsername);
-        audit.success(credential.getId(), normalizedUsername);
-        return LoginResult.builder()
-                .tokenName(AuthHeaders.SA_TOKEN)
-                .tokenValue(StpUtil.getTokenValue())
-                .loginId(credential.getId())
-                .mustChangePassword(Boolean.TRUE.equals(credential.getMustChangePassword()))
-                .user(identityService.get(credential.getId()))
-                .build();
+        String token = sessions.issue(credential.getId(), EpochSessionService.Method.LOCAL);
+        try {
+            throttle.clear(normalizedUsername);
+            audit.success(credential.getId(), normalizedUsername);
+            return LoginResult.builder()
+                    .tokenName(AuthHeaders.SA_TOKEN)
+                    .tokenValue(token)
+                    .loginId(credential.getId())
+                    .mustChangePassword(Boolean.TRUE.equals(credential.getMustChangePassword()))
+                    .user(identityService.get(credential.getId()))
+                    .build();
+        } catch (RuntimeException failed) {
+            sessions.discard(token);
+            throw failed;
+        }
     }
 
     /**
@@ -124,6 +130,9 @@ public class LocalAuthService {
         if (identityAudit.existing(AuditScope.USER_PASSWORD_CHANGE, normalizedRequest) != null) {
             return;
         }
+        mapper.lockManagement();
+        mapper.lockLifecycleForUser(userId);
+        mapper.findIdentityForUpdate(userId);
         String currentHash = mapper.findPasswordHashById(userId);
         if (isBlankHash(currentHash)
                 || !passwordEncoder.matches(oldPassword == null ? "" : oldPassword, currentHash)) {

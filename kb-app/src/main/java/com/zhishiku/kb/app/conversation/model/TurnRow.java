@@ -30,6 +30,8 @@ public class TurnRow {
     private String ticketHash;
     private String executionTicketDigest;
     private long executionEpoch;
+    private Long authEpoch;
+    private String cancellationReason;
     private Instant leaseUntil;
     private boolean modelDispatchIntent;
     private String usageStatus;

@@ -27,7 +27,12 @@ class AuditSummaryProjectorTest {
                                 "\"version\":0,\"mustChangePassword\":true}";
                 case USER_MOVE_DEPARTMENT, USER_ENABLE, USER_DISABLE ->
                         "{\"departmentId\":2,\"enabled\":true,\"version\":1}";
+                case USER_LIFECYCLE_RESTRICT, USER_LIFECYCLE_RESTORE ->
+                        "{\"manualEnabled\":true,\"enabled\":false,\"authEpoch\":2,\"employeeId\":\"private-id\"}";
                 case USER_CLEARANCE_CHANGE -> "{\"clearanceLevel\":4,\"version\":2}";
+                case USER_LIFECYCLE_MAPPING -> "{\"managed\":true,\"mappingVersion\":0,\"enabled\":false}";
+                case LIFECYCLE_EVENT_RETRY -> "{\"conflicted\":false,\"restricted\":0,\"review\":0,\"unmapped\":1}";
+                case USER_EMERGENCY_CHANGE -> "{\"registered\":true,\"mappingVersion\":0,\"replacedUserId\":null}";
                 case USER_PASSWORD_CHANGE, USER_PASSWORD_RESET ->
                         "{\"mustChangePassword\":true,\"password\":\"private-password\"}";
                 case USER_ROLE_ASSIGN -> "{\"roleId\":3,\"roleCode\":\"private-code\",\"created\":true}";

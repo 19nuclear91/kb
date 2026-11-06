@@ -59,6 +59,7 @@ logging:
   pattern:
     level: "%5p [requestId=%X{requestId:-}]"
   level:
+    com.dingtalk.open: "OFF"
     com.zhishiku.kb: INFO
     com.zhishiku.kb.app.search.mapper: "OFF"
     com.zhishiku.kb.app.conversation.mapper: "OFF"
@@ -68,6 +69,15 @@ logging:
     com.zhishiku.kb.app.document.metadata.mapper: "OFF"
 
 kb:
+  identity:
+    lifecycle:
+      dingtalk:
+        enabled: ${KB_LIFECYCLE_DINGTALK_ENABLED:false}
+        enterprise-id: ${KB_LIFECYCLE_DINGTALK_ENTERPRISE_ID:}
+        client-id: ${KB_LIFECYCLE_DINGTALK_CLIENT_ID:}
+        client-secret: ${KB_LIFECYCLE_DINGTALK_CLIENT_SECRET:}
+        unified-app-id: ${KB_LIFECYCLE_DINGTALK_UNIFIED_APP_ID:}
+        connection-id: ${KB_LIFECYCLE_DINGTALK_CONNECTION_ID:dingtalk-internal}
   office-preview:
     enabled: ${KB_OFFICE_PREVIEW_ENABLED:false}
     application-origin: ${KB_OFFICE_APPLICATION_ORIGIN:}
@@ -97,6 +107,8 @@ kb:
   dev-auth:
     enabled: false
   auth:
+    internal:
+      secret: ${KB_AUTH_INTERNAL_SECRET:}
     sso:
       public-origin: ${KB_SSO_PUBLIC_ORIGIN:}
       result-page-uri: ${KB_SSO_RESULT_PAGE_URI:}

@@ -5,7 +5,7 @@ import cn.dev33.satoken.reactor.context.SaReactorSyncHolder;
 import cn.dev33.satoken.reactor.filter.SaReactorFilter;
 import cn.dev33.satoken.stp.StpUtil;
 import com.zhishiku.kb.common.api.R;
-import com.zhishiku.kb.common.security.SsoPublicEndpoints;
+import com.zhishiku.kb.common.security.AuthenticationEndpoints;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -25,7 +25,6 @@ public class SaTokenGatewayConfig {
     public SaReactorFilter saReactorFilter() {
         return new SaReactorFilter()
                 .addInclude("/api/**")
-                .addExclude("/api/auth/dev-login", "/api/auth/login")
                 .setAuth(exchange -> {
                     // 预检只验证 CORS 策略，不携带登录凭据；实际请求仍须登录。
                     var current = SaReactorSyncHolder.getExchange();
@@ -33,8 +32,10 @@ public class SaTokenGatewayConfig {
                         current.getResponse().getHeaders().set("Cache-Control", "no-store");
                         current.getResponse().getHeaders().set("Referrer-Policy", "no-referrer");
                     }
-                    if (current != null && SsoPublicEndpoints.matches(current.getRequest().getMethod().name(),
-                            current.getRequest().getPath().value())) return;
+                    if (current != null && AuthenticationEndpoints.isPublic(current.getRequest().getMethod().name(),
+                            current.getRequest().getPath().value())) {
+                        return;
+                    }
                     if (current == null || !CorsUtils
                             .isPreFlightRequest(current.getRequest())) {
                         StpUtil.checkLogin();

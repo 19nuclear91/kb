@@ -60,11 +60,12 @@ public class InternalConversationService {
             }
             case "check", "begin" -> {
                 fields(input, Set.of("conversationId", "question", "requestId", "expectedLastTurnSeq"));
-                long user = sessions.user(token);
+                var session = sessions.session(token);
+                long user = session.userId();
                 long id = number(input, "conversationId");
                 String question = text(input, "question"), request = text(input, "requestId");
                 long expected = number(input, "expectedLastTurnSeq");
-                var result = "begin".equals(operation) ? execution.begin(user, id, question, request, expected) :
+                var result = "begin".equals(operation) ? execution.begin(user, session.authEpoch(), id, question, request, expected) :
                         execution.check(user, id, question, request, expected);
                 yield result == null ? Map.of("replayed", false) : result;
             }
@@ -107,11 +108,12 @@ public class InternalConversationService {
             }
             case "finish" -> {
                 fields(input, Set.of("execution", "status", "lastBatchSeq", "finalUsage", "promptTokens",
-                        "completionTokens"));
+                        "completionTokens", "cancellationReason"));
                 if (!input.path("finalUsage").isBoolean()) throw ConversationService.invalid();
                 var result = execution.finish(key(input), text(input, "status"), number(input, "lastBatchSeq"),
                         input.path("finalUsage").booleanValue(), nullableLong(input, "promptTokens"),
-                        nullableLong(input, "completionTokens"));
+                        nullableLong(input, "completionTokens"), input.path("cancellationReason").isMissingNode()
+                                || input.path("cancellationReason").isNull() ? null : text(input, "cancellationReason"));
                 yield result == null ? Map.of("settlementRequired", false) : SettlementDeliveryClient.payload(result);
             }
             default -> throw ConversationService.missing();
@@ -120,7 +122,7 @@ public class InternalConversationService {
 
     private ExecutionKey key(JsonNode input) {
         var key = convert(input.get("execution"), ExecutionKey.class);
-        if (key == null || key.ownerUserId() <= 0 || key.conversationId() <= 0 || key.executionEpoch() < 0
+        if (key == null || key.ownerUserId() <= 0 || key.conversationId() <= 0 || key.executionEpoch() < 0 || key.authEpoch() < 1
                 || key.turnId() == null || key.ticket() == null || key.ticket().length() > 64)
             throw ConversationService.invalid();
         return key;

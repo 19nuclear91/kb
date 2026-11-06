@@ -2,6 +2,7 @@ package com.zhishiku.kb.app.auth.service;
 
 import com.zhishiku.kb.app.auth.mapper.IdentityDepartmentMapper;
 import com.zhishiku.kb.app.auth.model.DepartmentRecord;
+import com.zhishiku.kb.app.auth.model.ManagementChange;
 import com.zhishiku.kb.common.security.DepartmentSummary;
 import com.zhishiku.kb.common.security.IdentityConflictReason;
 import com.zhishiku.kb.common.security.IdentityErrorCode;
@@ -55,6 +56,7 @@ public class DepartmentService {
         }
         String normalizedCode = IdentityWriteSupport.required(code, "code");
         String normalizedName = IdentityWriteSupport.required(name, "name");
+        mapper.lockManagement();
         DepartmentRecord existing = mapper.findDepartmentByCode(normalizedCode);
         if (existing != null) {
             throw IdentityException.conflict(IdentityConflictReason.IDENTIFIER_CONFLICT,
@@ -93,6 +95,7 @@ public class DepartmentService {
         }
         IdentityWriteSupport.required(name, "name");
         requireVersion(version);
+        mapper.lockManagement();
         DepartmentRecord before = requireDepartment(id);
         if (mapper.renameDepartment(id, name.trim(), version) != 1) {
             throw versionConflict("部门已被其他操作更新");
@@ -115,6 +118,7 @@ public class DepartmentService {
             return get(id);
         }
         requireVersion(version);
+        mapper.lockManagement();
         DepartmentRecord department = requireDepartmentForUpdate(id);
         if (versionOf(department) != version) {
             throw versionConflict("部门已被其他操作更新");
@@ -157,6 +161,7 @@ public class DepartmentService {
     @Transactional
     public DepartmentSummary setEnabled(long id, boolean enabled, long version,
                                         Long actorUserId, String requestId) {
+        mapper.lockManagement();
         AuditScope auditScope = enabled ? AuditScope.DEPARTMENT_ENABLE : AuditScope.DEPARTMENT_DISABLE;
         if (audit != null && hasRequest(requestId) && audit.existing(auditScope, requestId) != null) {
             return get(id);
@@ -168,6 +173,9 @@ public class DepartmentService {
             if (!Boolean.TRUE.equals(parent.getEnabled())) {
                 throw IdentityException.disabled("父部门已停用");
             }
+        }
+        if (!enabled) {
+            new ManagementInvariant(mapper).requireEmergencyAfter(ManagementChange.unchanged(), id);
         }
         if (!enabled && (mapper.countEnabledChildren(id) > 0 || mapper.countEnabledUsers(id) > 0)) {
             throw IdentityException.conflict(IdentityConflictReason.DEPARTMENT_NOT_EMPTY,

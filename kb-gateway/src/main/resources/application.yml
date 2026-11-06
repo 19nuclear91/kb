@@ -88,6 +88,10 @@ spring:
             allowCredentials: true
 
 kb:
+  auth:
+    internal:
+      secret: ${KB_AUTH_INTERNAL_SECRET:}
+      app-base-url: ${KB_APP_BASE_URL:}
   office-preview:
     enabled: ${KB_OFFICE_PREVIEW_ENABLED:false}
     application-origin: ${KB_OFFICE_APPLICATION_ORIGIN:}

@@ -1,6 +1,7 @@
 package com.zhishiku.kb.app.config;
 
-import cn.dev33.satoken.interceptor.SaInterceptor;
+import com.zhishiku.kb.app.auth.service.EpochSessionService;
+import com.zhishiku.kb.common.security.AuthenticationEndpoints;
 import com.zhishiku.kb.app.auth.mapper.IdentityDepartmentMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.util.AntPathMatcher;
@@ -35,7 +36,7 @@ class SaTokenConfigTest {
 
     private static List<InterceptorRegistration> registrations() throws Exception {
         InterceptorRegistry registry = new InterceptorRegistry();
-        new SaTokenConfig(mock(IdentityDepartmentMapper.class)).addInterceptors(registry);
+        new SaTokenConfig(mock(IdentityDepartmentMapper.class), mock(EpochSessionService.class)).addInterceptors(registry);
         List<InterceptorRegistration> registrations = field(registry, "registrations");
         assertThat(registrations).as("响应保护、登录校验与强制改密拦截器都必须注册").hasSize(3);
         return registrations;
@@ -45,18 +46,14 @@ class SaTokenConfigTest {
     void loginIsExcludedWhileTheRestOfApiStaysProtected() throws Exception {
         InterceptorRegistration registration = registrations().get(1);
 
-        assertThat((Object) field(registration, "interceptor")).isInstanceOf(SaInterceptor.class);
+        assertThat((Object) field(registration, "interceptor")).isInstanceOf(EpochAuthenticationInterceptor.class);
         List<String> includes = field(registration, "includePatterns");
-        List<String> excludes = field(registration, "excludePatterns");
-
         assertThat(includes).contains("/api/**");
-        assertThat(excludes).containsExactlyInAnyOrder("/api/auth/dev-login", "/api/auth/login");
-
-        assertThat(matchesAny(excludes, "/api/auth/login")).isTrue();
-        assertThat(matchesAny(excludes, "/api/auth/dev-login")).isTrue();
-        assertThat(matchesAny(excludes, "/api/space/documents")).isFalse();
-        assertThat(matchesAny(includes, "/api/space/documents")).isTrue();
-        assertThat(matchesAny(excludes, "/api/documents/10/versions/20/citations/30")).isFalse();
+        assertThat(AuthenticationEndpoints.isPublic("POST", "/api/auth/login")).isTrue();
+        assertThat(AuthenticationEndpoints.isPublic("POST", "/api/auth/dev-login")).isTrue();
+        assertThat(AuthenticationEndpoints.isPublic("GET", "/api/auth/login")).isFalse();
+        assertThat(AuthenticationEndpoints.isPublic("POST", "/api/auth/login/extra")).isFalse();
+        assertThat(AuthenticationEndpoints.isPublic("GET", "/api/documents/10/versions/20/citations/30")).isFalse();
         assertThat(matchesAny(includes, "/api/documents/10/versions/20/citations/30")).isTrue();
     }
 
@@ -66,7 +63,7 @@ class SaTokenConfigTest {
 
         assertThat((Object) field(registrations.get(0), "interceptor")).isInstanceOf(SsoSecurityHeadersInterceptor.class);
         assertThat((Object) field(registrations.get(1), "interceptor"))
-                .isInstanceOf(SaInterceptor.class);
+                .isInstanceOf(EpochAuthenticationInterceptor.class);
         assertThat((Object) field(registrations.get(2), "interceptor"))
                 .as("注册顺序即执行顺序；强制改密判定必须发生在登录校验之后")
                 .isInstanceOf(PasswordChangeRequiredInterceptor.class);

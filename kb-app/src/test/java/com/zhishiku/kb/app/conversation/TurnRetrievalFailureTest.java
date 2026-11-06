@@ -53,7 +53,7 @@ class TurnRetrievalFailureTest {
         var service = new TurnExecutionService(mapper, reads, mock(ConversationIdentityGate.class),
                 mock(DocumentVersionAccessService.class), new ConversationProperties(), new ObjectMapper(),
                 Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
-        var key = service.begin(1, 9, "q", "request", 0L).execution();
+        var key = service.begin(1, 1, 9, "q", "request", 0L).execution();
         service.reserve(key, 10, UUID.randomUUID(), UUID.randomUUID(), 12000);
         var intent = service.finish(key, "FAILED", 0, false, null, null);
         assertThat(turn.get().isSourceSealed()).isFalse();

@@ -2,6 +2,8 @@ package com.zhishiku.kb.app.config;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.zhishiku.kb.app.auth.mapper.IdentityDepartmentMapper;
+import com.zhishiku.kb.app.auth.service.EpochSessionService;
+import com.zhishiku.kb.common.api.ApiException;
 import com.zhishiku.kb.common.security.IdentityException;
 import com.zhishiku.kb.common.security.SsoPublicEndpoints;
 import jakarta.servlet.http.HttpServletRequest;
@@ -48,8 +50,21 @@ public class PasswordChangeRequiredInterceptor implements HandlerInterceptor {
             return true;
         }
         // 本拦截器注册在 SaInterceptor 之后：走到这里时非白名单路径已完成登录校验
-        long userId = StpUtil.getLoginIdAsLong();
-        if (Boolean.TRUE.equals(mapper.findMustChangePasswordById(userId))) {
+        Object verified = request.getAttribute(EpochAuthenticationInterceptor.VERIFIED);
+        Boolean mustChange;
+        if (verified instanceof EpochSessionService.Session session) {
+            mustChange = session.mustChangePassword();
+        } else {
+            try {
+                mustChange = mapper.findMustChangePasswordById(StpUtil.getLoginIdAsLong());
+            } catch (RuntimeException failed) {
+                throw ApiException.unavailable("暂时无法确认身份，请稍后重试");
+            }
+        }
+        if (mustChange == null) {
+            throw ApiException.unavailable("暂时无法确认身份，请稍后重试");
+        }
+        if (mustChange) {
             throw IdentityException.passwordChangeRequired("必须先完成密码修改");
         }
         return true;

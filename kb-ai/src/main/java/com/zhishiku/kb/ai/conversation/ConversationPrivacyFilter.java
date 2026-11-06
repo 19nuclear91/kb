@@ -18,8 +18,9 @@ public class ConversationPrivacyFilter implements WebFilter {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String path = exchange.getRequest().getURI().getPath();
-        if (!path.startsWith("/api/ai/conversations") && !path.startsWith("/internal/conversations"))
+        if (!path.equals("/api/ai/chat") && !path.startsWith("/api/ai/conversations") && !path.startsWith("/internal/conversations")) {
             return chain.filter(exchange);
+        }
         exchange.getResponse().getHeaders().setCacheControl("no-store");
         if (exchange.getRequest().getHeaders().getContentLength() > 262144) {
             exchange.getResponse().setStatusCode(HttpStatus.PAYLOAD_TOO_LARGE);

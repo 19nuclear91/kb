@@ -17,7 +17,7 @@ function New-MonitoringRules($Settings, $Catalog) {
     $records.Add(@{record='kb:parser_expected';expr="vector($([int]$Settings.parserExpected))";labels=@{
         environment=$Settings.environment;deployment=$Settings.deployment;service='worker'}})
     $records.Add(@{record='kb:service_up';expr="max by ($group) (up{job=~`"kb-.+`"})"})
-    foreach ($pair in @(@('worker','parse'),@('worker','embedding'),@('app','settlement'))) {
+    foreach ($pair in @(@('worker','parse'),@('worker','embedding'),@('app','settlement'),@('app','lifecycle'))) {
         $records.Add(@{record='kb:sample_expected';expr="up{service=`"$($pair[0])`"} * 0 + 1";labels=@{source=$pair[1]}})
     }
     $records.Add(@{record='kb:sample_valid';expr=@"
@@ -33,10 +33,14 @@ and on ($instance) (up == 1)
             'kb_monitoring_sample_available{source="embedding"}',
             'kb_monitoring_sample_last_success_timestamp_seconds{source="embedding"}')
         app=@('kb_monitoring_sample_available{source="settlement"}',
+            'kb_monitoring_sample_available{source="lifecycle"}',
+            'kb_monitoring_sample_last_success_timestamp_seconds{source="lifecycle"}',
+            'kb_lifecycle_subscription_enabled','kb_lifecycle_connected','kb_lifecycle_emergency_required','kb_lifecycle_emergency_ready',
             'kb_monitoring_sample_last_success_timestamp_seconds{source="settlement"}',
             'kb_monitoring_feature_enabled{feature="conversation"}','kb_monitoring_feature_enabled{feature="ai_observation"}',
             'kb_search_inflight')
-        ai=@('kb_monitoring_feature_enabled{feature="conversation"}','kb_monitoring_feature_enabled{feature="ai_observation"}')
+        ai=@('kb_monitoring_feature_enabled{feature="conversation"}','kb_monitoring_feature_enabled{feature="ai_observation"}',
+            'kb_ai_output_permit_active','kb_ai_output_permit_overdue_seconds')
         notifier=@('kb_alert_notifier_inflight')
     }
     $missing = [Collections.Generic.List[string]]::new()
@@ -48,6 +52,9 @@ and on ($instance) (up == 1)
     $records.Add(@{record='kb:contract_missing';expr="max by ($group) ($($missing -join ' or '))"})
     $records.Add(@{record='kb:service_contract_healthy';expr="kb:service_up == 1 unless on ($group) kb:contract_missing"})
     $database = @(
+        @('lifecycle','kb_lifecycle_backlog','kb:lifecycle_backlog',',status'),
+        @('lifecycle','kb_lifecycle_oldest_record_age_seconds','kb:lifecycle_oldest_record_age_seconds',',queue'),
+        @('lifecycle','kb_lifecycle_emergency_required','kb:lifecycle_emergency_required',''),
         @('parse','kb_parse_queue_depth','kb:parse_queue_depth',''),
         @('parse','kb_parse_dead_letter_depth','kb:parse_dead_letter_depth',''),
         @('parse','kb_parse_queue_oldest_age_seconds','kb:parse_oldest_age_seconds',''),
@@ -78,6 +85,15 @@ and on ($instance) (up == 1)
         $records.Add(@{record="kb:$($pair[1])_traffic_5m";expr="(sum by ($group) (increase($($pair[2])[5m])) or on ($group) (kb:service_contract_healthy{service=`"$($pair[0])`"} * 0)) and on ($group) kb:service_contract_healthy"})
     }
     $expressions = @{
+        KbLifecycleInputRejected="(sum by ($group) (increase(kb_lifecycle_input_rejections_total[5m])) > 0) and on ($group) (kb:service_up == 1)"
+        KbLifecycleEventConflict="(sum by ($group) (increase(kb_lifecycle_reception_total{outcome=`"CONFLICT`"}[5m])) > 0) and on ($group) (kb:service_up == 1)"
+        KbLifecycleRevocationSlow="max by ($group) (kb_lifecycle_output_stop_delay_seconds{bound=`"lower`"} and on ($instance) kb:sample_valid{source=`"lifecycle`"}) > 30"
+        KbRevocationTargetUnconfirmed="max by ($group) (((kb_ai_output_permit_revocation_stop_upper_bound_seconds_max > 30 or kb_ai_output_permit_overdue_seconds > 20) and on ($instance) (up == 1)) or ((kb_lifecycle_output_stop_delay_seconds{bound=`"upper`"} > 30 or kb_lifecycle_output_stop_samples{quality=`"UNCERTAIN`"} > 0) and on ($instance) kb:sample_valid{source=`"lifecycle`"}))"
+        KbLifecycleDisconnected="min by ($group) ((kb_lifecycle_connected and on ($instance) (kb_lifecycle_subscription_enabled == 1)) and on ($instance) kb:sample_valid{source=`"lifecycle`"}) == 0"
+        KbLifecycleBacklogOld="max by ($group) (kb:lifecycle_oldest_record_age_seconds) > 300"
+        KbLifecycleEmergencyUnavailable="(min by ($group) (kb_lifecycle_emergency_ready and on ($instance) kb:sample_valid{source=`"lifecycle`"}) == 0) and on ($group) (kb:lifecycle_emergency_required == 1)"
+        KbOutputPermitOverdue="max by ($group) ((kb_ai_output_permit_overdue_seconds > 2 or kb_ai_output_permit_stop_overdue_seconds_max > 2) and on ($instance) (up == 1))"
+        KbLifecycleDependencyFailures="((sum by ($group) (increase(kb_lifecycle_dependency_failures_total[5m])) > 0) or (sum by ($group) (increase(kb_lifecycle_reception_total{outcome=`"FAILED`"}[5m])) > 0) or (sum by ($group) (increase(kb_identity_session_cleanup_total{outcome=`"FAILED`"}[5m])) > 0) or (sum by ($group) (increase(kb_ai_output_permit_acquisition_failures_total{reason=`"AUTHENTICATION_UNAVAILABLE`"}[5m])) > 0) or (sum by ($group) (increase(kb_ai_output_permit_stops_total{reason=`"AUTHENTICATION_UNAVAILABLE`"}[5m])) > 0) or (sum by ($group) (increase(kb_ai_output_stop_reports_total{outcome=~`"FAILED|DROPPED|MISSING_ANCHOR`"}[5m])) > 0)) and on ($group) (kb:service_up == 1)"
         KbServiceUnavailable="kb:expected_service == 1 unless on ($group) (kb:service_up == 1)"
         KbServiceReplicaUnavailable="(sum by ($group) (up{job=~`"kb-.+`"} == bool 0) > 0) and on ($group) (kb:service_up == 1)"
         KbMonitoringContractMissing='kb:contract_missing > 0'
@@ -114,7 +130,7 @@ and on (environment,deployment) (count by (environment,deployment) (count by ($g
 
 function New-MonitoringAlertmanager($Settings) {
     $equal = @('environment','deployment','service')
-    $downstream = 'KbParserNotConfigured|KbParseQueueAging|KbParseDeadLetters|KbParseLeaseLoss|KbEmbeddingBlocked|KbEmbeddingMaintenanceLong|KbSearchFailures|KbSearchRetrievalSlow|KbSearchDegradation|KbModelFailures|KbChatSystemErrors|KbSettlementPendingOld|KbSettlementReview'
+    $downstream = 'KbLifecycleInputRejected|KbLifecycleEventConflict|KbLifecycleRevocationSlow|KbRevocationTargetUnconfirmed|KbLifecycleDisconnected|KbLifecycleBacklogOld|KbLifecycleEmergencyUnavailable|KbOutputPermitOverdue|KbLifecycleDependencyFailures|KbParserNotConfigured|KbParseQueueAging|KbParseDeadLetters|KbParseLeaseLoss|KbEmbeddingBlocked|KbEmbeddingMaintenanceLong|KbSearchFailures|KbSearchRetrievalSlow|KbSearchDegradation|KbModelFailures|KbChatSystemErrors|KbSettlementPendingOld|KbSettlementReview'
     return @{
         route=@{receiver='dingtalk';group_by=@('environment','deployment','service','alertname');group_wait='30s';group_interval='5m';repeat_interval='4h'}
         receivers=@(@{name='dingtalk';webhook_configs=@(@{url='http://notifier:8090/internal/alerts/dingtalk';send_resolved=$true;max_alerts=100;timeout='15s';

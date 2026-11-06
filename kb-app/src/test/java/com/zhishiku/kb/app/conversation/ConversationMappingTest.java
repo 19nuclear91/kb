@@ -34,8 +34,8 @@ class ConversationMappingTest {
         var metadata = mock(ResultSetMetaData.class);
         var rows = mock(ResultSet.class);
         var statement = mock(Statement.class);
-        String[] columns = {"id", "created_at", "prompt_tokens", "last_batch_seq", "turn_seq", "saved_codepoints"};
-        int[] types = {Types.OTHER, Types.TIMESTAMP, Types.BIGINT, Types.BIGINT, Types.BIGINT, Types.INTEGER};
+        String[] columns = {"id", "created_at", "prompt_tokens", "last_batch_seq", "turn_seq", "saved_codepoints", "auth_epoch", "cancellation_reason"};
+        int[] types = {Types.OTHER, Types.TIMESTAMP, Types.BIGINT, Types.BIGINT, Types.BIGINT, Types.INTEGER, Types.BIGINT, Types.VARCHAR};
         when(metadata.getColumnCount()).thenReturn(columns.length);
         for (int i = 0; i < columns.length; i++) {
             when(metadata.getColumnLabel(i + 1)).thenReturn(columns[i]);
@@ -46,6 +46,11 @@ class ConversationMappingTest {
         Instant now = Instant.parse("2026-01-01T00:00:00Z");
         when(rows.getObject("id", UUID.class)).thenReturn(id);
         when(rows.getTimestamp("created_at")).thenReturn(Timestamp.from(now));
+        when(rows.getLong("auth_epoch")).thenAnswer(call -> {
+            when(rows.wasNull()).thenReturn(false);
+            return 7L;
+        });
+        when(rows.getString("cancellation_reason")).thenReturn("ACCOUNT_REVOKED");
         when(rows.getLong("prompt_tokens")).thenAnswer(call -> {
             when(rows.wasNull()).thenReturn(true);
             return 0L;
@@ -76,6 +81,8 @@ class ConversationMappingTest {
         assertThat(actual.getLastBatchSeq()).isEqualTo(3_000_000_000L);
         assertThat(actual.getTurnSeq()).isEqualTo(4_000_000_000L);
         assertThat(actual.getSavedCodepoints()).isEqualTo(1024);
+        assertThat(actual.getAuthEpoch()).isEqualTo(7);
+        assertThat(actual.getCancellationReason()).isEqualTo("ACCOUNT_REVOKED");
     }
 }
 

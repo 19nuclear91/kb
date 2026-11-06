@@ -1,5 +1,7 @@
 package com.zhishiku.kb.ai.conversation;
 
+import com.zhishiku.kb.ai.auth.PermitFixtures;
+
 import com.zhishiku.kb.ai.chat.AiProperties;
 import com.zhishiku.kb.ai.chat.ChatQuotaAuditService;
 import com.zhishiku.kb.ai.chat.RetrievalClient;
@@ -59,7 +61,7 @@ class MultiTurnChatServiceTest {
     Flux<MultiTurnModel.Event> events = Flux.just(new MultiTurnModel.Event("答案😀", false, null, null),
             new MultiTurnModel.Event(null, true, 10L, 1L), new MultiTurnModel.Event(null, true, 12L, 2L));
     MultiTurnModel.Input input;
-    final ExecutionKey key = new ExecutionKey(9, UUID.randomUUID(), 1, 0, "ticket");
+    final ExecutionKey key = new ExecutionKey(9, UUID.randomUUID(), 1, 0, 1, "ticket");
     final BeginResult begin = new BeginResult(9, key.turnId(), 1, "RUNNING", false, key);
     final MultiTurnModel model = new MultiTurnModel() {
         public boolean supportsTokenUpperBound() {
@@ -103,7 +105,7 @@ class MultiTurnChatServiceTest {
         if (provider) {
             beans.addBean("model", activeModel);
         }
-        return new MultiTurnChatService(app, retrieval, quota, settlement, properties, new AiProperties("http://app",
+        return PermitFixtures.multi(app, retrieval, quota, settlement, properties, new AiProperties("http://app",
                 5, 10000, 60), beans.getBeanProvider(MultiTurnModel.class));
     }
 

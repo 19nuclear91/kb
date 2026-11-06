@@ -100,9 +100,17 @@ public class AuditSummaryProjector {
         return switch (scope) {
             case USER_CREATE -> fields("departmentId", Kind.ID, "clearanceLevel", Kind.LEVEL, "enabled", Kind.BOOL,
                     "version", Kind.COUNT, "mustChangePassword", Kind.BOOL);
-            case USER_MOVE_DEPARTMENT, USER_ENABLE, USER_DISABLE ->
+            case USER_MOVE_DEPARTMENT ->
                     fields("departmentId", Kind.ID, "enabled", Kind.BOOL, "version", Kind.COUNT);
+            case USER_ENABLE, USER_DISABLE, USER_LIFECYCLE_RESTRICT, USER_LIFECYCLE_RESTORE ->
+                    fields("departmentId", Kind.ID, "enabled", Kind.BOOL, "version", Kind.COUNT,
+                            "manualEnabled", Kind.BOOL, "authEpoch", Kind.COUNT);
             case USER_CLEARANCE_CHANGE -> fields("clearanceLevel", Kind.LEVEL, "version", Kind.COUNT);
+            case USER_LIFECYCLE_MAPPING -> fields("managed", Kind.BOOL, "mappingVersion", Kind.COUNT, "enabled", Kind.BOOL);
+            case LIFECYCLE_EVENT_RETRY -> fields("conflicted", Kind.BOOL, "restricted", Kind.COUNT,
+                    "review", Kind.COUNT, "unmapped", Kind.COUNT);
+            case USER_EMERGENCY_CHANGE -> fields("registered", Kind.BOOL, "mappingVersion", Kind.COUNT,
+                    "replacedUserId", Kind.NULLABLE_ID);
             case USER_PASSWORD_CHANGE, USER_PASSWORD_RESET -> fields("mustChangePassword", Kind.BOOL);
             case USER_ROLE_ASSIGN -> fields("roleId", Kind.ID, "created", Kind.BOOL);
             case USER_ROLE_REVOKE -> fields("roleId", Kind.ID, "bound", Kind.BOOL);
