@@ -24,7 +24,7 @@ class CorsConfigurationTest {
                         "KB_REDIS_HOST=redis", "management.server.port=9080", "management.server.address=127.0.0.1")
                 .withInitializer(new ConfigDataApplicationContextInitializer())
                 .run(context -> {
-                    new ProductionEnvironmentCheck().postProcessEnvironment(context.getEnvironment(),
+                    new StartupEnvironmentCheck().postProcessEnvironment(context.getEnvironment(),
                             new SpringApplication());
                     var properties = Binder.get(context.getEnvironment())
                             .bind("spring.cloud.gateway.globalcors", GlobalCorsProperties.class).get();

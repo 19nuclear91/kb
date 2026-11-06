@@ -35,6 +35,7 @@ class ProductionSettingsTest {
                 Map.entry("spring.datasource.password", ""), Map.entry("spring.datasource.password", "kb_dev_pwd"),
                 Map.entry("spring.flyway.locations", "classpath:db/migration,classpath:db/dev"),
                 Map.entry("spring.flyway.baseline-on-migrate", "true"),
+                Map.entry("sa-token.is-log", "true"),
                 Map.entry("logging.level.com.zhishiku.kb.app.search.mapper", "DEBUG"))) {
             var config = safeApp();
             config.put(unsafe.getKey(), unsafe.getValue());
@@ -51,6 +52,94 @@ class ProductionSettingsTest {
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> ProductionSettings.validate("kb-app", Set.of(), Map.of()))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"prod", "test", "staging", "default"})
+    void everyNonDevProfileUsesProductionRules(String profile) {
+        ProductionSettings.validate("kb-app", Set.of(profile), safeApp());
+        var settings = safeApp();
+        settings.put("kb.dev-auth.enabled", "true");
+        assertThatThrownBy(() -> ProductionSettings.validate("kb-app", Set.of(profile), settings))
+                .hasMessageContaining("kb.dev-auth.enabled");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"com.zhishiku.kb.app.search.service,DEBUG", "com.zhishiku.kb.app.storage.service,TRACE",
+            "org.springframework.web,DEBUG", "com.zhishiku.kb.app.mapperhelper,TRACE"})
+    void productionAllowsOrdinaryDiagnosticLogging(String logger, String level) {
+        var settings = safeApp();
+        settings.put("logging.level." + logger, level);
+        ProductionSettings.validate("kb-app", Set.of("prod"), settings);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"com.zhishiku.kb.app.search.mapper,DEBUG", "com.zhishiku.kb.app.search.mapper.SearchMapper,TRACE",
+            "com.zhishiku.kb.app.search.mapper.SearchMapper.select,DEBUG", "com.zhishiku.kb.app.auth,TRACE",
+            "com.zhishiku.kb,DEBUG", "root,TRACE", "org.springframework.jdbc.core,DEBUG",
+            "org.springframework.jdbc.core.StatementCreatorUtils,TRACE", "org.apache.ibatis,DEBUG",
+            "cn.dev33.satoken,TRACE", "com.zhishiku.kb.app.search.mapper,ALL"})
+    void productionRejectsSensitiveLoggersAndInheritedVerboseLevels(String logger, String level) {
+        var settings = safeApp();
+        String key = "logging.level." + logger;
+        settings.put(key, level);
+        assertThatThrownBy(() -> ProductionSettings.validate("kb-app", Set.of("prod"), settings))
+                .hasMessageContaining(key).hasMessageNotContaining("external-secret");
+    }
+
+    @Test
+    void explicitSafeLevelsProtectSensitiveLoggersFromRootDebug() {
+        var settings = safeApp();
+        settings.put("logging.level.root", "DEBUG");
+        settings.put("logging.level.com.zhishiku.kb", "INFO");
+        settings.put("logging.level.cn.dev33.satoken", "OFF");
+        settings.put("logging.level.org.apache.ibatis", "WARN");
+        settings.put("logging.level.org.springframework.jdbc.core", "INFO");
+        ProductionSettings.validate("kb-app", Set.of("prod"), settings);
+    }
+
+    @Test
+    void safeMapperLevelAllowsDebuggingItsParentFeature() {
+        var settings = safeApp();
+        settings.put("logging.level.com.zhishiku.kb.app.search", "DEBUG");
+        settings.put("logging.level.com.zhishiku.kb.app.search.mapper", "OFF");
+        ProductionSettings.validate("kb-app", Set.of("prod"), settings);
+        settings.put("logging.level.com.zhishiku.kb.app.search.mapper.SearchMapper", "TRACE");
+        assertThatThrownBy(() -> ProductionSettings.validate("kb-app", Set.of("prod"), settings))
+                .hasMessageContaining("logging.level.com.zhishiku.kb.app.search.mapper.SearchMapper");
+    }
+
+    @Test
+    void workerMapperLoggingIsAlsoProtected() {
+        var settings = safeApp();
+        settings.put("logging.level.com.zhishiku.kb.worker.parse", "DEBUG");
+        assertThatThrownBy(() -> ProductionSettings.validate("kb-worker", Set.of("prod"), settings))
+                .hasMessageContaining("logging.level.com.zhishiku.kb.worker.parse");
+        settings.put("logging.level.com.zhishiku.kb.worker.parse.mapper", "INFO");
+        ProductionSettings.validate("kb-worker", Set.of("prod"), settings);
+    }
+
+    @Test
+    void builtInSqlGroupCannotEnableSensitiveLogging() {
+        var settings = safeApp();
+        settings.put("logging.level.sql", "DEBUG");
+        assertThatThrownBy(() -> ProductionSettings.validate("kb-app", Set.of("prod"), settings))
+                .hasMessageContaining("logging.level.sql");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"logging.group.diagnostics", "logging.group.diagnostics[0]"})
+    void customLogGroupsCannotEnableSensitiveLoggersOrTheirParents(String groupKey) {
+        var settings = safeApp();
+        settings.put("logging.level.diagnostics", "TRACE");
+        settings.put(groupKey, "com.zhishiku.kb.app.search.service,org.springframework.web");
+        ProductionSettings.validate("kb-app", Set.of("prod"), settings);
+        for (String logger : List.of("com.zhishiku.kb.app.search.mapper.SearchMapper", "com.zhishiku.kb.app.search",
+                "org.springframework.jdbc.core", "cn.dev33.satoken")) {
+            settings.put(groupKey, logger);
+            assertThatThrownBy(() -> ProductionSettings.validate("kb-app", Set.of("prod"), settings))
+                    .hasMessageContaining("logging.level.diagnostics");
+        }
     }
 
     @Test

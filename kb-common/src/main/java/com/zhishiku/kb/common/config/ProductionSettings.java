@@ -6,12 +6,14 @@ import java.net.UnknownHostException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
 /**
  * 在创建数据库连接和执行迁移前检查有效配置；错误只包含配置名，不包含密钥。
+ * 仅显式 dev 豁免生产规则；prod、test、staging 和未指定环境均按生产标准校验。
  */
 public final class ProductionSettings {
     private ProductionSettings() {
@@ -32,28 +34,41 @@ public final class ProductionSettings {
             rejectExample(settings, "spring.datasource.password", "kb_dev_pwd");
             rejectExample(settings, "kb.storage.secret-key", "kbminio_dev_pwd");
         }
-        if (!module.equals("kb-worker")) require(settings, "spring.data.redis.host");
+        if (!module.equals("kb-worker")) {
+            require(settings, "spring.data.redis.host");
+        }
         if (module.equals("kb-app")) {
-            if (Boolean.parseBoolean(settings.get("kb.dev-auth.enabled"))) fail("生产禁止 kb.dev-auth.enabled");
-            if (!"classpath:db/migration".equals(settings.get("spring.flyway.locations")))
+            if (Boolean.parseBoolean(settings.get("kb.dev-auth.enabled"))) {
+                fail("生产禁止 kb.dev-auth.enabled");
+            }
+            if (!"classpath:db/migration".equals(settings.get("spring.flyway.locations"))) {
                 fail("生产 spring.flyway.locations 只能包含 classpath:db/migration");
-            if (Boolean.parseBoolean(settings.get("spring.flyway.baseline-on-migrate")))
+            }
+            if (Boolean.parseBoolean(settings.get("spring.flyway.baseline-on-migrate"))) {
                 fail("生产禁止自动基线化未知数据库");
+            }
         }
         if (module.equals("kb-ai")) {
             require(settings, "kb.ai.app-base-url");
-            if (Boolean.parseBoolean(settings.get("kb.ai.audit-in-memory-enabled")))
+            if (Boolean.parseBoolean(settings.get("kb.ai.audit-in-memory-enabled"))) {
                 fail("生产禁止内存 AI 审计");
+            }
         }
         if (module.equals("kb-gateway")) {
             require(settings, "spring.cloud.gateway.routes[0].uri", "spring.cloud.gateway.routes[1].uri");
             boolean originsPresent = false;
             for (var entry : settings.entrySet()) {
                 String key = entry.getKey().toLowerCase().replace("-", "");
-                if (!key.contains("globalcors") || !key.contains("allowedorigin")) continue;
+                if (!key.contains("globalcors") || !key.contains("allowedorigin")) {
+                    continue;
+                }
                 String value = entry.getValue();
-                if (value == null || value.isBlank()) continue;
-                if (key.contains("patterns")) fail("生产 CORS 必须使用明确 allowedOrigins");
+                if (value == null || value.isBlank()) {
+                    continue;
+                }
+                if (key.contains("patterns")) {
+                    fail("生产 CORS 必须使用明确 allowedOrigins");
+                }
                 originsPresent = true;
                 for (String origin : value.split(",")) {
                     try {
@@ -61,28 +76,100 @@ public final class ProductionSettings {
                         if (origin.contains("*") || uri.getHost() == null || uri.getUserInfo() != null
                                 || !Set.of("http", "https").contains(uri.getScheme())
                                 || (uri.getPath() != null && !uri.getPath().isEmpty())
-                                || uri.getQuery() != null || uri.getFragment() != null)
+                                || uri.getQuery() != null || uri.getFragment() != null) {
                             fail("生产 CORS origin 必须是完整且无通配的来源");
+                        }
                     } catch (IllegalArgumentException e) {
                         fail("生产 CORS origin 配置无效");
                     }
                 }
             }
-            if (!originsPresent) fail("生产必须配置 CORS allowedOrigins");
+            if (!originsPresent) {
+                fail("生产必须配置 CORS allowedOrigins");
+            }
         }
-        for (var entry : settings.entrySet()) {
-            if (entry.getKey().startsWith("logging.level.")
-                    && ("DEBUG".equalsIgnoreCase(entry.getValue()) || "TRACE".equalsIgnoreCase(entry.getValue())))
-                fail("生产禁止详细日志：" + entry.getKey());
-            if ("sa-token.is-log".equals(entry.getKey()) && Boolean.parseBoolean(entry.getValue()))
-                fail("生产禁止 Sa-Token 调试日志");
+        validateLogging(module, settings);
+        if (Boolean.parseBoolean(settings.get("sa-token.is-log"))) {
+            fail("生产禁止 Sa-Token 调试日志");
         }
     }
 
     private static void require(Map<String, String> settings, String... keys) {
         for (String key : keys) {
             String value = settings.get(key);
-            if (value == null || value.isBlank() || value.contains("${")) fail("生产缺少配置：" + key);
+            if (value == null || value.isBlank() || value.contains("${")) {
+                fail("生产缺少配置：" + key);
+            }
+        }
+    }
+
+    private static void validateLogging(String module, Map<String, String> settings) {
+        var sensitiveLoggers = new ArrayList<>(List.of("cn.dev33.satoken", "org.apache.ibatis",
+                "org.springframework.jdbc.core"));
+        if (module.equals("kb-app")) {
+            for (String feature : List.of("aiusage", "auth", "collaboration", "comment", "conversation",
+                    "document", "document.metadata", "embedding", "notification", "parse", "reporting",
+                    "search", "space", "storage")) {
+                sensitiveLoggers.add("com.zhishiku.kb.app." + feature + ".mapper");
+            }
+        } else if (module.equals("kb-worker")) {
+            sensitiveLoggers.add("com.zhishiku.kb.worker.embedding.mapper");
+            sensitiveLoggers.add("com.zhishiku.kb.worker.parse.mapper");
+        }
+        validateLogGroups(settings, sensitiveLoggers);
+        // 父级 DEBUG/TRACE 也会传递给敏感日志；更具体的 INFO/OFF 可以隔离这种继承。
+        for (String logger : sensitiveLoggers) {
+            rejectSensitiveLogLevel(settings, effectiveLogKey(settings, logger));
+        }
+        for (String key : settings.keySet()) {
+            if (key.startsWith("logging.level.")) {
+                String logger = key.substring("logging.level.".length()).toLowerCase(Locale.ROOT);
+                if (sensitiveLoggers.stream().anyMatch(prefix -> logger.startsWith(prefix + "."))) {
+                    rejectSensitiveLogLevel(settings, key);
+                }
+            }
+        }
+    }
+
+    private static void validateLogGroups(Map<String, String> settings, List<String> sensitiveLoggers) {
+        // Spring Boot 的内置 sql 组会打开 JDBC 等 SQL 日志。
+        rejectSensitiveLogLevel(settings, "logging.level.sql");
+        for (var entry : settings.entrySet()) {
+            if (!entry.getKey().startsWith("logging.group.") || entry.getValue() == null) {
+                continue;
+            }
+            String group = entry.getKey().substring("logging.group.".length());
+            int bracket = group.indexOf('[');
+            if (bracket >= 0) {
+                group = group.substring(0, bracket);
+            }
+            for (String member : entry.getValue().split(",")) {
+                String logger = member.trim().toLowerCase(Locale.ROOT);
+                if (sensitiveLoggers.stream().anyMatch(prefix -> logger.equals(prefix)
+                        || logger.startsWith(prefix + ".") || prefix.startsWith(logger + "."))) {
+                    rejectSensitiveLogLevel(settings, "logging.level." + group);
+                }
+            }
+        }
+    }
+
+    private static String effectiveLogKey(Map<String, String> settings, String logger) {
+        String key = "logging.level." + logger;
+        String value = settings.get(key);
+        if (value != null && !value.isBlank()) {
+            return key;
+        }
+        int separator = logger.lastIndexOf('.');
+        if (separator < 0) {
+            return "logging.level.root";
+        }
+        return effectiveLogKey(settings, logger.substring(0, separator));
+    }
+
+    private static void rejectSensitiveLogLevel(Map<String, String> settings, String key) {
+        String value = settings.get(key);
+        if (value != null && Set.of("DEBUG", "TRACE", "ALL").contains(value.trim().toUpperCase(Locale.ROOT))) {
+            fail("生产禁止敏感数据调试日志：" + key);
         }
     }
 
@@ -251,7 +338,9 @@ public final class ProductionSettings {
     }
 
     private static void rejectExample(Map<String, String> settings, String key, String example) {
-        if (example.equals(settings.get(key))) fail("生产不能使用示例凭据：" + key);
+        if (example.equals(settings.get(key))) {
+            fail("生产不能使用示例凭据：" + key);
+        }
     }
 
     private static void fail(String message) {

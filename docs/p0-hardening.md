@@ -32,8 +32,23 @@ mvn -pl kb-app spring-boot:run
 | 新生产库首次引导                | KB_BOOTSTRAP_ADMIN_USERNAME、KB_BOOTSTRAP_ADMIN_PASSWORD；仅传给 kb-app                                    |
 
 检查发生在 Spring 创建连接池和执行 Flyway 之前。缺少关键配置、示例数据库/S3 密码、dev 与 prod
-混用、生产开发登录、开发迁移路径、自动基线化、详细日志或通配 CORS 均拒绝启动。生产也禁止内存 AI 审计。外部属性文件或命令行可使用对应的
+混用、生产开发登录、开发迁移路径、自动基线化、敏感数据调试日志或通配 CORS 均拒绝启动。生产也禁止内存 AI 审计。外部属性文件或命令行可使用对应的
 Spring 属性名。
+
+### 启动配置检查与排障日志
+
+四个业务模块通过 `spring.factories` 注册 `StartupEnvironmentCheck`，先执行模块自身的模型、Embedding 或会话配置校验，再执行统一生产检查。公共模块的 `ProductionSettingsCollector` 负责收集配置，`ProductionSettings` 负责生产规则，两者仅使用 JDK；配置值由 Spring 按最终优先级解析，包含环境变量和命令行覆盖。
+
+只有显式 `dev` 豁免统一生产规则；未指定 profile 时默认 `prod`，`test`、`staging` 等环境也按生产标准检查。`dev` 与 `prod` 同时启用会失败。模块自身的配置检查不随这项豁免关闭。
+
+普通业务日志可以设置 `DEBUG` / `TRACE`，例如：
+
+```properties
+logging.level.com.zhishiku.kb.app.search=DEBUG
+logging.level.com.zhishiku.kb.app.search.mapper=OFF
+```
+
+敏感日志包括 app / Worker 的 SQL Mapper 包及其子 logger、`org.apache.ibatis`、`org.springframework.jdbc.core` 和 `cn.dev33.satoken`，禁止有效级别为 `DEBUG`、`TRACE` 或 `ALL`。检查考虑父级包与 root 的继承；排查某个业务包时，可像上例为其 Mapper 显式保留 `INFO` / `OFF`。内置 `sql` 日志组，以及包含敏感 logger 或其父级包的自定义日志组，也禁止开启这些调试级别。`sa-token.is-log=true` 仍禁止，避免身份与凭据信息进入调试输出。此处检查的是 Spring `logging.level.*` / `logging.group.*` 配置，独立日志配置文件与运行时调整仍需遵守同样的数据保护要求。
 
 V3/V6 原文移动到 db/dev，脚本内容和版本未改变。dev 同时加载 db/migration 和 db/dev，已有开发库可以继续校验迁移历史。生产仅加载
 db/migration；已有种子迁移历史的数据库不会被自动清理或通过 Flyway repair 绕过。应使用新生产库，或为既有库单独制定并审查数据迁移方案。

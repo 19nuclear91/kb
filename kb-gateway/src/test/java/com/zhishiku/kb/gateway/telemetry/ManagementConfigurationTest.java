@@ -1,6 +1,6 @@
 package com.zhishiku.kb.gateway.telemetry;
 
-import com.zhishiku.kb.gateway.config.ProductionEnvironmentCheck;
+import com.zhishiku.kb.gateway.config.StartupEnvironmentCheck;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.actuate.autoconfigure.web.server.ManagementPortType;
 import org.springframework.boot.actuate.autoconfigure.web.server.ManagementServerProperties;
@@ -15,7 +15,7 @@ class ManagementConfigurationTest {
     @Test
     void devUsesBusinessPortWhenManagementSettingsAreEmpty() {
         runner("dev").run(context -> {
-            new ProductionEnvironmentCheck().postProcessEnvironment(context.getEnvironment(), null);
+            new StartupEnvironmentCheck().postProcessEnvironment(context.getEnvironment(), null);
             var properties = Binder.get(context.getEnvironment()).bind("management.server", ManagementServerProperties.class)
                     .orElseGet(ManagementServerProperties::new);
             assertThat(properties.getPort()).isNull();
@@ -26,14 +26,14 @@ class ManagementConfigurationTest {
 
     @Test
     void productionRequiresSeparateExplicitPortAndAddress() {
-        runner("prod").run(context -> assertThatThrownBy(() -> new ProductionEnvironmentCheck()
+        runner("prod").run(context -> assertThatThrownBy(() -> new StartupEnvironmentCheck()
                 .postProcessEnvironment(context.getEnvironment(), null)).hasMessageContaining("management.server.port"));
         runner("prod").withPropertyValues("KB_MANAGEMENT_PORT=9080").run(context -> assertThatThrownBy(
-                () -> new ProductionEnvironmentCheck().postProcessEnvironment(context.getEnvironment(), null))
+                () -> new StartupEnvironmentCheck().postProcessEnvironment(context.getEnvironment(), null))
                 .hasMessageContaining("management.server.address"));
         runner("prod").withPropertyValues("KB_MANAGEMENT_PORT=9080", "KB_MANAGEMENT_ADDRESS=127.0.0.1")
                 .run(context -> {
-                    new ProductionEnvironmentCheck().postProcessEnvironment(context.getEnvironment(), null);
+                    new StartupEnvironmentCheck().postProcessEnvironment(context.getEnvironment(), null);
                     var properties = Binder.get(context.getEnvironment()).bind("management.server", ManagementServerProperties.class).get();
                     assertThat(properties.getPort()).isEqualTo(9080);
                     assertThat(properties.getAddress().getHostAddress()).isEqualTo("127.0.0.1");

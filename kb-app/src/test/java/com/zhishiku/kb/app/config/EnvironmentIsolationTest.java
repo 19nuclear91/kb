@@ -12,7 +12,7 @@ class EnvironmentIsolationTest {
         return new ApplicationContextRunner()
                 .withPropertyValues("spring.profiles.active=" + profile)
                 .withInitializer(new ConfigDataApplicationContextInitializer())
-                .withInitializer(context -> new ProductionEnvironmentCheck()
+                .withInitializer(context -> new StartupEnvironmentCheck()
                         .postProcessEnvironment(context.getEnvironment(), new SpringApplication()));
     }
 
@@ -27,17 +27,26 @@ class EnvironmentIsolationTest {
 
     @Test
     void prodRefusesDevLoginEvenWithValidCredentials() {
-        runner("prod").withPropertyValues(
-                        "spring.datasource.url=jdbc:postgresql://db/kb", "spring.datasource.username=service",
-                        "spring.datasource.password=external", "spring.data.redis.host=redis",
-                        "kb.storage.endpoint=https://s3.example", "kb.storage.access-key=external",
-                        "kb.storage.secret-key=external", "kb.storage.bucket=kb", "kb.dev-auth.enabled=true")
-                .run(context -> assertThat(context).hasFailed());
+        productionRunner().withPropertyValues("kb.dev-auth.enabled=true").run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).hasMessageContaining("kb.dev-auth.enabled");
+        });
     }
 
     @Test
     void safeProdExcludesSeedsAndKeepsSqlLoggingOff() {
-        runner("prod").withPropertyValues(
+        productionRunner().run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getEnvironment().getProperty("spring.flyway.locations"))
+                    .isEqualTo("classpath:db/migration");
+            assertThat(context.getEnvironment().getProperty("kb.dev-auth.enabled")).isEqualTo("false");
+            assertThat(context.getEnvironment().getProperty("logging.level.com.zhishiku.kb.app.search.mapper"))
+                    .isEqualToIgnoringCase("OFF");
+        });
+    }
+
+    private ApplicationContextRunner productionRunner() {
+        return runner("prod").withPropertyValues(
                         "management.server.port=9081", "management.server.address=127.0.0.1",
                         "spring.datasource.url=jdbc:postgresql://db/kb", "spring.datasource.username=service",
                         "spring.datasource.password=external", "spring.data.redis.host=redis",
@@ -57,15 +66,7 @@ class EnvironmentIsolationTest {
                         "kb.embedding.profiles[0].profile.adapter-version=embeddings-v1",
                         "kb.embedding.profiles[0].connection.endpoint=https://model.invalid/v1",
                         "kb.embedding.profiles[0].connection.timeout-seconds=30",
-                        "kb.embedding.profiles[0].connection.batch-size=16")
-                .run(context -> {
-                    assertThat(context).hasNotFailed();
-                    assertThat(context.getEnvironment().getProperty("spring.flyway.locations"))
-                            .isEqualTo("classpath:db/migration");
-                    assertThat(context.getEnvironment().getProperty("kb.dev-auth.enabled")).isEqualTo("false");
-                    assertThat(context.getEnvironment().getProperty("logging.level.com.zhishiku.kb.app.search.mapper"))
-                            .isEqualToIgnoringCase("OFF");
-                });
+                        "kb.embedding.profiles[0].connection.batch-size=16");
     }
 
     @Test

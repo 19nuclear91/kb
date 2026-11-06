@@ -109,7 +109,9 @@ mvn -pl kb-worker spring-boot:run '-Dspring-boot.run.profiles=dev'
 mvn -pl kb-ai spring-boot:run '-Dspring-boot.run.profiles=dev'
 ```
 
-上述四个业务服务未显式选择 profile 时默认使用 `prod`，不会自动采用本地数据库、存储和 Redis 配置。`dev` 与 `prod` 不能同时启用。`kb-alert-notifier` 不使用这套开发默认配置，需按独立监控说明提供完整参数与 secret 文件。
+上述四个业务服务未显式选择 profile 时默认使用 `prod`，不会自动采用本地数据库、存储和 Redis 配置。统一启动检查仅对显式 `dev` 豁免生产规则；`test`、`staging` 等其他 profile 也需要满足生产要求。`dev` 与 `prod` 不能同时启用，模块自身的模型、Embedding 和会话配置校验仍会执行。`kb-alert-notifier` 不使用这套开发默认配置，需按独立监控说明提供完整参数与 secret 文件。
+
+生产排障允许为普通业务包设置 `DEBUG` / `TRACE`。SQL Mapper、MyBatis、Spring JDBC 和 Sa-Token 的敏感日志仍受限制，包括从父级包继承的调试级别；`sa-token.is-log=true` 仍会阻止启动。检查入口与配置示例见[启动配置检查说明](docs/p0-hardening.md#启动配置检查与排障日志)。
 
 ### 4. 为开发账号设置浏览器登录密码
 

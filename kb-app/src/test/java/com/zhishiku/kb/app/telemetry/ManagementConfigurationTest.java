@@ -1,6 +1,6 @@
 package com.zhishiku.kb.app.telemetry;
 
-import com.zhishiku.kb.app.config.ProductionEnvironmentCheck;
+import com.zhishiku.kb.app.config.StartupEnvironmentCheck;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.actuate.autoconfigure.web.server.ManagementPortType;
 import org.springframework.boot.actuate.autoconfigure.web.server.ManagementServerProperties;
@@ -15,16 +15,16 @@ class ManagementConfigurationTest {
     @Test
     void devSharesBusinessPortAndProdRequiresSeparateExplicitPortAndAddress() {
         runner("dev").run(context -> {
-            new ProductionEnvironmentCheck().postProcessEnvironment(context.getEnvironment(), null);
+            new StartupEnvironmentCheck().postProcessEnvironment(context.getEnvironment(), null);
             assertThat(ManagementPortType.get(context.getEnvironment())).isEqualTo(ManagementPortType.SAME);
         });
-        runner("prod").run(context -> assertThatThrownBy(() -> new ProductionEnvironmentCheck()
+        runner("prod").run(context -> assertThatThrownBy(() -> new StartupEnvironmentCheck()
                 .postProcessEnvironment(context.getEnvironment(), null)).hasMessageContaining("management.server.port"));
         runner("prod").withPropertyValues("KB_MANAGEMENT_PORT=9081").run(context -> assertThatThrownBy(
-                () -> new ProductionEnvironmentCheck().postProcessEnvironment(context.getEnvironment(), null))
+                () -> new StartupEnvironmentCheck().postProcessEnvironment(context.getEnvironment(), null))
                 .hasMessageContaining("management.server.address"));
         runner("prod").withPropertyValues("KB_MANAGEMENT_PORT=9081", "KB_MANAGEMENT_ADDRESS=127.0.0.1").run(context -> {
-            new ProductionEnvironmentCheck().postProcessEnvironment(context.getEnvironment(), null);
+            new StartupEnvironmentCheck().postProcessEnvironment(context.getEnvironment(), null);
             var properties = Binder.get(context.getEnvironment()).bind("management.server", ManagementServerProperties.class).get();
             assertThat(properties.getPort()).isEqualTo(9081);
             assertThat(properties.getAddress().getHostAddress()).isEqualTo("127.0.0.1");
