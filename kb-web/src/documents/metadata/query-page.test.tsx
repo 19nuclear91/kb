@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { readJson } from '../../api';
 import { deferred, json } from '../../test/fixtures';
-import { DocumentsPage } from '../../pages/Documents';
+import { DocumentsPage } from '../../pages/DocumentsPage';
 
 const f = vi.hoisted(() => ({ send: vi.fn() }));
 const session = { send: f.send, getSnapshot: () => ({ epoch: 1, phase: 'ready' }), json: async (path: string, init?: RequestInit) => readJson(await f.send(path, init)) };

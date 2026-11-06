@@ -1,30 +1,17 @@
+import { PageLoadBoundary } from './routing/PageLoadBoundary';
+import { AccountPage, DocumentsPage, DocumentDetailPage, SearchPage, FavoritesPage, ReviewsPage, NotificationsPage, AssistantPage, UsersPage, DepartmentsPage, RolesPage, SpacesPage, SpaceDetailPage, DocumentsIndexPage, DocumentPanelPage, EmbeddingPage, ParseDeadLettersPage, AuditsPage, AiUsagePage, AiAuditsPage, OperationsReportsPage, DocumentTagsPage } from './routing/lazyPages';
 import { Button, Space, Spin, Alert } from 'antd';
 import { NavLink, Navigate, Route, Routes, Outlet, useLocation } from 'react-router-dom';
 import { navigation, safeReturnPath } from './navigation';
 import { SessionProvider, useSession } from './SessionProvider';
 import { Session } from './session';
-import { LoginPage, ChangePasswordPage, AccountPage } from './pages/AuthPages';
-import { DocumentsPage, DocumentDetailPage } from './pages/Documents';
-import { SearchPage } from './pages/Search';
-import { FavoritesPage } from './pages/Favorites';
-import { ReviewsPage } from './pages/Reviews';
-import { NotificationsPage } from './pages/Notifications';
+import { LoginPage } from './pages/LoginPage';
+import { ChangePasswordPage } from './pages/ChangePasswordPage';
+
 import { UnreadBadge } from './notifications/unread';
-import { AssistantPage } from './pages/Assistant';
+
 import { AdminAccessProvider, AdminGuard, AdminNavigation, canOpenDocuments, perm } from './admin/access';
-import { UsersPage } from './admin/UsersPage';
-import { DepartmentsPage } from './admin/DepartmentsPage';
-import { RolesPage } from './admin/RolesPage';
-import { SpacesPage } from './admin/SpacesPage';
-import { SpaceDetailPage } from './admin/SpaceDetailPage';
-import { DocumentsIndexPage } from './admin/DocumentsIndexPage';
-import { DocumentPanelPage } from './admin/DocumentPanelPage';
-import { EmbeddingPage } from './admin/EmbeddingPage';
-import { ParseDeadLettersPage } from './admin/ParseDeadLettersPage';
-import { AuditsPage } from './admin/AuditsPage';
-import { AiUsagePage, AiAuditsPage } from './admin/AiUsagePages';
-import { OperationsReportsPage } from './admin/OperationsReportsPage';
-import { DocumentTagsPage } from './admin/DocumentTaxonomy';
+
 import { useEffect, useRef, type ReactNode } from 'react';
 import { SsoResultPage } from './pages/SsoResultPage';
 import { browserStorage, RESULT_PATH } from './sso/storage';
@@ -54,26 +41,26 @@ export function AppRoutes() {
     <Button onClick={() => void session.refresh()}>重新确认身份</Button><Button onClick={() => void session.logout()}>退出</Button></Space></section></div>;
   return <Routes><Route path="/login" element={<LoginPage />} /><Route path="/change-password" element={<ChangePasswordPage />} />
     <Route element={<ProtectedLayout />}><Route index element={<Navigate to="/documents" replace />} />
-      <Route path="/documents" element={<DocumentsPage />} /><Route path="/documents/:documentId" element={<DocumentDetailPage />} />
-      <Route path="/favorites" element={<FavoritesPage />} />
-      <Route path="/reviews" element={<ReviewsPage />} />
-      <Route path="/notifications" element={<NotificationsPage />} />
-      <Route path="/search" element={<SearchPage />} /><Route path="/assistant" element={<AssistantPage />} /><Route path="/assistant/:conversationId" element={<AssistantPage />} />
-      <Route path="/account" element={<AccountPage />} />
-      <Route path="/admin/users" element={<AdminGuard code={perm.userRead} title="账号管理"><UsersPage /></AdminGuard>} />
-      <Route path="/admin/departments" element={<AdminGuard code={perm.deptRead} title="部门管理"><DepartmentsPage /></AdminGuard>} />
-      <Route path="/admin/roles" element={<AdminGuard code={perm.roleRead} title="角色管理"><RolesPage /></AdminGuard>} />
-      <Route path="/admin/spaces" element={<AdminGuard spaces title="知识空间"><SpacesPage /></AdminGuard>} />
-      <Route path="/admin/spaces/:spaceId" element={<AdminGuard title="空间管理"><SpaceDetailPage /></AdminGuard>} />
-      <Route path="/admin/documents" element={<AdminGuard allow={canOpenDocuments} title="文档管理面板"><DocumentsIndexPage /></AdminGuard>} />
-      <Route path="/admin/documents/:documentId" element={<AdminGuard title="文档管理"><DocumentPanelPage /></AdminGuard>} />
-      <Route path="/admin/embedding" element={<AdminGuard code={perm.embeddingRead} title="向量重建"><EmbeddingPage /></AdminGuard>} />
-      <Route path="/admin/parse/dead-letters" element={<AdminGuard code={perm.deadLetterRead} title="解析死信"><ParseDeadLettersPage /></AdminGuard>} />
-      <Route path="/admin/audits" element={<AdminGuard code={perm.auditRead} title="审计查询"><AuditsPage /></AdminGuard>} />
-      <Route path="/admin/document-tags" element={<AdminGuard code={perm.tagRead} title="全局标签"><DocumentTagsPage /></AdminGuard>} />
-      <Route path="/admin/ai/usage" element={<AdminGuard code={perm.aiUsageRead} title="AI 用量"><AiUsagePage /></AdminGuard>} />
-      <Route path="/admin/reports/operations" element={<AdminGuard code={perm.operationsReportsRead} title="运营概览"><OperationsReportsPage /></AdminGuard>} />
-      <Route path="/admin/ai/audits" element={<AdminGuard code={perm.aiAuditRead} title="AI 调用审计"><AiAuditsPage /></AdminGuard>} />
+      <Route path="/documents" element={<PageLoadBoundary><DocumentsPage /></PageLoadBoundary>} /><Route path="/documents/:documentId" element={<PageLoadBoundary><DocumentDetailPage /></PageLoadBoundary>} />
+      <Route path="/favorites" element={<PageLoadBoundary><FavoritesPage /></PageLoadBoundary>} />
+      <Route path="/reviews" element={<PageLoadBoundary><ReviewsPage /></PageLoadBoundary>} />
+      <Route path="/notifications" element={<PageLoadBoundary><NotificationsPage /></PageLoadBoundary>} />
+      <Route path="/search" element={<PageLoadBoundary><SearchPage /></PageLoadBoundary>} /><Route path="/assistant" element={<PageLoadBoundary><AssistantPage /></PageLoadBoundary>} /><Route path="/assistant/:conversationId" element={<PageLoadBoundary><AssistantPage /></PageLoadBoundary>} />
+      <Route path="/account" element={<PageLoadBoundary><AccountPage /></PageLoadBoundary>} />
+      <Route path="/admin/users" element={<AdminGuard code={perm.userRead} title="账号管理"><PageLoadBoundary><UsersPage /></PageLoadBoundary></AdminGuard>} />
+      <Route path="/admin/departments" element={<AdminGuard code={perm.deptRead} title="部门管理"><PageLoadBoundary><DepartmentsPage /></PageLoadBoundary></AdminGuard>} />
+      <Route path="/admin/roles" element={<AdminGuard code={perm.roleRead} title="角色管理"><PageLoadBoundary><RolesPage /></PageLoadBoundary></AdminGuard>} />
+      <Route path="/admin/spaces" element={<AdminGuard spaces title="知识空间"><PageLoadBoundary><SpacesPage /></PageLoadBoundary></AdminGuard>} />
+      <Route path="/admin/spaces/:spaceId" element={<AdminGuard title="空间管理"><PageLoadBoundary><SpaceDetailPage /></PageLoadBoundary></AdminGuard>} />
+      <Route path="/admin/documents" element={<AdminGuard allow={canOpenDocuments} title="文档管理面板"><PageLoadBoundary><DocumentsIndexPage /></PageLoadBoundary></AdminGuard>} />
+      <Route path="/admin/documents/:documentId" element={<AdminGuard title="文档管理"><PageLoadBoundary><DocumentPanelPage /></PageLoadBoundary></AdminGuard>} />
+      <Route path="/admin/embedding" element={<AdminGuard code={perm.embeddingRead} title="向量重建"><PageLoadBoundary><EmbeddingPage /></PageLoadBoundary></AdminGuard>} />
+      <Route path="/admin/parse/dead-letters" element={<AdminGuard code={perm.deadLetterRead} title="解析死信"><PageLoadBoundary><ParseDeadLettersPage /></PageLoadBoundary></AdminGuard>} />
+      <Route path="/admin/audits" element={<AdminGuard code={perm.auditRead} title="审计查询"><PageLoadBoundary><AuditsPage /></PageLoadBoundary></AdminGuard>} />
+      <Route path="/admin/document-tags" element={<AdminGuard code={perm.tagRead} title="全局标签"><PageLoadBoundary><DocumentTagsPage /></PageLoadBoundary></AdminGuard>} />
+      <Route path="/admin/ai/usage" element={<AdminGuard code={perm.aiUsageRead} title="AI 用量"><PageLoadBoundary><AiUsagePage /></PageLoadBoundary></AdminGuard>} />
+      <Route path="/admin/reports/operations" element={<AdminGuard code={perm.operationsReportsRead} title="运营概览"><PageLoadBoundary><OperationsReportsPage /></PageLoadBoundary></AdminGuard>} />
+      <Route path="/admin/ai/audits" element={<AdminGuard code={perm.aiAuditRead} title="AI 调用审计"><PageLoadBoundary><AiAuditsPage /></PageLoadBoundary></AdminGuard>} />
       <Route path="*" element={<div><h1>页面不存在</h1><NavLink to="/documents">返回文档中心</NavLink></div>} />
     </Route></Routes>;
 }

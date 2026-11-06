@@ -7,7 +7,11 @@ import type { Session } from './session';
 import type { Progress } from './types';
 const context = vi.hoisted(() => ({ session: {} as Session, state: { phase: 'ready', me: null as typeof me | null, epoch: 1 } }));
 vi.mock('./SessionProvider', () => ({ useSession: () => context }));
-import { DocumentDetailPage, DocumentsPage, ProgressCard, UploadDialog, useProgress } from './pages/Documents';
+import { DocumentDetailPage } from './pages/DocumentDetailPage';
+import { DocumentsPage } from './pages/DocumentsPage';
+import { ProgressCard } from './documents/ProgressCard';
+import { UploadDialog } from './documents/UploadDialog';
+import { useProgress } from './documents/useProgress';
 beforeEach(() => { context.state.me = me; context.session = { json: vi.fn(), send: vi.fn().mockImplementation(async () => new Response(null, { status: 503 })),
   post: vi.fn().mockResolvedValue({ items: [{ documentId: '1', favorited: false }] }), getSnapshot: () => context.state, subscribe: () => () => {} } as unknown as Session; });
 afterEach(() => vi.useRealTimers());

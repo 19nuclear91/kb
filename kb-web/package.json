@@ -8,7 +8,9 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
-    "build": "tsc --noEmit && vite build"
+    "build": "tsc --noEmit && vite build",
+    "bundle:report": "node scripts/bundle-report.mjs",
+    "bundle:test": "node --test scripts/bundle-report.test.mjs"
   },
   "dependencies": {
     "antd": "6.6.6",

@@ -11,6 +11,7 @@ dist/
 coverage/
 *.tsbuildinfo
 .vite/
+.bundle-analysis/
 npm-debug.log*
 
 # ---- 本地环境与凭据：只提交 .env.example ----

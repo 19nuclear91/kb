@@ -1,0 +1,24 @@
+import { lazyPage } from './lazyPage';
+
+export const AccountPage = lazyPage(() => import('../pages/AccountPage').then(module => ({ default: module.AccountPage })));
+export const DocumentsPage = lazyPage(() => import('../pages/DocumentsPage').then(module => ({ default: module.DocumentsPage })));
+export const DocumentDetailPage = lazyPage(() => import('../pages/DocumentDetailPage').then(module => ({ default: module.DocumentDetailPage })));
+export const SearchPage = lazyPage(() => import('../pages/Search').then(module => ({ default: module.SearchPage })));
+export const FavoritesPage = lazyPage(() => import('../pages/Favorites').then(module => ({ default: module.FavoritesPage })));
+export const ReviewsPage = lazyPage(() => import('../pages/Reviews').then(module => ({ default: module.ReviewsPage })));
+export const NotificationsPage = lazyPage(() => import('../pages/Notifications').then(module => ({ default: module.NotificationsPage })));
+export const AssistantPage = lazyPage(() => import('../pages/Assistant').then(module => ({ default: module.AssistantPage })));
+export const UsersPage = lazyPage(() => import('../admin/UsersPage').then(module => ({ default: module.UsersPage })));
+export const DepartmentsPage = lazyPage(() => import('../admin/DepartmentsPage').then(module => ({ default: module.DepartmentsPage })));
+export const RolesPage = lazyPage(() => import('../admin/RolesPage').then(module => ({ default: module.RolesPage })));
+export const SpacesPage = lazyPage(() => import('../admin/SpacesPage').then(module => ({ default: module.SpacesPage })));
+export const SpaceDetailPage = lazyPage(() => import('../admin/SpaceDetailPage').then(module => ({ default: module.SpaceDetailPage })));
+export const DocumentsIndexPage = lazyPage(() => import('../admin/DocumentsIndexPage').then(module => ({ default: module.DocumentsIndexPage })));
+export const DocumentPanelPage = lazyPage(() => import('../admin/DocumentPanelPage').then(module => ({ default: module.DocumentPanelPage })));
+export const EmbeddingPage = lazyPage(() => import('../admin/EmbeddingPage').then(module => ({ default: module.EmbeddingPage })));
+export const ParseDeadLettersPage = lazyPage(() => import('../admin/ParseDeadLettersPage').then(module => ({ default: module.ParseDeadLettersPage })));
+export const AuditsPage = lazyPage(() => import('../admin/AuditsPage').then(module => ({ default: module.AuditsPage })));
+export const AiUsagePage = lazyPage(() => import('../admin/AiUsagePages').then(module => ({ default: module.AiUsagePage })));
+export const AiAuditsPage = lazyPage(() => import('../admin/AiUsagePages').then(module => ({ default: module.AiAuditsPage })));
+export const OperationsReportsPage = lazyPage(() => import('../admin/OperationsReportsPage').then(module => ({ default: module.OperationsReportsPage })));
+export const DocumentTagsPage = lazyPage(() => import('../admin/DocumentTaxonomy').then(module => ({ default: module.DocumentTagsPage })));

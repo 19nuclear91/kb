@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { DocumentDetailPage, useProgress } from '../pages/Documents';
+import { DocumentDetailPage } from '../pages/DocumentDetailPage';
+import { useProgress } from '../documents/useProgress';
 import { ApiError } from '../api';
 import { deferred, json } from '../test/fixtures';
 import type { ReviewStatus } from './api';

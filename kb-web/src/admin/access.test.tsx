@@ -7,8 +7,16 @@ import { SessionProvider } from '../SessionProvider';
 import { deferred, json, me, storage } from '../test/fixtures';
 import { safeReturnPath } from '../navigation';
 import { AdminAccessProvider, useAdminAccess } from './access';
-vi.mock('../pages/AuthPages', () => ({ LoginPage: () => <div>登录入口</div>, ChangePasswordPage: () => <div>强制改密入口</div>, AccountPage: () => <div>账户入口</div> }));
-vi.mock('../pages/Documents', () => ({ DocumentsPage: () => <div>文档入口</div>, DocumentDetailPage: () => <div>详情入口</div> }));
+const moduleLoads = vi.hoisted(() => vi.fn());
+vi.mock('../routing/lazyPage', async importOriginal => {
+  const actual = await importOriginal<typeof import('../routing/lazyPage')>();
+  return { ...actual, lazyPage: (load: Parameters<typeof actual.lazyPage>[0]) => actual.lazyPage(() => { moduleLoads(); return load(); }) };
+});
+vi.mock('../pages/LoginPage', () => ({ LoginPage: () => <div>登录入口</div> }));
+vi.mock('../pages/ChangePasswordPage', () => ({ ChangePasswordPage: () => <div>强制改密入口</div> }));
+vi.mock('../pages/AccountPage', () => ({ AccountPage: () => <div>账户入口</div> }));
+vi.mock('../pages/DocumentsPage', () => ({ DocumentsPage: () => <div>文档入口</div> }));
+vi.mock('../pages/DocumentDetailPage', () => ({ DocumentDetailPage: () => <div>详情入口</div> }));
 vi.mock('../pages/Search', () => ({ SearchPage: () => <div>搜索入口</div> }));
 vi.mock('../pages/Assistant', () => ({ AssistantPage: () => <div>助手入口</div> }));
 vi.mock('./SpacesPage', () => ({ SpacesPage: () => <div>知识空间页面</div> }));
@@ -36,6 +44,18 @@ const empty = { items: [], hasMore: false, nextCursor: null };
 afterEach(() => { Reflect.deleteProperty(document, 'visibilityState'); });
 
 describe('本人权限上下文', () => {
+  it('直接地址在身份及管理资格确认前不调用页面加载器，拒绝后保持未加载', async () => {
+    const response = deferred<Response>();
+    const session = new Session(storage(), vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/auth/me') return json(me);
+      if (String(input) === '/api/admin/spaces') return json([]);
+      return response.promise;
+    }) as typeof fetch);
+    show(session, '/admin/users'); expect(moduleLoads).not.toHaveBeenCalled();
+    await screen.findByText('正在确认管理权限…'); expect(moduleLoads).not.toHaveBeenCalled();
+    await act(async () => response.resolve(json([])));
+    await screen.findByText('当前账号没有此管理页面的读取资格。'); expect(moduleLoads).not.toHaveBeenCalled();
+  });
   it.each([['/admin/spaces', '知识空间页面'], ['/admin/spaces/7', '空间详情页面'], ['/admin/documents/9', '文档管理页面']])('直接打开新管理路由 %s 使用现有会话', async (path, title) => {
     const h = backend([json(['space:create'])]); show(h.session, path);
     expect(await screen.findByText(title)).toBeTruthy(); expect(h.session.getSnapshot().phase).toBe('ready');

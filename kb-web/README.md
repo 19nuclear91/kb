@@ -2,8 +2,10 @@
 
 独立 React/TypeScript/Vite/Ant Design 工程，要求 Node.js 24+、npm 11+。依赖版本与锁文件一并提交，构建不属于 Maven reactor。
 
+从仓库根目录执行：
+
 ```powershell
-Set-Location D:\tmp\kb\kb-web
+Set-Location .\kb-web
 npm ci
 npm run typecheck
 npm test -- --run
@@ -11,6 +13,27 @@ npm run build
 ```
 
 单元测试仅使用内存替身和模拟 DOM，不启动应用、浏览器、数据库、Redis、MinIO 或模型服务，不测试说明文档内容。
+
+## 构建与包体分析
+
+包体分析使用当前源码生产构建；`dist` 只保留发布资产，manifest 和有效模块归属清单保存在本地 `.bundle-analysis`。首轮拆分的正式基线与候选报告已归档；日常检查在本目录执行以下命令，输出到本地目录：
+
+```powershell
+npm run bundle:test
+npm run build
+npm run bundle:report -- --check-isolation --out .bundle-analysis/current-report.json
+```
+
+与首轮拆分前基线比较时，须使用基线记录的锁文件、Node/npm、production 模式及公开构建开关重新构建，再运行：
+
+```powershell
+npm run bundle:report -- --baseline ../openspec/changes/archive/2026-11-06-frontend-route-lazy-loading/bundle-baseline.json --check-isolation --check-reduction --out .bundle-analysis/comparison-report.json
+```
+
+报告按 HTML 入口及递归静态依赖统计冷启动集合，动态页面只计入对应路由；共享 JS/CSS 按最终文件名去重，每个文件分别以 gzip level 9、Brotli quality 11 压缩后求和。路由报告包含累计及增量字节、文件数、有效项目模块归属和构建身份；旧单包的全部路由计入入口。缺少资源/模块映射或基线条件不一致会失败。入口、登录和文档列表累计 gzip 必须下降，详情及其他路由同时记录差异。公开开关仅记录白名单，报告不收集私有环境变量。
+
+首轮优化后，入口/登录、文档列表、文档详情累计 gzip 分别为 223,276、354,522、383,591 字节，相比原单包下降 45.50%、13.47%、6.37%。完整 26 个场景及测试范围见[归档实施记录](../openspec/changes/archive/2026-11-06-frontend-route-lazy-loading/verification.md)和[核验报告](../openspec/changes/archive/2026-11-06-frontend-route-lazy-loading/verification-review.md)。后续优化应在修改前为对应变更建立新基线，保留本次归档数据；依赖或运行环境变化后不能直接沿用历史比较条件。
+
 企业 SSO 按明确文件名单执行独立单元测试，命令及范围见 [企业 SSO 前端](../docs/enterprise-sso-web.md)。
 
 AI 用量与调用审计入口为 `/admin/ai/usage` 和 `/admin/ai/audits`，分别按 `ai:usage:read`、`ai:audit:read` 放行；页面状态仅保存在内存中。筛选、统计口径、托管与验证名单见 [AI 管理页面](../docs/admin-ai-usage-web.md)。
@@ -18,6 +41,14 @@ AI 用量与调用审计入口为 `/admin/ai/usage` 和 `/admin/ai/audits`，分
 开发配置参考 `.env.example`。需要本机开发时自行运行 `npm run dev`，`/api` 按 `KB_WEB_GATEWAY` 代理到网关；这不是本变更的验证步骤。生产使用同源静态托管，页面路径回退到 index.html，`/api/**` 保留真实 HTTP 响应。
 
 `VITE_CONVERSATION_ENABLED` 为公开构建开关，缺省 false。与 app/AI 的会话配置对齐，不得在 VITE 变量中配置密钥。开启但模型未配置时显示暂不可用。
+
+## 路由加载与恢复
+
+登录、强制改密和 `/auth/sso/result` 随入口直接加载。确认身份并选择业务页面后才下载该页模块，文档列表/详情、账户及管理页面分别加载；菜单显示、悬停和空闲不会主动下载页面。加载状态只占用内容区，导航与退出仍可操作。切页、退出、换号、改密及后台恢复继续清理旧内容并重新核对资格。
+
+页面资源下载失败时显示“页面资源加载失败”，页面自身渲染异常另行提示。可直接离开，也可主动点击“刷新页面”；刷新会丢失未保存输入，并沿用原有身份确认和安全返回规则。不会自动刷新、重试下载或重放上传、删除、审核、改密、生成、SSO 交换和管理写入；已提交操作可能继续在服务端处理，应按原页面规则核对结果。
+
+管理页面只在现有守卫确认入口资格后开始下载，下载成功或代码已缓存不代表当前用户具有管理权限。空间/文档详情仍核对目标资源，AI 用量和调用审计分别授权，运营报表不依赖空间目录。发布时先上传新哈希资产，再原子切换 HTML，保留旧资产供已打开的标签页使用；回退也保留被回退版本的资产。HTML 缓存、真实 404 与保留窗口见[静态托管说明](../docs/user-web-operations.md)。
 
 ## 登录与账户
 

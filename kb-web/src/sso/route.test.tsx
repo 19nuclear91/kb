@@ -5,7 +5,8 @@ import type { SessionState } from '../session';
 const context = vi.hoisted(() => ({ state: {} as SessionState }));
 vi.mock('../SessionProvider', () => ({ useSession: () => ({ state: context.state, session: {} }) }));
 vi.mock('../pages/SsoResultPage', () => ({ SsoResultPage: () => <div>独立结果页探针</div> }));
-vi.mock('../pages/Documents', () => ({ DocumentsPage: () => <div>业务页面探针</div>, DocumentDetailPage: () => <div>业务详情探针</div> }));
+vi.mock('../pages/DocumentsPage', () => ({ DocumentsPage: () => <div>业务页面探针</div> }));
+vi.mock('../pages/DocumentDetailPage', () => ({ DocumentDetailPage: () => <div>业务详情探针</div> }));
 import { AppRoutes } from '../App';
 it.each(['anonymous', 'loading', 'unavailable', 'password', 'ready'] as const)('结果路由先于普通身份门禁：%s', phase => {
   context.state = { phase, me: null, epoch: 0 };

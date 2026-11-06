@@ -5,8 +5,11 @@ import type { SessionState } from './session';
 import { me } from './test/fixtures';
 const context = vi.hoisted(() => ({ state: {} as SessionState, session: { logout: vi.fn(), refresh: vi.fn(), json: vi.fn(), getSnapshot: () => context.state } }));
 vi.mock('./SessionProvider', () => ({ useSession: () => context }));
-vi.mock('./pages/AuthPages', () => ({ LoginPage: () => <div>登录入口</div>, ChangePasswordPage: () => <div>强制改密入口</div>, AccountPage: () => <div>账户入口</div> }));
-vi.mock('./pages/Documents', () => ({ DocumentsPage: () => <div>文档入口</div>, DocumentDetailPage: () => <div>详情入口</div> }));
+vi.mock('./pages/LoginPage', () => ({ LoginPage: () => <div>登录入口</div> }));
+vi.mock('./pages/ChangePasswordPage', () => ({ ChangePasswordPage: () => <div>强制改密入口</div> }));
+vi.mock('./pages/AccountPage', () => ({ AccountPage: () => <div>账户入口</div> }));
+vi.mock('./pages/DocumentsPage', () => ({ DocumentsPage: () => <div>文档入口</div> }));
+vi.mock('./pages/DocumentDetailPage', () => ({ DocumentDetailPage: () => <div>详情入口</div> }));
 vi.mock('./pages/Search', () => ({ SearchPage: () => <div>搜索入口</div> }));
 vi.mock('./pages/Assistant', () => ({ AssistantPage: () => <div>助手入口</div> }));
 vi.mock('./admin/UsersPage', () => ({ UsersPage: () => <div>账号管理入口</div> }));
@@ -17,9 +20,9 @@ function Location() { return <output>{useLocation().pathname}</output>; }
 function From() { return <output>from:{String(useLocation().state?.from ?? '')}</output>; }
 beforeEach(() => { context.state = { phase: 'ready', me, epoch: 1 }; context.session.json.mockResolvedValue([]); });
 function show(path: string) { return render(<MemoryRouter initialEntries={[path]}><AppRoutes /><Location /><From /></MemoryRouter>); }
-it('初始地址默认文档，保留合法详情路由，未知页面明确提示', () => {
-  const view = show('/'); expect(screen.getByText('文档入口')).toBeTruthy(); expect(screen.getByText('/documents')).toBeTruthy(); view.unmount();
-  const detail = show('/documents/9223372036854775807'); expect(screen.getByText('详情入口')).toBeTruthy(); detail.unmount();
+it('初始地址默认文档，保留合法详情路由，未知页面明确提示', async () => {
+  const view = show('/'); expect(await screen.findByText('文档入口')).toBeTruthy(); expect(screen.getByText('/documents')).toBeTruthy(); view.unmount();
+  const detail = show('/documents/9223372036854775807'); expect(await screen.findByText('详情入口')).toBeTruthy(); detail.unmount();
   show('/unknown'); expect(screen.getByRole('heading', { name: '页面不存在' })).toBeTruthy();
 });
 it('刷新确认身份期间遮蔽保护子页面', () => {
@@ -50,7 +53,7 @@ it('普通有效用户无需管理资格即可进入通知页，只读取本人�
     : path === '/api/notifications/unread-count' ? { count: '0', asOf: '2026-10-25T00:00:00Z' }
     : { items: [], hasMore: false, nextCursor: null, asOf: '2026-10-25T00:00:00Z' });
   show('/notifications');
-  expect(screen.getByRole('heading', { name: '站内通知' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: '站内通知' })).toBeTruthy();
   expect(await screen.findByText('暂无可见通知')).toBeTruthy();
   const paths = context.session.json.mock.calls.map(([path]) => String(path));
   expect(paths).toContain('/api/notifications?limit=20'); expect(paths).toContain('/api/notifications/unread-count');

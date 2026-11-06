@@ -11,7 +11,7 @@ import { DocumentPanelPage, DeletionBox, RelocationBox, SecurityBox } from './Do
 import { DocumentOperations } from '../documents/operations';
 import { AclPanel } from './AclPanel';
 import { PrincipalPicker } from './PrincipalPicker';
-import { DocumentDetailPage } from '../pages/Documents';
+import { DocumentDetailPage } from '../pages/DocumentDetailPage';
 import { useAdminResource } from './hooks';
 import { useResourceReceipt } from './spaceUi';
 import type { ReactNode } from 'react';

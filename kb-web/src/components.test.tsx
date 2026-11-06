@@ -10,7 +10,9 @@ import { SafeText, TurnCard } from './components';
 import { FilePreview } from './FileAccess';
 import { CitationDrawer } from './CitationDrawer';
 import { SearchPage } from './pages/Search';
-import { AccountPage, LoginPage, PasswordForm } from './pages/AuthPages';
+import { AccountPage } from './pages/AccountPage';
+import { LoginPage } from './pages/LoginPage';
+import { PasswordForm } from './auth/PasswordForm';
 import { NAV_KEY } from './sso/storage';
 beforeEach(() => {
   context.state = { phase: 'ready', me, epoch: 1 };

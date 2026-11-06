@@ -10,7 +10,8 @@ vi.mock('../SessionProvider', () => ({ useSession: () => context }));
 vi.mock('../admin/access', () => ({ perm: {}, useAdminAccess: () => ({ canManageSpace: () => false, has: () => false }) }));
 vi.mock('../CitationDrawer', () => ({ CitationDrawer: ({ citation }: { citation: Citation | null }) => <div data-testid="citation">{citation ? `${citation.docId}/${citation.versionId}/${citation.chunkId}` : 'closed'}</div> }));
 vi.mock('../FileAccess', () => ({ FilePreview: ({ path }: { path: string | null }) => <div data-testid="preview">{path ?? 'closed'}</div>, DownloadButton: () => <button>下载原件</button> }));
-import { DocumentsPage, DocumentDetailPage } from '../pages/Documents';
+import { DocumentsPage } from '../pages/DocumentsPage';
+import { DocumentDetailPage } from '../pages/DocumentDetailPage';
 import { SearchPage } from '../pages/Search';
 beforeEach(() => { context.session = { post: vi.fn(), json: vi.fn(), getSnapshot: () => context.state, subscribe: () => () => {},
   send: vi.fn().mockImplementation(async (path: string) => path === '/api/documents/query' ? json({ page: 1, size: 20, items: [doc], total: 1 })

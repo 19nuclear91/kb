@@ -9,6 +9,7 @@
 | 范围 | 当前实现 | 说明 |
 | --- | --- | --- |
 | 登录与身份 | 本地登录、强制改密、账号与部门管理、角色与功能权限、外部身份绑定 | 钉钉、企业微信、飞书浏览器 SSO 默认关闭，只登录已有绑定账号，不自动建号。见[身份管理](docs/admin-identity-web.md)、[企业 SSO](docs/enterprise-sso-configuration.md) |
+| 页面加载与恢复 | 按身份和路由加载业务及管理页面，拆分文档列表/详情与登录/账户依赖 | 加载状态和异常局限于页面区域，导航与退出保持可用；失败后可主动刷新，不自动重放写入。见[前端路由加载](kb-web/README.md#路由加载与恢复) |
 | 空间与授权 | 空间创建、归档、授权、批量授予与撤销，文档例外授权 | 空间为授权主单位；主体支持用户、角色和部门树。见[空间与文档管理](docs/admin-space-document-web.md) |
 | 文档生命周期 | 原件上传、多版本、处理状态、失败重试、独立操作资格重核、软删除、搬迁、密级调整 | 新版本上传被拒后暂停并重核，不自动重传；用户端删除与管理端删除分别校验编辑和空间管理资格；搬迁会清空文档例外授权。见[用户端说明](kb-web/README.md)、[文档密级管理](docs/document-security-level.md) |
 | 文档资料 | 标题、人工摘要、空间分类树、全局标签，以及文档列表组合筛选 | 分类属于空间，标签可跨空间使用；资料修改作用于整份文档。见[资料与目录](docs/document-metadata-web.md) |
@@ -278,6 +279,22 @@ try {
 
 [db/verify_paradedb.sql](db/verify_paradedb.sql)、[db/verify_permission.sql](db/verify_permission.sql)、[db/verify_identity_department.sql](db/verify_identity_department.sql) 提供数据库检查脚本，部分依赖开发种子或创建测试数据，使用前阅读脚本并选择测试库。真实迁移、索引行为、权限隔离、并发发布、SSE 转发和供应商兼容性需要在目标环境另行验证；各专项文档保留其具体离线验证范围。
 
+### 前端路由懒加载与包体分析
+
+登录、强制改密和 SSO 结果页随入口直接可用，业务及管理页面在当前身份和路由资格通过后按需加载，不因菜单展示或悬停主动预取。文档列表不再依赖详情专用评论、版本审核与 Office 预览界面，登录和改密不再依赖账户绑定面板。
+
+首轮优化使用同一锁文件、Node/npm、生产模式和公开构建开关比较，累计冷启动 gzip 字节如下；统计包含入口、目标页面及其静态共享依赖，并按文件去重。
+
+| 场景 | 拆分前 | 拆分后 | 降幅 |
+| --- | ---: | ---: | ---: |
+| 入口 / 登录 | 409,707 | 223,276 | 45.50% |
+| 文档列表 | 409,707 | 354,522 | 13.47% |
+| 文档详情 | 409,707 | 383,591 | 6.37% |
+
+在 `kb-web` 目录执行 `npm run bundle:test`、`npm run build` 和 `npm run bundle:report -- --check-isolation --out .bundle-analysis/current-report.json`，可校验报告脚本、生成生产资产并检查依赖隔离。与历史基线比较的完整命令见[前端构建与包体分析](kb-web/README.md#构建与包体分析)；manifest、模块映射和临时报告保存在本地 `.bundle-analysis`，不随 `dist` 发布。
+
+变更已同步主规格并归档，完整包体数据和离线测试证据见[实施记录](openspec/changes/archive/2026-11-06-frontend-route-lazy-loading/verification.md)与[核验报告](openspec/changes/archive/2026-11-06-frontend-route-lazy-loading/verification-review.md)。这些字节数据不代表真实网络首屏耗时；验证未启动前端、真实浏览器或外部组件，也未执行说明文档内容断言测试。
+
 ### 会话路由与文档资格恢复回归
 
 以下定向回归覆盖 dev/prod 会话路由边界、下载与上传独立资格重核、迟到响应隔离，以及空间批量撤销的 300/301 条边界；不会启动监听服务或真实浏览器。`-o` 要求 Maven 依赖已缓存。
@@ -342,7 +359,7 @@ java -jar .\kb-eval\target\kb-eval-0.1.0-SNAPSHOT.jar --help
 - **由 app 单点迁移。** 正式环境只加载 `db/migration`，不加载 V3/V6。升级先核对对应功能的迁移、权限目录和读写协议兼容性；Worker 的 Flyway 保持关闭。
 - **引导首个管理员。** 新的正式库通过 `KB_BOOTSTRAP_ADMIN_USERNAME`、`KB_BOOTSTRAP_ADMIN_PASSWORD` 创建管理员，可配置显示名、字典内密级与部门，首次登录强制改密。存在有效管理员时引导跳过，不重置既有密码或恢复已撤销权限；默认引导密级为 0，管理资格不授予文档阅读权。
 - **隔离管理网络。** 四个业务服务配置独立的 `KB_MANAGEMENT_PORT` 与明确的 `KB_MANAGEMENT_ADDRESS`；管理端点没有应用内认证，需由网络层限制访问。健康探针和指标抓取改用管理端口，不为容器访问便利放宽为通配绑定，见[遥测运维](docs/telemetry-operations.md)。通知适配器使用独立的 `KB_NOTIFIER_*` 端口与地址配置。
-- **部署前端静态产物。** `npm run build` 生成 `kb-web/dist`，托管时页面路由回退到 `index.html`，`/api/**` 保留后端真实状态和 SSE 流。详见[前端运维](docs/user-web-operations.md)。
+- **部署前端静态产物。** `npm run build` 生成 `kb-web/dist`；先上传新哈希资产，再原子切换 HTML，并为已打开的标签页保留旧资产，回退时也保留被回退版本的资产。HTML 禁止缓存或要求重新验证，哈希资产可长期缓存；页面路由回退到 `index.html`，缺失 JS/CSS 返回真实 404，`/api/**` 保留后端真实状态和 SSE 流。详见[前端运维](docs/user-web-operations.md)。
 - **按顺序启用告警。** 先升级提供新指标契约的应用，再部署独立监控并启用规则；回退旧应用前停用依赖新契约的规则，保留通用存活监控，不能把缺失指标当作零或恢复。监控阈值、网络、凭据和持久数据按[监控部署说明](docs/monitoring-deployment-operations.md)管理。
 
 ## 目录导航

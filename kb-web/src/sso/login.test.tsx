@@ -11,7 +11,8 @@ vi.mock('../SessionProvider', () => ({ useSession: () => ({ session: context.ses
 vi.mock('./useSso', () => ({ useSso: () => ({ flow: context.flow, state: context.state }) }));
 vi.mock('./EnterpriseLogin', () => ({ EnterpriseLogin: ({ busy, onStart }: { busy: boolean; onStart(platform: string): void }) => <button disabled={busy} onClick={() => onStart('feishu')}>飞书登录</button> }));
 vi.mock('./BindingPanel', () => ({ BindingPanel: () => <div>绑定面板替身</div> }));
-import { ChangePasswordPage, LoginPage } from '../pages/AuthPages';
+import { ChangePasswordPage } from '../pages/ChangePasswordPage';
+import { LoginPage } from '../pages/LoginPage';
 function Location() { return <output>{useLocation().pathname}</output>; }
 function show(from?: string) { return render(<MemoryRouter initialEntries={[{ pathname: '/login', state: { from } }]}><LoginPage /><Location /></MemoryRouter>); }
 beforeEach(() => {
