@@ -1,18 +1,21 @@
 package com.zhishiku.kb.worker.embedding;
 
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingFailure;
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingSettings;
+import com.zhishiku.kb.worker.embedding.execution.WorkerExecution;
+import com.zhishiku.kb.worker.embedding.execution.WorkerExecutions;
 import com.zhishiku.kb.worker.embedding.model.RebuildBatch;
 import com.zhishiku.kb.worker.embedding.service.EmbeddingBatchProcessor;
 import com.zhishiku.kb.worker.embedding.service.EmbeddingLeaseService;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Component
 public class EmbeddingRebuildRunner {
@@ -20,53 +23,87 @@ public class EmbeddingRebuildRunner {
     private final UUID owner = UUID.randomUUID();
     private final EmbeddingLeaseService leases;
     private final EmbeddingBatchProcessor processor;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
-        var thread = new Thread(r, "embedding-rebuild");
-        thread.setDaemon(true);
-        return thread;
-    });
-    private RebuildBatch current;
-    private Future<?> future;
-    private boolean lost;
+    private final WorkerExecutions executions;
+    private final AtomicReference<Active> current = new AtomicReference<>();
+    private boolean ownsExecutions;
+    private volatile boolean closed;
+
+    private record Active(RebuildBatch batch, WorkerExecution execution) {
+    }
 
     public EmbeddingRebuildRunner(EmbeddingLeaseService leases, EmbeddingBatchProcessor processor) {
+        this(leases, processor, new WorkerExecutions(WorkerEmbeddingSettings.defaults()));
+        ownsExecutions = true;
+    }
+
+    @Autowired
+    public EmbeddingRebuildRunner(EmbeddingLeaseService leases, EmbeddingBatchProcessor processor,
+                                   WorkerExecutions executions) {
         this.leases = leases;
         this.processor = processor;
+        this.executions = executions;
     }
 
     @Scheduled(fixedDelay = 2000)
-    public synchronized void tick() {
-        try {
-            if (future != null) {
-                if (!future.isDone()) {
-                    if (!lost && !leases.renew(current)) lost = true;
+    public WorkerExecutions.Ticket tick() {
+        if (closed) {
+            return null;
+        }
+        return executions.submit(WorkerExecution.Purpose.REBUILD, execution -> {
+            Active active = null;
+            try {
+                if (closed || execution.stopped()) {
                     return;
                 }
-                try {
-                    future.get();
-                } finally {
-                    future = null;
-                    current = null;
-                    lost = false;
+                var batch = leases.claim(owner);
+                if (batch == null) {
+                    return;
+                }
+                if (batch.items().isEmpty()) {
+                    leases.release(batch);
+                    return;
+                }
+                active = new Active(batch, execution);
+                current.set(active);
+                if (closed) {
+                    execution.stop(WorkerEmbeddingFailure.Reason.SHUTDOWN);
+                }
+                processor.process(batch, execution);
+            } catch (RuntimeException error) {
+                log.warn("embedding rebuild executor unavailable");
+            } finally {
+                if (active != null) {
+                    current.compareAndSet(active, null);
                 }
             }
-            var batch = leases.claim(owner);
-            if (batch == null) return;
-            if (batch.items().isEmpty()) {
-                leases.release(batch);
-                return;
+        });
+    }
+
+    @Scheduled(fixedDelay = 2000)
+    public void heartbeat() {
+        Active active = current.get();
+        if (active == null || active.execution().stopped()) {
+            return;
+        }
+        try {
+            if (!leases.renew(active.batch())) {
+                active.execution().stop(WorkerEmbeddingFailure.Reason.LEASE_LOST);
             }
-            current = batch;
-            future = executor.submit(() -> processor.process(batch));
-        } catch (Exception error) {
-            if (error instanceof InterruptedException) Thread.currentThread().interrupt();
-            // 不记录异常对象，避免 JDBC 参数或远端响应体中的正文进入日志。
-            log.warn("embedding rebuild executor unavailable");
+        } catch (RuntimeException error) {
+            active.execution().stop(WorkerEmbeddingFailure.Reason.LEASE_UNKNOWN);
+            log.warn("embedding rebuild lease status unavailable");
         }
     }
 
     @PreDestroy
     public void close() {
-        executor.shutdownNow();
+        closed = true;
+        Active active = current.get();
+        if (active != null) {
+            active.execution().stop(WorkerEmbeddingFailure.Reason.SHUTDOWN);
+        }
+        if (ownsExecutions) {
+            executions.close();
+        }
     }
 }

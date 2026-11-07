@@ -1,5 +1,6 @@
 package com.zhishiku.kb.worker.embedding.service;
 
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingFailure;
 import com.zhishiku.kb.worker.embedding.model.RebuildContentChangedException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.web.client.ResourceAccessException;
@@ -19,7 +20,12 @@ public final class EmbeddingRetryPolicy {
     }
 
     public static Failure classify(RuntimeException error) {
-        if (error instanceof RebuildContentChangedException) return new Failure("CONTENT_CHANGED", false);
+        if (error instanceof WorkerEmbeddingFailure failure) {
+            return new Failure(failure.rebuildCode(), failure.retryable());
+        }
+        if (error instanceof RebuildContentChangedException) {
+            return new Failure("CONTENT_CHANGED", false);
+        }
         if (error instanceof RestClientResponseException response) {
             int status = response.getStatusCode().value();
             return new Failure("MODEL_UNAVAILABLE", status == 429 || status == 408 || status >= 500);

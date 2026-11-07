@@ -18,7 +18,7 @@
 | 文件阅读 | PDF、UTF-8 TXT/Markdown 预览，以及独立授权的原件下载 | 下载拒绝不等于阅读拒绝，重核保持原版本且不自动打开文件；docx/xlsx/pptx 原生只读预览通过可选 ONLYOFFICE 服务提供，默认关闭；doc/xls/ppt 不进入该预览流程。见[Office 预览](docs/office-preview.md) |
 | 混合检索 | BM25、向量召回、SQL 内 RRF 融合、rerank、top-k，支持空间/分类/标签/类型/时间组合筛选 | 权限、密级与发布状态在召回时过滤；支持超时、并发与响应大小限制及降级。见[搜索筛选](docs/search-filtering-api.md)、[检索韧性](docs/search-resilience.md) |
 | 引用与会话 | 固定文档/版本/分块引用，SSE 单轮接口，私有多轮会话与历史、停止生成、额度结算 | 多轮会话及真实模型调用默认关闭；历史回答读取会重新校验来源权限。见[引用溯源](docs/citation-provenance.md)、[会话历史](docs/conversation-history.md)、[模型接入](docs/chat-model-adapter.md) |
-| 解析与索引运维 | 数据库任务队列、领取租约、心跳、退避重试、死信重放、结构化分块、Embedding profile 与重建 | **第三方解析适配器尚未提供**；缺少适配器时不领取普通解析任务。见[解析接入](docs/third-party-document-parsing.md)、[索引运维页面](docs/embedding-parse-operations-web.md) |
+| 解析与索引运维 | 数据库任务队列、领取租约、心跳、退避重试、死信重放、结构化分块、Embedding profile 与重建、有界调用与失租取消 | 解析／重建共享业务槽位，探测独立限时；**第三方解析适配器尚未提供**，缺少时不领取普通解析任务。见[解析接入](docs/third-party-document-parsing.md)、[索引运维页面](docs/embedding-parse-operations-web.md)、[Embedding 调用限界](docs/embedding-rebuild-operations.md) |
 | 审计与运营 | 管理/登录审计查询、AI 用量与调用审计、知识库运营报表、对象存储对账 | AI 用量采集默认关闭，对象存储对账默认只报告、不删除。见[审计页面](docs/admin-audit-web.md)、[AI 用量](docs/admin-ai-usage-web.md)、[运营报表](docs/knowledge-operations-reports.md) |
 | 监控与告警 | Prometheus 指标、可选追踪、可信数据库快照、独立结算监控、29 类聚合告警、三组 Grafana 面板及钉钉投递 | 独立部署，不接入业务事务；通知采用受控模板与管理入口，不逐任务外发。见[遥测运维](docs/telemetry-operations.md)、[监控告警](docs/monitoring-alerts-operations.md)、[生命周期监控](docs/lifecycle-operations.md#监控语义与排障顺序)、[监控部署](docs/monitoring-deployment-operations.md) |
 | 检索评测 | 通过真实搜索 API 采集结果，离线计算质量指标、基线差异及质量门禁 | `kb-eval-collector` 负责采集，`kb-eval` 负责离线评测，均为独立 Java CLI。见[采集说明](docs/retrieval-result-collection.md)、[评测说明](docs/retrieval-evaluation.md) |
@@ -168,6 +168,24 @@ npm run dev
 
 第三方解析需要在 Worker 提供实现 `DocumentParser` 的 Spring Bean，尚无可直接填写 URL 即启用的内置供应商协议。结构化分块、向量生成、任务租约与发布仍由 Worker 处理；死信与恢复见[解析任务运维](docs/parse-task-recovery-operations.md)。
 
+#### Worker Embedding 调用限界
+
+普通解析、向量重建和每个 profile 的就绪探测使用统一的请求／响应限额与严格 JSON 校验。运行限额通过 `kb.worker.embedding` 绑定，不参与 profile 指纹；非法值阻止 Worker 启动。
+
+| 环境变量 | 默认值 | 作用 |
+| --- | ---: | --- |
+| `KB_WORKER_EMBEDDING_MAX_REQUEST_BYTES` | 1048576（1 MiB） | 单次 HTTP 请求实际 JSON UTF-8 字节上限 |
+| `KB_WORKER_EMBEDDING_MAX_RESPONSE_BYTES` | 4194304（4 MiB） | 响应正文字节上限 |
+| `KB_WORKER_EMBEDDING_MAX_JSON_DEPTH` | 64 | 响应 JSON 最大深度 |
+| `KB_WORKER_EMBEDDING_REBUILD_TIMEOUT_SECONDS` | 300 | 单个领取批次的完整重建生成预算 |
+| `KB_WORKER_EMBEDDING_PROBE_TIMEOUT_SECONDS` | 10 | 每个 profile 的独立探测预算 |
+| `KB_TASK_TIMEOUT_SECONDS` | 900 | 原 `kb.worker.task-timeout-seconds`，覆盖普通解析整条流水线 |
+
+- HTTP 子批同时受 profile 的 `batch-size` 与编码字节限制；所有单条输入先预检，任一单条超限则首发前失败。子批共享父截止，全部成功后才交付整份文档或重建批次，保留原数据库原子提交边界。
+- 每实例固定一个解析／重建共享业务槽位、一个独立探测槽位，领取前准入且无业务等待队列。超时、失租或关闭触发取消，底层工作与取消动作实际退出后才释放容量。
+- 网络故障、超时、HTTP 408／429／5xx 使用任务级退避；超限、协议错误和认证拒绝使解析进入死信、重建进入 `BLOCKED`。非 200 响应正文不消费，传输层不自动重试或跟随重定向。
+- `kb.worker.embedding.execution.stops{purpose,reason}` 在首次逻辑停止时即时计数；结合 `.occupied`／`.lingering` 定位仍占用的执行。`calls`／`call.duration` 按完整 Embedding 调用返回计量，具体口径与限额调优见 [Embedding 运维](docs/embedding-rebuild-operations.md)。
+
 ### AI 模型与多轮会话
 
 | 配置 | 生效位置 | 用途 |
@@ -295,6 +313,14 @@ try {
 仓库包含权限、业务状态、Mapper 映射、模块边界、AI 无数据库依赖、响应式链路及前端模拟 DOM 等测试。真实 PostgreSQL 烟测由 `KB_TEST_POSTGRES_URL`、`KB_TEST_POSTGRES_USER`、`KB_TEST_POSTGRES_PASSWORD` 指向专用测试库；未配置 URL 时相关用例跳过，跳过不代表数据库行为已验证。
 
 [db/verify_paradedb.sql](db/verify_paradedb.sql)、[db/verify_permission.sql](db/verify_permission.sql)、[db/verify_identity_department.sql](db/verify_identity_department.sql) 提供数据库检查脚本，部分依赖开发种子或创建测试数据，使用前阅读脚本并选择测试库。真实迁移、索引行为、权限隔离、并发发布、SSE 转发和供应商兼容性需要在目标环境另行验证；各专项文档保留其具体离线验证范围。
+
+### Worker Embedding 调用限界核验
+
+`harden-worker-embedding-calls` 已于 2026-11-07 同步三份主规格并归档，包含 17 条新增、4 条修改要求；任务 **34/34** 完成，核验为 **0 CRITICAL / 0 WARNING / 0 SUGGESTION**。行为契约见 [Worker 调用限界主规格](openspec/specs/worker-embedding-resilience/spec.md)，21 条需求与 76 个场景的代码／测试映射见[归档核验报告](openspec/changes/archive/2026-11-07-harden-worker-embedding-calls/verification.md)。
+
+初次统一离线回归 **55 类 / 241 项**通过（common 22、app 36、Worker 183）；W1 即时停止观测与 W2 三方竞争修复后的影响回归 **20 类 / 103 项**通过，两次均为 0 失败／错误／跳过，结果分别记录、不累加。完整命令与测试白名单见[离线验证记录](docs/embedding-offline-validation.md)，同步及 README 更新沿用这些已完成的执行证据。
+
+三份目标主规格严格校验通过，全库 59 份主规格普通校验通过，含 `admin-web-access` 的既有超长描述提示。离线组件采用内存仓储和 HTTP Session 替身；真实网络终止、数据库锁／事务回滚、供应商计费与部署联调属于报告中明确列出的验证边界。
 
 ### 钉钉员工离职变更核验
 

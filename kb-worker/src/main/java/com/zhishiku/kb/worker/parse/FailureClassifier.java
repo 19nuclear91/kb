@@ -1,5 +1,7 @@
 package com.zhishiku.kb.worker.parse;
 
+import com.zhishiku.kb.common.embedding.EmbeddingProtocolFailure;
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingFailure;
 import org.springframework.dao.DataAccessException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
@@ -19,6 +21,14 @@ public final class FailureClassifier {
     public static final int MAX_SUMMARY_LENGTH = 2000;
 
     public Classification classify(Throwable error) {
+        if (error instanceof WorkerEmbeddingFailure failure) {
+            return new Classification(failure.controlStop() ? null
+                    : failure.retryable() ? FailureClass.RETRYABLE : FailureClass.PERMANENT,
+                    failure.parseCode(), "Worker embedding: " + failure.reason().name(), failure.controlStop());
+        }
+        if (error instanceof EmbeddingProtocolFailure) {
+            return classify(new WorkerEmbeddingFailure(WorkerEmbeddingFailure.Reason.INVALID_RESPONSE));
+        }
         if (error == null) {
             return new Classification(FailureClass.UNKNOWN, "UNKNOWN_ERROR",
                     "Unknown failure", false);

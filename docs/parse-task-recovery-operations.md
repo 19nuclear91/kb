@@ -10,6 +10,23 @@ Worker 使用 PostgreSQL 任务表作为持久队列。`pending` 任务只有在
 用户可以在拥有文档 `edit` 权限时调用 `POST /api/documents/{documentId}/retry`。该操作关闭当前未解决死信、递增
 `execution_generation`、保留历史并创建新的待执行周期。
 
+### Embedding 失败与人工恢复
+
+本次调用限界的离线验证命令、241 项统一回归结果及证据边界见 `docs/embedding-offline-validation.md` 的 2026-11-07 记录；普通解析需求到实现的对照见 `docs/embedding-openspec-verification.md` 同日章节。
+
+模型故障使用 `EMBEDDING_<原因>` 和固定摘要 `Worker embedding: <原因>`：
+
+| 原因 | 恢复动作 |
+| --- | --- |
+| `TIMEOUT`、`NETWORK`、`UPSTREAM_RETRYABLE`（408／429／5xx） | 原任务级有界退避，耗尽后死信 |
+| `REQUEST_LIMIT`、`RESPONSE_LIMIT`、`INVALID_RESPONSE` | 永久错误，立即死信 |
+| `AUTH_REJECTED`（401／403）、`HTTP_REJECTED` | 永久错误，立即死信 |
+| `LEASE_LOST`、`LEASE_UNKNOWN`、`SHUTDOWN` | 停止调用，依原持久资格恢复，不新增模型失败 |
+
+流水线默认 900 秒预算从读取原件前开始，解析、切块和全部 Embedding 子批共享剩余时间。超时若原 token／epoch／profile 仍有效，记录一次退避；维护或资格失效后的写回由原事务围栏拒绝。全部子批和校验成功后才交给发布事务，子批成功前缀不发布。
+
+超限或协议故障应先修正运行限额或供应商，再使用文档重试或管理员死信重放接口。原文、历史和执行周期保留；重放可能重复调用尚未提交的 HTTP 子批。无解析器配置或解析器不可用时，领取服务仍返回空列表，不消耗尝试次数。
+
 全局查询需要当前 `parse:deadletter:read`，重放需要 `parse:deadletter:replay`；`ROLE_ADMIN` 名称不隐含资格。`/api/admin/parse/dead-letters` 支持 `status`、`failureClass` 和时间范围筛选。重放调用
 `POST /api/admin/parse/dead-letters/{id}/replay`，请求体提供受限 `reason`，并通过 `X-Request-Id`
 实现幂等。响应只包含任务、版本、分类、尝试次数和脱敏摘要。
@@ -23,6 +40,18 @@ Worker 使用 PostgreSQL 任务表作为持久队列。`pending` 任务只有在
 部署兼容性说明：应排空旧版 app 的重放写入口后统一更新，避免旧实例绕过请求键锁。回退旧 app 会失去新校验及绑定保证，现有处置事实仍保留。本次仅通过 Mock 进程内单元测试验证输入、分支、调用顺序及 JSON 摘要，不包含数据库运行、实际互斥或事务回滚验证，也不交付烟测脚本。
 
 ## 发布事务持有的文档行锁
+
+### 领取容量与取消
+
+普通解析与重建共享单实例一个业务执行槽位，先获得槽位再领取；一次最多领取一份立即执行的解析任务，较大的领取数量配置不会形成等待队列。探测使用独立槽位。未准入不消耗 attempts，领取结果未知时依原数据库租约恢复。
+
+本地流水线超时与数据库租约失效分别判断：真实超时若仍持有原执行资格，可以记录一次退避；维护或失租后的旧写回仍受 token／epoch 围栏拒绝。取消不会自行补偿尝试次数，维护补偿沿用原持久事务。
+
+`kb.worker.embedding.execution.occupied` 与 `.lingering` 按固定 `channel=BUSINESS/PROBE` 观察本地占用。任务逻辑结束后，忽略中断的工作或阻塞的关闭动作仍占用槽位，后续调度不领取替代任务；全部相关工作退出后才释放一次。两项本地指标与数据库队列快照是不同口径。
+
+`kb.worker.embedding.execution.stops{purpose="PARSE",reason="TIMEOUT|..."}` 在本次执行选定停止原因时立即计数一次，即使底层调用或关闭尚未返回也可观察。完整调用的 `calls`／`call.duration` 仍在调用返回时计量；排查卡住的执行应结合 stops 和占用指标。
+
+### 发布行锁
 
 `ChunkPublisher.publish` 在写分块之前取**文档行锁**——`SELECT 1 FROM kb_document WHERE id = ? FOR UPDATE`，锁的范围是
 `kb_document` 里该文档的那一行，持有时间从取锁一直到发布事务提交，覆盖 `kb_doc_chunk` 的整批 DELETE/INSERT。

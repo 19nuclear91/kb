@@ -3,6 +3,7 @@ package com.zhishiku.kb.worker.config;
 import com.zhishiku.kb.common.config.ProductionSettings;
 import com.zhishiku.kb.common.config.ProductionSettingsCollector;
 import com.zhishiku.kb.worker.embedding.EmbeddingEnvironmentValidator;
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingSettings;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.env.EnvironmentPostProcessor;
 import org.springframework.core.Ordered;
@@ -18,6 +19,7 @@ import java.util.HashSet;
 public class StartupEnvironmentCheck implements EnvironmentPostProcessor, Ordered {
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+        WorkerEmbeddingSettings.from(environment);
         EmbeddingEnvironmentValidator.validate(environment);
         var profiles = new HashSet<>(Arrays.asList(environment.getActiveProfiles().length == 0
                 ? environment.getDefaultProfiles() : environment.getActiveProfiles()));

@@ -1,5 +1,90 @@
 # Embedding 离线验证记录
 
+## 2026-11-07 Worker 核验 W1／W2 修复回归
+
+变更：`harden-worker-embedding-calls`。2026-11-07 12:34:55（Asia/Shanghai）完成，Maven `BUILD SUCCESS`。
+环境沿用 Windows 11 amd64、PowerShell 7、Maven 3.9.9、Eclipse Adoptium JDK 21.0.7；使用本机 Maven 缓存和 `-o`。
+
+实际命令（工作目录 `D:\WorkProject\kb`）：
+
+```powershell
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$tests = @(
+'WorkerExecutionRaceTest','WorkerExecutionTest','WorkerExecutionsTest','WorkerCancellationTest','WorkerEmbeddingMetricsTest','WorkerEmbeddingPathsTest','WorkerEmbeddingTransportDeadlineTest','WorkerEmbeddingTransportTest','WorkerEmbeddingWiringTest',
+'EmbeddingProbeExecutionTest','EmbeddingReadinessSchedulerTest','EmbeddingRebuildRunnerTest','EmbeddingRebuildBudgetTest','EmbeddingRetryTest',
+'ParseTaskAdmissionTest','ParseTaskRunnerRecoveryTest','ParseTaskTracingTest','TaskContextPropagationTest','ParsePipelineBudgetTest','ParseEmbeddingRecoveryTest'
+) -join ','
+mvn -o -pl kb-worker -am test "-Dtest=$tests" '-DreuseForks=false' '-Dsurefire.failIfNoSpecifiedTests=false' '-Dstyle.color=never' 2>&1 | Tee-Object -FilePath 'C:\Users\Burning\AppData\Local\Temp\opencode\harden-worker-embedding-fixes-20261107.log'
+exit $LASTEXITCODE
+```
+
+| 模块 | 测试类 | 执行／通过 | 失败 | 错误 | 跳过 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| kb-worker | 20 | 103 | 0 | 0 | 0 |
+
+实际测试类及执行数（全部通过，包前缀为 `com.zhishiku.kb`）：
+
+| 包 | 测试类（括号为执行数） |
+| --- | --- |
+| `worker.embedding.execution` | WorkerExecutionRaceTest (4)、WorkerExecutionTest (5)、WorkerExecutionsTest (2)、WorkerCancellationTest (2)、WorkerEmbeddingMetricsTest (6)、WorkerEmbeddingPathsTest (4)、WorkerEmbeddingTransportDeadlineTest (3)、WorkerEmbeddingTransportTest (23)、WorkerEmbeddingWiringTest (2) |
+| `worker.embedding` | EmbeddingProbeExecutionTest (4)、EmbeddingReadinessSchedulerTest (1)、EmbeddingRebuildRunnerTest (4)、EmbeddingRebuildBudgetTest (3)、EmbeddingRetryTest (15) |
+| `worker.parse` | ParseTaskAdmissionTest (2)、ParseTaskRunnerRecoveryTest (4)、ParseTaskTracingTest (4)、TaskContextPropagationTest (1)、ParsePipelineBudgetTest (2)、ParseEmbeddingRecoveryTest (12) |
+
+- W1：三个用途均验证 `execution.stops{purpose,reason}` 在调用及取消动作退出前计数一次；重复停止与实际退出不重计，另一通道可独立停止；空领取和成功交接不计停止。完整调用的 `calls`／`call.duration` 仍按返回计量。
+- W2：真实协调器、受控时钟及三方屏障触发成功／父截止／失租竞争；32 轮无偏序竞争加三种确定胜者，核对唯一提交／重试／放弃、旧计时器隔离、占用保留及恰好一次释放。32 轮循环属于一个 JUnit 用例，连同三个参数化用例共计 4 项。
+- 103 项取本次单份日志的 20 条测试类结果；此前 15／19 项定向回归及下文 241 项统一回归各自保留，不累加。`test` 生命周期完成 common／Worker 编译检查，common 本次没有匹配的测试；白名单外用例不计通过或 skipped。追踪回归继续使用 `reuseForks=false`。
+
+本轮使用内存指标注册表、仓储／HTTP Session 替身和执行屏障，没有启动外部组件、监听服务或前后端应用，也没有运行文档内容／标题／关键词／存在性断言测试。运维说明由人工核对，真实网络和数据库行为的边界沿用下文记录。
+
+`openspec validate harden-worker-embedding-calls --strict` 与 `git diff --check` 通过。任务 9.1–9.3 完成，累计 34/34；W1／W2 关闭，核验报告见 `openspec/changes/archive/2026-11-07-harden-worker-embedding-calls/verification.md`。
+
+## 2026-11-07 Worker 调用限界统一回归
+
+变更：`harden-worker-embedding-calls`。2026-11-07 10:53:14（Asia/Shanghai）完成，Maven `BUILD SUCCESS`。
+环境为 Windows 11 amd64、PowerShell 7、Maven 3.9.9、Eclipse Adoptium JDK 21.0.7；使用本机 Maven 缓存和 `-o`，没有新增依赖。
+
+本次实际命令（工作目录 `D:\WorkProject\kb`）：
+
+```powershell
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$tests = @(
+'EmbeddingBatchPlannerTest','RemoteProfileEmbeddingClientTest','EmbeddingCallBudgetTest','EmbeddingResultTest','EmbeddingRegistryTest','EmbeddingProfileTest','EmbeddingProbeTest',
+'WorkerEmbeddingSettingsTest','WorkerEmbeddingFailureTest','WorkerExecutionTest','WorkerExecutionsTest','WorkerCancellationTest','WorkerEmbeddingMetricsTest','WorkerEmbeddingBatchPlannerTest','WorkerEmbeddingResultsTest','WorkerEmbeddingWiringTest','WorkerEmbeddingTransportTest','WorkerEmbeddingTransportDeadlineTest','WorkerEmbeddingPathsTest',
+'DefaultParsePipelineTest','ParsePipelineBudgetTest','ParseTaskAdmissionTest','ParseTaskRunnerRecoveryTest','ParseTaskTracingTest','TaskContextPropagationTest','FailureClassifierTest','ParseEmbeddingRecoveryTest','ParseRecoveryIdentityTest','ParseMaintenanceServiceTest','ParsePublishIdentityTest','ParseTaskClaimServiceTest','ParsePropertiesTest',
+'EmbeddingProfilesPropertiesTest','EmbeddingEnvironmentValidatorTest','EmbeddingSupplierIsolationTest','EmbeddingRebuildRunnerTest','EmbeddingRebuildBudgetTest','EmbeddingBatchGeneratorTest','EmbeddingBatchCommitterTest','EmbeddingLeaseServiceTest','EmbeddingLeaseClockTest','EmbeddingRetryTest','EmbeddingResumeTest','EmbeddingReadinessSchedulerTest','EmbeddingProbeExecutionTest',
+'EmbeddingReadinessServiceTest','EmbeddingInstanceReadinessTest','SearchBudgetTest','SearchHttpTransportTest','QueryConsistencyTest','SearchFallbackTest'
+) -join ','
+mvn -o -pl kb-worker,kb-app -am test "-Dtest=$tests" '-DreuseForks=false' '-Dsurefire.failIfNoSpecifiedTests=false' '-Dstyle.color=never' 2>&1 | Tee-Object -FilePath 'C:\Users\Burning\AppData\Local\Temp\opencode\harden-worker-embedding-calls-final-20261107.log'
+exit $LASTEXITCODE
+```
+
+| 模块 | 测试类 | 执行／通过 | 失败 | 错误 | 跳过 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| kb-common | 7 | 22 | 0 | 0 | 0 |
+| kb-app | 10 | 36 | 0 | 0 | 0 |
+| kb-worker | 38 | 183 | 0 | 0 | 0 |
+| 合计 | 55 | 241 | 0 | 0 | 0 |
+
+`test` 生命周期完成相应 main/test 编译检查。统计取上述单次日志的 55 条测试类结果；51 个选择名称匹配 55 个测试类，同名类按模块分别统计。定向回归和以下历史记录不累加，白名单外未运行的测试不计为通过或 skipped。本轮没有运行前后端联调、外部组件集成测试或文档文本断言测试。
+
+实际测试类及执行数（以下全部通过，包前缀均为 `com.zhishiku.kb`）：
+
+| 包 | 测试类（括号为执行数） |
+| --- | --- |
+| `common.embedding` | EmbeddingBatchPlannerTest (2)、EmbeddingCallBudgetTest (1)、EmbeddingProbeTest (2)、EmbeddingProfileTest (6)、EmbeddingRegistryTest (4)、EmbeddingResultTest (3)、RemoteProfileEmbeddingClientTest (4) |
+| `app.embedding` | EmbeddingInstanceReadinessTest (5)、EmbeddingReadinessSchedulerTest (1)、EmbeddingReadinessServiceTest (1) |
+| `app.search.embedding` | EmbeddingEnvironmentValidatorTest (2)、EmbeddingProfilesPropertiesTest (2)、EmbeddingSupplierIsolationTest (1) |
+| `app.search` | QueryConsistencyTest (4)、SearchBudgetTest (3)、SearchFallbackTest (13)、SearchHttpTransportTest (4) |
+| `worker.embedding` | EmbeddingBatchCommitterTest (6)、EmbeddingBatchGeneratorTest (6)、EmbeddingEnvironmentValidatorTest (2)、EmbeddingLeaseClockTest (2)、EmbeddingLeaseServiceTest (6)、EmbeddingProbeExecutionTest (4)、EmbeddingProfilesPropertiesTest (3)、EmbeddingReadinessSchedulerTest (1)、EmbeddingRebuildBudgetTest (3)、EmbeddingRebuildRunnerTest (4)、EmbeddingResumeTest (1)、EmbeddingRetryTest (15)、EmbeddingSupplierIsolationTest (1) |
+| `worker.embedding.execution` | WorkerCancellationTest (2)、WorkerEmbeddingBatchPlannerTest (3)、WorkerEmbeddingFailureTest (13)、WorkerEmbeddingMetricsTest (2)、WorkerEmbeddingPathsTest (4)、WorkerEmbeddingResultsTest (3)、WorkerEmbeddingSettingsTest (11)、WorkerEmbeddingTransportDeadlineTest (3)、WorkerEmbeddingTransportTest (23)、WorkerEmbeddingWiringTest (2)、WorkerExecutionsTest (2)、WorkerExecutionTest (5) |
+| `worker.parse` | DefaultParsePipelineTest (4)、FailureClassifierTest (3)、ParseEmbeddingRecoveryTest (12)、ParseMaintenanceServiceTest (4)、ParsePipelineBudgetTest (2)、ParsePropertiesTest (3)、ParsePublishIdentityTest (6)、ParseRecoveryIdentityTest (4)、ParseTaskAdmissionTest (2)、ParseTaskClaimServiceTest (7)、ParseTaskRunnerRecoveryTest (4)、ParseTaskTracingTest (4)、TaskContextPropagationTest (1) |
+
+开发中的测试夹具编译／Mockito 问题均已修正；追踪测试曾在共用 JVM 时出现 MDC 初始化干扰，因此本次明确使用 `reuseForks=false`，保留原断言。最终回归没有失败。日志中的 Byte Buddy 动态 agent、commons-logging 和既有泛型编译提示不影响此次结果。
+
+组件链路使用真实 Runner、流水线、分批器、预算、JSON 编码／解析和 BodyHandler；HTTP Session、数据库仓储及原件使用内存替身。没有启动数据库、Redis、MinIO、Docker、HTTP 监听服务、供应商或完整应用。JDK 重试策略仅验证早期初始化属性及装配；真实网络重放、连接终止、数据库锁互斥／事务回滚、进程崩溃和供应商计费均未验证。需求证据对照见 `docs/embedding-openspec-verification.md` 的 2026-11-07 章节。
+
+最终执行 `openspec validate harden-worker-embedding-calls --strict` 与 `git diff --check` 均成功；后者只有仓库换行转换提示，无空白错误。已人工对照默认配置、三条预算入口、共享／独立通道、故障映射、探测轮次和运维说明。
+
 ## 2026-10-07 W3-W5 四场景补测回归
 
 本轮仅修改测试、白名单和验证/任务记录，不修改生产代码、依赖或迁移。新增 15 个参数化用例：维护期既有文档上传 4 例、不同请求/目标竞争

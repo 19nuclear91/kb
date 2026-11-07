@@ -12,15 +12,22 @@ public final class RemoteProfileEmbeddingClient implements ProfileEmbeddingClien
     private final EmbeddingProfileDefinition definition;
     private final EmbeddingRole role;
     private final RemoteEmbeddingTransport transport;
+    private final EmbeddingBatchPlanner planner;
 
     public RemoteProfileEmbeddingClient(EmbeddingProfileDefinition definition, EmbeddingRole role,
-                                        RemoteEmbeddingTransport transport) {
+                                         RemoteEmbeddingTransport transport) {
+        this(definition, role, transport, EmbeddingBatchPlanner.byCount());
+    }
+
+    public RemoteProfileEmbeddingClient(EmbeddingProfileDefinition definition, EmbeddingRole role,
+                                        RemoteEmbeddingTransport transport, EmbeddingBatchPlanner planner) {
         if (!"remote".equals(definition.profile().provider())) {
             throw new IllegalArgumentException("remote embedding requires remote provider");
         }
         this.definition = definition;
         this.role = Objects.requireNonNull(role, "role");
         this.transport = Objects.requireNonNull(transport, "transport");
+        this.planner = Objects.requireNonNull(planner, "planner");
     }
 
     @Override
@@ -48,9 +55,23 @@ public final class RemoteProfileEmbeddingClient implements ProfileEmbeddingClien
 
     private EmbeddingResult embedInternal(List<String> texts, CallBudget budget) {
         List<String> inputs = definition.transform(role, texts);
+        List<Integer> ends = List.copyOf(planner.plan(definition, inputs, budget));
+        int previous = 0;
+        for (int end : ends) {
+            if (end <= previous || end > inputs.size() || end - previous > definition.connection().batchSize()) {
+                throw new IllegalArgumentException("invalid embedding batch plan");
+            }
+            previous = end;
+        }
+        if (previous != inputs.size()) {
+            throw new IllegalArgumentException("incomplete embedding batch plan");
+        }
         List<float[]> vectors = new ArrayList<>(inputs.size());
-        for (int start = 0; start < inputs.size(); ) {
-            int end = start + Math.min(definition.connection().batchSize(), inputs.size() - start);
+        int start = 0;
+        for (int end : ends) {
+            if (budget != null) {
+                budget.check();
+            }
             Map<String, Object> body = Map.of("model", profile().model(),
                     "input", inputs.subList(start, end), "dimensions", profile().dimension());
             Map<String, Object> response = budget == null ? transport.post(body) : transport.post(body, budget);

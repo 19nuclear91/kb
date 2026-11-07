@@ -44,6 +44,10 @@ kb:
   90000，必须为正且间隔短于有效期。探测仅发送固定合成文本；记录绑定实例启动
   UUID、角色、指纹和协议版本。只有两侧均有新鲜成功记录才算目标就绪，探测不在数据库事务内运行。
 
+Worker 每个 profile 默认有独立 10 秒预算，发送固定 `embedding readiness probe`，仍应用该 profile 的 document 转换。按 profile ID 顺序逐项探测，每轮完成后等待 `interval-ms` 再开始下一轮；调度以 100 ms 的轻量检查推进游标，槽位忙时直接跳过，不创建待执行队列。每个 profile 的预算从本次实际执行开始，业务处理不占用探测槽位。
+
+只有截止前完成校验并成功交接的探测才写 ready。到期后返回的合法向量只会得到本次不就绪结果，不能覆盖为成功；结果最多保存一次，保存失败不会重写或延长旧记录。实际网络或取消动作仍在运行时，`channel=PROBE` 的 occupied／lingering 保持占用，后续 profile 等待实际退出；未刷新记录按原有效期自然失效。关闭后停止新探测。
+
 PowerShell 中仅设置配置文件位置，密钥由部署环境注入，不将其写进命令历史：
 
 ```powershell
@@ -52,6 +56,48 @@ $env:SPRING_CONFIG_ADDITIONAL_LOCATION = 'file:D:/kb-config/embedding.yml'
 ```
 
 ## 首次初始化
+
+### Worker 调用资源限额
+
+Worker 的载荷和执行限额使用独立的 `kb.worker.embedding` 配置，默认值如下。这些参数不参与 profile 指纹，调整时不重标已有向量；超出校验范围、零、负数、小数或错误类型会阻止启动。
+
+| 配置后缀 | 环境变量 | 默认值 | 允许范围 |
+| --- | --- | ---: | --- |
+| `max-request-bytes` | `KB_WORKER_EMBEDDING_MAX_REQUEST_BYTES` | 1048576 | 1–16777216 字节 |
+| `max-response-bytes` | `KB_WORKER_EMBEDDING_MAX_RESPONSE_BYTES` | 4194304 | 1–67108864 字节 |
+| `max-json-depth` | `KB_WORKER_EMBEDDING_MAX_JSON_DEPTH` | 64 | 1–128 层 |
+| `rebuild-generation-timeout-seconds` | `KB_WORKER_EMBEDDING_REBUILD_TIMEOUT_SECONDS` | 300 | 1–3600 秒 |
+| `probe-timeout-seconds` | `KB_WORKER_EMBEDDING_PROBE_TIMEOUT_SECONDS` | 10 | 1–60 秒 |
+
+普通解析沿用 `kb.worker.task-timeout-seconds` / `KB_TASK_TIMEOUT_SECONDS`，默认 900 秒。各 HTTP 子批还受 profile 的 `connection.timeout-seconds` 和所属执行剩余时间约束；条数上限仍来自 `connection.batch-size`。初始值应按供应商实际延迟和响应分布校准，调用参数不用于证明模型权重或向量语义。
+
+### HTTP 子批与数据库批次
+
+发送前按 `connection.batch-size` 与实际 JSON 字节双限制拆批。例如条数上限 16，但字节预算只能容纳前 10 条，则顺序发送 10 条和余下 6 条；后一个子批使用同一执行剩余时间。编码预算包含文档前缀、UTF-8、转义和全部协议字段，恰好达到上限允许发送。
+
+所有单条输入先检查可容纳性，任何一条连同协议包络仍超限，会在首次发送前失败并保留原文。响应中的 index 只属于本次 HTTP 子批，系统校验后映射回完整输入位置。
+
+HTTP 子批不是数据库提交点：一份文档或一个重建领取批次的全部子批成功后，才交给原原子提交。后续子批失败时不会发布成功前缀；重试可能重新调用此前成功但未提交的子批，已提交的其他重建批次仍保留。响应超限后不会自动拆小重发。
+
+### HTTP 回收与调用诊断
+
+每个 HTTP 子批使用隔离的 JDK 客户端，禁用重定向、Cookie／用户身份及内部追踪传播；Worker 在最早的环境处理阶段固定 `jdk.httpclient.disableRetryConnect=true`、`jdk.httpclient.enableAllMethodRetry=false`。这些 JDK 属性作用于 Worker 进程内的其他 JDK HTTP 客户端，公共模块不修改它们。每个子批结束后关闭客户端并确认本地终止，再继续下一批；正常调用也会承担客户端回收开销。
+
+非 200 响应在正文订阅入口取消，不消费供应商错误体。成功响应使用实际字节限界及严格 UTF-8 JSON，拒绝压缩编码、重复字段、尾随根值和超深结构。关闭或中断句柄完成不代表客户端已经退出，等待期间仍占用原通道。
+
+`kb.worker.embedding.calls` 与 `kb.worker.embedding.call.duration` 按固定 `purpose=PARSE/REBUILD/PROBE`、`outcome` 记录一次完整 Embedding 调用（包含其全部 HTTP 子批与向量校验），不是每个 HTTP 子批各计一次。结果包括 SUCCESS、TIMEOUT、NETWORK、UPSTREAM_RETRYABLE、REQUEST_LIMIT、RESPONSE_LIMIT、INVALID_RESPONSE、AUTH_REJECTED、HTTP_REJECTED、LEASE_LOST、LEASE_UNKNOWN、SHUTDOWN 和 INTERNAL_ERROR。时长桶为 0.1、1、10、60、300、900 秒；指标不携带 profile、任务、文档或用户身份。
+
+`kb.worker.embedding.execution.stops{purpose="PARSE|REBUILD|PROBE",reason="TIMEOUT|..."}` 在已经开始的执行首次选定停止原因时立即递增，所有标签组合预注册为零。原因取上述有限停止原因，不含 SUCCESS／INTERNAL_ERROR。该计数独立于网络返回和取消排空线程：调用或关闭动作仍阻塞时，已能同时看到停止原因与 occupied／lingering；重复超时、失租、关闭及最终退出都不重复计数。空领取和成功交接不计为停止。
+
+stops 表达本地执行停止，calls／call.duration 表达完整 Embedding 调用的返回结果和耗时；二者不直接相加。解析还可能在 Embedding 返回后、整条流水线交接前超时，此时一次调用成功与执行 TIMEOUT 可以同时成立。持久恢复动作仍按任务资格与既有失败分类决定。
+
+离线回归以真实 BodyHandler、内存响应流和受控客户端验证正文需求、编码、取消与终止等待；启动策略检查验证初始化顺序和 JDK 属性。它们没有执行真实网络重试或连接终止验收，也不代表真实供应商停止计算或计费。
+
+### 初始化执行
+
+Worker 每实例有一个普通解析／重建共用业务槽位，以及一个独立探测槽位。没有业务槽位时不领取任务，不增加尝试次数；HTTP 子批顺序执行。生成已超时、失租或取消，不等于底层网络及关闭动作已经退出，槽位一直保留到相关工作实际结束。
+
+`kb.worker.embedding.execution.occupied{channel="BUSINESS|PROBE"}` 表示实际占用，`kb.worker.embedding.execution.lingering` 表示生成逻辑已终结但尚未释放的占用，空闲时均为零。生成成功后仍在提交的短窗口也可能计入 lingering；它不是数据库失败计数。持续 lingering 应结合线程与依赖状态排查，不能靠增加新线程或重复提交来证明资源已恢复。取消和截止调度独立运行，业务通道的关闭阻塞不会占用探测通道的取消线程。
 
 由新 kb-app 执行 V15 迁移后，控制行为 `UNINITIALIZED`、epoch 为 0，旧分块的 `embedding_profile_id` 保持 NULL。app
 在迁移完成后只追加登记 profile；ID 指纹冲突或存储维度不匹配时拒绝启动。Worker 必须在 app 完成登记后启动，仅校验既有
@@ -122,6 +168,8 @@ active 身份时也重新按该身份与探测有效期判断。
 
 ## 验证范围
 
+2026-11-07 的 Worker 调用限界实现与三路径组件回归见 `docs/embedding-offline-validation.md` 和 `docs/embedding-openspec-verification.md` 同日章节；本次统一白名单为 241 项全部通过，结果不与历史验证数量累加。
+
 本次仅执行无外部服务的单元测试、编译和静态检查，不启动数据库、Redis、对象存储、Docker 或真实模型，不执行部署与迁移。HTTP
 使用进程内传输层 Stub，控制器使用无监听服务的测试客户端。真实事务回滚、锁互斥、崩溃恢复及检索效果尚未验证，不能将单测通过作为生产验证完成。
 
@@ -139,9 +187,13 @@ token。配置和时钟仓储 Stub 已覆盖到期、续租、退避、接管及
 
 ## 断点续建与故障预算
 
-独立执行线程处理模型调用，调度线程每 2 秒轮询并续租；旧执行失去资格后不再续租或写回，不与普通解析共用失败预算。模型
+重建通过共享业务通道处理模型调用，独立调度每 2 秒尝试领取及续租；旧执行失去资格后不再续租或写回，不与普通解析共用失败预算。模型
 429、408、5xx、网络超时和数据库临时错误按 30、60、120 秒指数退避，最多 900 秒；每个 item 的预算由 `max-attempts`
 控制。非法响应、永久故障或预算耗尽进入 BLOCKED，保存 REBUILDING 恢复阶段；维持 BM25 和普通解析等待，不提供即时回滚。
+
+生成阶段在读取分块前启动默认 300 秒单调截止，读取、摘要核对、编码、所有子批和向量校验都计入其中；续租成功不延长这个截止。全部生成完成后原子交给提交阶段，关闭生成计时器；提交仍在原短事务中核对 run/item token、epoch、目标 profile 和当前正文。生成超时但资格仍有效时按原退避处理，失租或续租结果未知则停止输出并依持久租约恢复。
+
+公开接口继续使用粗粒度错误码。`REQUEST_LIMIT`、`RESPONSE_LIMIT`、`INVALID_RESPONSE` 对应 `INVALID_RESPONSE` 并立即 BLOCKED；`AUTH_REJECTED`、`HTTP_REJECTED` 对应 `MODEL_UNAVAILABLE` 并立即 BLOCKED。`TIMEOUT`、`NETWORK`、`UPSTREAM_RETRYABLE` 也对应 `MODEL_UNAVAILABLE`，但允许任务级退避。通过 Worker 固定 reason 日志和调用指标区分这些分支，供应商正文不进入诊断。
 
 人工恢复推进 epoch 和独立 token，仅对 FAILED/RUNNING/PENDING 项重置本轮 attempts，保留
 total_attempts、错误历史、正文摘要以及所有成功/跳过记录。成功项不会再次领取或调用模型；远程调用成功但数据库提交前退出的项会重新生成，可能重复计费，不承诺

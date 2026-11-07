@@ -42,15 +42,21 @@ kb:
       otlp-endpoint: ${KB_TELEMETRY_OTLP_ENDPOINT:}
       sampling-probability: ${KB_TELEMETRY_SAMPLING_PROBABILITY:1.0}
   worker:
+    embedding:
+      max-request-bytes: ${KB_WORKER_EMBEDDING_MAX_REQUEST_BYTES:1048576}
+      max-response-bytes: ${KB_WORKER_EMBEDDING_MAX_RESPONSE_BYTES:4194304}
+      max-json-depth: ${KB_WORKER_EMBEDDING_MAX_JSON_DEPTH:64}
+      rebuild-generation-timeout-seconds: ${KB_WORKER_EMBEDDING_REBUILD_TIMEOUT_SECONDS:300}
+      probe-timeout-seconds: ${KB_WORKER_EMBEDDING_PROBE_TIMEOUT_SECONDS:10}
     # 租约时长。必须大于最慢文档的解析耗时。
     # 300 秒是个未经实测的初值——等文档格式分布摸清后按 P99 解析耗时重新定。
     lease-seconds: 300
-    # P0 单线程顺序处理，领多了只会让后面的任务干等着消耗租约
+    # 普通解析与重建共享一个业务槽位；实际领取始终最多一份，不建立等待队列。
     batch-size: 1
     poll-interval-ms: 2000
     # 租约的 1/5，允许连续丢几次心跳仍不失守（约束见 ParseProperties 的构造校验）
     heartbeat-ms: 60000
-    # 单任务硬超时。超时会取消流水线并进入失败重试路径。
+    # 流水线预算。超时请求取消，持有资格时退避；实际工作退出后才释放容量。
     task-timeout-seconds: ${KB_TASK_TIMEOUT_SECONDS:900}
     # 原件内容抽取仅通过第三方 DocumentParser 适配器完成。
     # 未提供适配器时暂停领取解析任务；不配置本地解析引擎。

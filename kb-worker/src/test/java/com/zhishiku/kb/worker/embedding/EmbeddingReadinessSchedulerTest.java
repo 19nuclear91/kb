@@ -9,15 +9,19 @@ import com.zhishiku.kb.common.embedding.EmbeddingRole;
 import com.zhishiku.kb.common.embedding.LocalProfileEmbeddingClient;
 import com.zhishiku.kb.common.embedding.ProfileEmbeddingClient;
 import com.zhishiku.kb.worker.embedding.mapper.EmbeddingReadinessMapper;
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingSettings;
+import com.zhishiku.kb.worker.embedding.execution.WorkerExecutions;
 import com.zhishiku.kb.worker.embedding.service.EmbeddingProfileRegistration;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.inOrder;
@@ -33,19 +37,21 @@ class EmbeddingReadinessSchedulerTest {
         var client = mock(ProfileEmbeddingClient.class);
         when(client.profile()).thenReturn(definition.profile());
         when(client.role()).thenReturn(EmbeddingRole.DOCUMENT);
-        when(client.embed(List.of(EmbeddingProbe.SYNTHETIC_INPUT))).thenAnswer(ignored -> {
+        when(client.embed(eq(List.of(EmbeddingProbe.SYNTHETIC_INPUT)), any())).thenAnswer(ignored -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             return new LocalProfileEmbeddingClient(definition, EmbeddingRole.DOCUMENT).embed(List.of(EmbeddingProbe.SYNTHETIC_INPUT));
         });
         var registry = new EmbeddingClientRegistry(List.of(definition), EmbeddingRole.DOCUMENT, ignored -> client);
         var mapper = mock(EmbeddingReadinessMapper.class);
         when(mapper.save(any())).thenReturn(1);
-        var scheduler = new EmbeddingReadinessScheduler(registry, mapper, mock(EmbeddingProfileRegistration.class),
-                30000, 90000);
-        clearInvocations(client);
-        scheduler.poll();
+        try (var executions = new WorkerExecutions(WorkerEmbeddingSettings.defaults())) {
+            var scheduler = new EmbeddingReadinessScheduler(registry, mapper, mock(EmbeddingProfileRegistration.class),
+                    30000, 90000, executions, WorkerEmbeddingSettings.defaults());
+            clearInvocations(client);
+            scheduler.poll().exited().get(5, TimeUnit.SECONDS);
+        }
         var order = inOrder(client, mapper);
-        order.verify(client).embed(List.of(EmbeddingProbe.SYNTHETIC_INPUT));
+        order.verify(client).embed(eq(List.of(EmbeddingProbe.SYNTHETIC_INPUT)), any());
         order.verify(mapper).save(argThat(row -> row.ready() && row.role() == EmbeddingRole.DOCUMENT));
         order.verify(mapper).deleteExpired();
         assertThat(EmbeddingReadinessScheduler.class.getAnnotation(Transactional.class)).isNull();

@@ -1,5 +1,10 @@
 package com.zhishiku.kb.worker.parse;
 
+import com.zhishiku.kb.common.embedding.CallBudget;
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingFailure;
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingSettings;
+import com.zhishiku.kb.worker.embedding.execution.WorkerExecution;
+import com.zhishiku.kb.worker.embedding.execution.WorkerExecutions;
 import com.zhishiku.kb.worker.parse.mapper.ParseTaskMapper;
 import com.zhishiku.kb.worker.parse.model.ParseTask;
 import com.zhishiku.kb.worker.telemetry.TaskContextPropagation;
@@ -17,15 +22,10 @@ import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.OffsetDateTime;
+import java.time.Duration;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -54,7 +54,9 @@ public class ParseTaskRunner {
     private final ParseTaskRecoveryService recoveryService;
     private final ParseTaskMetrics metrics;
     private final TaskContextPropagation contexts;
-    private final ExecutorService pipelineExecutor;
+    private final WorkerExecutions executions;
+    private boolean ownsExecutions;
+    private volatile boolean closed;
     private TaskTelemetry telemetry = TaskTelemetry.NOOP;
 
     @Autowired
@@ -78,10 +80,9 @@ public class ParseTaskRunner {
      * @param task      当前解析任务
      * @param leaseHeld 当前执行是否仍持有租约的共享标记
      */
-    private record Execution(ParseTask task, AtomicBoolean leaseHeld) {
+    private record Execution(ParseTask task, AtomicBoolean leaseHeld, WorkerExecution budget) {
     }
 
-    @Autowired
     public ParseTaskRunner(ParseTaskMapper mapper, ParsePipeline pipeline,
                            ChunkPublisher publisher, ParseProperties props,
                            TaskFailureAlert failureAlert,
@@ -89,16 +90,14 @@ public class ParseTaskRunner {
                            ParseTaskRecoveryService recoveryService,
                            ParseTaskMetrics metrics, ParseTaskClaimService claims, TaskContextPropagation contexts) {
         this(mapper, pipeline, publisher, props, failureAlert, failureClassifier, recoveryService, metrics, claims,
-                contexts, Executors.newSingleThreadExecutor(r -> {
-                    Thread thread = new Thread(r, "kb-worker-pipeline");
-                    thread.setDaemon(true);
-                    return thread;
-                }));
+                contexts, new WorkerExecutions(WorkerEmbeddingSettings.defaults()));
+        ownsExecutions = true;
     }
 
-    ParseTaskRunner(ParseTaskMapper mapper, ParsePipeline pipeline, ChunkPublisher publisher, ParseProperties props,
+    @Autowired
+    public ParseTaskRunner(ParseTaskMapper mapper, ParsePipeline pipeline, ChunkPublisher publisher, ParseProperties props,
                     TaskFailureAlert failureAlert, FailureClassifier failureClassifier, ParseTaskRecoveryService recoveryService,
-                    ParseTaskMetrics metrics, ParseTaskClaimService claims, TaskContextPropagation contexts, ExecutorService executor) {
+                    ParseTaskMetrics metrics, ParseTaskClaimService claims, TaskContextPropagation contexts, WorkerExecutions executions) {
         this.mapper = mapper;
         this.claims = claims;
         this.pipeline = pipeline;
@@ -109,7 +108,7 @@ public class ParseTaskRunner {
         this.recoveryService = recoveryService;
         this.metrics = metrics;
         this.contexts = contexts;
-        this.pipelineExecutor = executor;
+        this.executions = executions;
         this.owner = buildOwnerId();
         log.info("Worker 实例标识 owner={}", owner);
     }
@@ -134,40 +133,49 @@ public class ParseTaskRunner {
     }
 
     @Scheduled(fixedDelayString = "${kb.worker.poll-interval-ms}")
-    public void poll() {
-        try {
-            List<ParseTask> tasks = claims.claim(owner, props.leaseSeconds(), props.batchSize());
-            if (tasks.isEmpty()) {
-                return;
-            }
-            metrics.claimed(tasks.size());
-            log.debug("领取任务 count={}", tasks.size());
-            for (ParseTask task : tasks) {
-                runOne(task);
-            }
-        } catch (Exception e) {
-            // 轮询循环自身绝不能抛出去——@Scheduled 的 fixedDelay 任务一旦抛异常，
-            // 后续调度仍会继续，但这里捕获是为了留下日志，
-            // 否则数据库短暂不可用会表现为"Worker 静默不干活"。
-            log.error("轮询任务失败，下个周期重试", e);
+    public WorkerExecutions.Ticket poll() {
+        if (closed) {
+            return null;
         }
+        return executions.submit(WorkerExecution.Purpose.PARSE, budget -> {
+            try {
+                if (closed || budget.stopped()) {
+                    return;
+                }
+                List<ParseTask> tasks = claims.claim(owner, props.leaseSeconds(), 1);
+                if (tasks.isEmpty()) {
+                    return;
+                }
+                if (tasks.size() != 1) {
+                    throw new IllegalStateException("parse claim exceeds execution capacity");
+                }
+                metrics.claimed(1);
+                runOne(tasks.getFirst(), budget);
+            } catch (Exception e) {
+                log.error("轮询任务失败，下个周期重试");
+            }
+        });
     }
 
-    private void runOne(ParseTask task) {
+    private void runOne(ParseTask task, WorkerExecution budget) {
         try (var span = telemetry.start(task)) {
-            runOne(task, span);
+            runOne(task, span, budget);
         }
     }
 
-    private void runOne(ParseTask task, TaskTelemetry.TaskSpan span) {
-        Execution execution = new Execution(task, new AtomicBoolean(true));
+    private void runOne(ParseTask task, TaskTelemetry.TaskSpan span, WorkerExecution budget) {
+        Execution execution = new Execution(task, new AtomicBoolean(true), budget);
         inFlightTask.set(execution);
+        if (closed) {
+            budget.stop(WorkerEmbeddingFailure.Reason.SHUTDOWN);
+        }
         long startedAt = System.currentTimeMillis();
         var timer = metrics.startTimer();
 
         try {
             log.debug("执行已领取任务 taskId={} versionId={}", task.id(), task.versionId());
-            ParsePipeline.ParsedDocument parsed = runPipelineWithTimeout(task, execution.leaseHeld());
+            ParsePipeline.ParsedDocument parsed = runPipeline(task, execution);
+            budget.succeed();
 
             if (!execution.leaseHeld().get()) {
                 span.failed(failureClassifier.classify(new LeaseLostException()));
@@ -188,6 +196,7 @@ public class ParseTaskRunner {
             metrics.completed();
 
         } catch (LeaseLostException e) {
+            budget.stop(WorkerEmbeddingFailure.Reason.LEASE_LOST);
             span.failed(failureClassifier.classify(e));
             log.warn("租约失守，放弃任务 taskId={} versionId={}", task.id(), task.versionId());
             metrics.leaseLost();
@@ -197,8 +206,13 @@ public class ParseTaskRunner {
                 log.warn("记录租约失守事件失败 taskId={}", task.id(), eventFailure);
             }
         } catch (Exception e) {
-            span.failed(failureClassifier.classify(e));
-            handleFailure(task, e);
+            Exception failure = budget.stopped() ? new WorkerEmbeddingFailure(budget.reason()) : e;
+            budget.stop(failure instanceof WorkerEmbeddingFailure known
+                    ? known.reason() : WorkerEmbeddingFailure.Reason.SHUTDOWN);
+            span.failed(failureClassifier.classify(failure));
+            if (!(failure instanceof WorkerEmbeddingFailure known && known.controlStop())) {
+                handleFailure(task, failure);
+            }
         } finally {
             inFlightTask.compareAndSet(execution, null);
             execution.leaseHeld().set(false);
@@ -229,13 +243,17 @@ public class ParseTaskRunner {
             boolean changed;
             if (deadLetter) {
                 changed = recoveryService.deadLetter(task, owner, classification);
-                if (changed) metrics.deadLettered(classification.metricClass());
+                if (changed) {
+                    metrics.deadLettered(classification.metricClass());
+                }
             } else {
                 long delay = props.retryDelayMillis(task.attempts(),
                         ThreadLocalRandom.current().nextDouble(-1d, 1d));
                 changed = recoveryService.scheduleRetry(task, owner, classification,
                         OffsetDateTime.now(ZoneOffset.UTC).plusNanos(delay * 1_000_000L));
-                if (changed) metrics.retried(classification.metricClass());
+                if (changed) {
+                    metrics.retried(classification.metricClass());
+                }
             }
             if (!changed) {
                 log.warn("失败写回时租约已失守 taskId={} versionId={}", task.id(), task.versionId());
@@ -247,30 +265,35 @@ public class ParseTaskRunner {
         }
     }
 
-    private ParsePipeline.ParsedDocument runPipelineWithTimeout(ParseTask task, AtomicBoolean leaseHeld) throws Exception {
+    private ParsePipeline.ParsedDocument runPipeline(ParseTask task, Execution execution) throws Exception {
         var snapshot = contexts.capture();
-        Future<ParsePipeline.ParsedDocument> future = pipelineExecutor.submit(() -> {
-            try (var scope = snapshot.setThreadLocals()) {
-                return pipeline.process(task, leaseHeld::get);
-            }
-        });
-        try {
-            return future.get(props.taskTimeoutSeconds(), TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
-            future.cancel(true);
-            leaseHeld.set(false);
-            throw new TaskTimeoutException("解析任务超过 " + props.taskTimeoutSeconds() + " 秒");
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof Exception exception) throw exception;
-            if (cause instanceof Error error) throw error;
-            throw new IllegalStateException(cause);
+        execution.budget().begin(Duration.ofSeconds(props.taskTimeoutSeconds()));
+        try (var scope = snapshot.setThreadLocals(); var interrupt = execution.budget().interruptCurrentThread()) {
+            execution.budget().check();
+            return pipeline.process(task, new ParsePipeline.LeaseHandle() {
+                @Override
+                public boolean stillHeld() {
+                    return execution.leaseHeld().get();
+                }
+
+                @Override
+                public CallBudget budget() {
+                    return execution.budget();
+                }
+            });
         }
     }
 
     @PreDestroy
     void shutdownPipelineExecutor() {
-        pipelineExecutor.shutdownNow();
+        closed = true;
+        Execution current = inFlightTask.get();
+        if (current != null) {
+            current.budget().stop(WorkerEmbeddingFailure.Reason.SHUTDOWN);
+        }
+        if (ownsExecutions) {
+            executions.close();
+        }
     }
 
     static final class TaskTimeoutException extends RuntimeException {
@@ -288,7 +311,7 @@ public class ParseTaskRunner {
     @Scheduled(fixedDelayString = "${kb.worker.heartbeat-ms}")
     public void heartbeat() {
         Execution execution = inFlightTask.get();
-        if (execution == null) {
+        if (execution == null || execution.budget().stopped()) {
             return;
         }
         ParseTask task = execution.task();
@@ -298,9 +321,11 @@ public class ParseTaskRunner {
                 // 置位让流水线尽快停手，避免与新持有者并发写同一份数据。
                 log.warn("续租失败，租约已失守 taskId={}", task.id());
                 execution.leaseHeld().set(false);
+                execution.budget().stop(WorkerEmbeddingFailure.Reason.LEASE_LOST);
             }
         } catch (Exception e) {
             execution.leaseHeld().set(false);
+            execution.budget().stop(WorkerEmbeddingFailure.Reason.LEASE_UNKNOWN);
             log.warn("续租状态读取失败，停止本次执行 taskId={}", task.id());
         }
     }

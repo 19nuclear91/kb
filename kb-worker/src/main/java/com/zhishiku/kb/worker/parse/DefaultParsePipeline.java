@@ -41,13 +41,19 @@ public class DefaultParsePipeline implements ParsePipeline {
 
     @Override
     public ParsedDocument process(ParseTask task,
-                                  LeaseHandle lease) throws Exception {
-        if (!lease.stillHeld()) throw new LeaseLostException();
-        if (!task.hasEmbeddingIdentity()) throw new LeaseLostException();
-        if (!parser.isAvailable()) throw new IllegalStateException("第三方解析服务未配置或不可用");
+                                   LeaseHandle lease) throws Exception {
+        check(lease);
+        if (!task.hasEmbeddingIdentity()) {
+            throw new LeaseLostException();
+        }
+        if (!parser.isAvailable()) {
+            throw new IllegalStateException("第三方解析服务未配置或不可用");
+        }
         var client = clients.find(task.embeddingProfileId(), task.embeddingFingerprint())
                 .orElseThrow(LeaseLostException::new);
-        if (client.role() != EmbeddingRole.DOCUMENT) throw new LeaseLostException();
+        if (client.role() != EmbeddingRole.DOCUMENT) {
+            throw new LeaseLostException();
+        }
         var execution = new ParseExecution(task.id(), task.versionId(), task.leaseOwner(),
                 task.embeddingEpoch(), task.claimToken(), client.profile());
         if (task.fileSize() == null || task.fileSize() <= 0) {
@@ -62,9 +68,7 @@ public class DefaultParsePipeline implements ParsePipeline {
             try (InputStream input = objectStorage.get(task.objectKey())) {
                 result = parser.parseDocument(input, task.fileName(), task.mimeType(), props.maxExtractedChars());
             }
-            if (!lease.stillHeld()) {
-                throw new LeaseLostException();
-            }
+            check(lease);
             if (result.hasErrors()) {
                 ParseIssue issue = result.issues().stream()
                         .filter(item -> item.severity() == ParseIssue.Severity.ERROR)
@@ -78,19 +82,24 @@ public class DefaultParsePipeline implements ParsePipeline {
 
         TextChunker chunker = new TextChunker(props.chunkSize(), props.chunkOverlap());
         List<TextChunker.Chunk> chunks = chunker.split(parsed);
-        if (chunks.isEmpty()) throw new IllegalArgumentException("文档没有可索引的文本内容");
+        check(lease);
+        if (chunks.isEmpty()) {
+            throw new IllegalArgumentException("文档没有可索引的文本内容");
+        }
 
         List<String> contents = chunks.stream().map(TextChunker.Chunk::content).toList();
         var generated = telemetry.inStage(TaskTelemetry.Stage.EMBEDDING, () -> {
-            var result = client.embed(contents);
+            var budget = lease.budget();
+            var result = budget == null ? client.embed(contents) : client.embed(contents, budget);
             result.require(execution.profile(), EmbeddingRole.DOCUMENT, chunks.size());
             return result;
         });
         List<float[]> vectors = generated.vectors();
-        if (!lease.stillHeld()) throw new LeaseLostException();
+        check(lease);
 
         List<IndexedChunk> result = new ArrayList<>(chunks.size());
         for (int i = 0; i < chunks.size(); i++) {
+            check(lease);
             float[] vector = vectors.get(i);
             result.add(new IndexedChunk(i, chunks.get(i).content(), chunks.get(i).pageNo(),
                     chunks.get(i).headingPath(), chunks.get(i).source(), chunks.get(i).kind(),
@@ -98,5 +107,14 @@ public class DefaultParsePipeline implements ParsePipeline {
         }
         return new ParsedDocument(result, parsed.parserName(), parsed.parserVersion(),
                 parsed.truncated(), parsed.issues(), execution);
+    }
+
+    private static void check(LeaseHandle lease) {
+        if (lease.budget() != null) {
+            lease.budget().check();
+        }
+        if (!lease.stillHeld()) {
+            throw new LeaseLostException();
+        }
     }
 }

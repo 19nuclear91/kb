@@ -1,5 +1,7 @@
 package com.zhishiku.kb.worker.parse;
 
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingSettings;
+import com.zhishiku.kb.worker.embedding.execution.WorkerExecutions;
 import com.zhishiku.kb.worker.parse.mapper.ParseTaskMapper;
 import com.zhishiku.kb.worker.telemetry.TaskContextPropagation;
 import com.zhishiku.kb.worker.telemetry.TaskTelemetry;
@@ -32,7 +34,7 @@ class TaskContextPropagationTest {
                 .withPropertyValues("management.tracing.enabled=true", "management.tracing.baggage.enabled=false")
                 .run(context -> {
                     var tracer = context.getBean(Tracer.class);
-                    var pipelineExecutor = Executors.newSingleThreadExecutor();
+                    var pipelineExecutor = new WorkerExecutions(WorkerEmbeddingSettings.defaults());
                     var pollExecutor = Executors.newSingleThreadExecutor();
                     var maintenance = Executors.newSingleThreadExecutor();
                     var started = new CountDownLatch(1);
@@ -67,10 +69,12 @@ class TaskContextPropagationTest {
                     runner.setTelemetry(new TaskTelemetry(tracer, true));
                     try {
                         var poll = pollExecutor.submit(() -> {
+                            WorkerExecutions.Ticket ticket;
                             try (var scope = tracer.withSpan(root)) {
-                                runner.poll();
+                                ticket = runner.poll();
                             }
                             assertThat(MDC.get("traceId")).isNull();
+                            return ticket;
                         });
                         assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
                         maintenance.submit(() -> {
@@ -78,16 +82,16 @@ class TaskContextPropagationTest {
                             runner.sweepExhausted();
                         }).get(5, TimeUnit.SECONDS);
                         release.countDown();
-                        poll.get(5, TimeUnit.SECONDS);
-                        pipelineExecutor.submit(() -> {
+                        poll.get(5, TimeUnit.SECONDS).exited().get(5, TimeUnit.SECONDS);
+                        ParseRunnerTestSupport.inspect(pipelineExecutor, ignored -> {
                             assertThat(MDC.get("traceId")).isNull();
                             assertThat(MDC.get("spanId")).isNull();
                             assertThat(tracer.currentSpan()).isNull();
-                        }).get(5, TimeUnit.SECONDS);
+                        });
                     } finally {
                         release.countDown();
                         root.end();
-                        pipelineExecutor.shutdownNow();
+                        pipelineExecutor.close();
                         pollExecutor.shutdownNow();
                         maintenance.shutdownNow();
                     }

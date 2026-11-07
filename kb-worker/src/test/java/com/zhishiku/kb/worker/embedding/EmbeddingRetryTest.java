@@ -4,7 +4,10 @@ import com.zhishiku.kb.common.embedding.EmbeddingControl;
 import com.zhishiku.kb.common.embedding.EmbeddingProfile;
 import com.zhishiku.kb.common.embedding.EmbeddingRun;
 import com.zhishiku.kb.worker.embedding.mapper.EmbeddingStateMapper;
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingFailure;
+import com.zhishiku.kb.worker.embedding.execution.WorkerExecution;
 import com.zhishiku.kb.worker.embedding.model.RebuildBatch;
+import com.zhishiku.kb.worker.embedding.model.RebuildContentChangedException;
 import com.zhishiku.kb.worker.embedding.model.RebuildLeaseLostException;
 import com.zhishiku.kb.worker.embedding.service.EmbeddingBatchCommitter;
 import com.zhishiku.kb.worker.embedding.service.EmbeddingBatchGenerator;
@@ -14,6 +17,8 @@ import com.zhishiku.kb.worker.embedding.service.EmbeddingFailureStore;
 import com.zhishiku.kb.worker.embedding.service.EmbeddingLeaseService;
 import com.zhishiku.kb.worker.embedding.service.EmbeddingRetryPolicy;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
@@ -26,6 +31,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -34,6 +40,45 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class EmbeddingRetryTest {
+    @ParameterizedTest
+    @EnumSource(WorkerEmbeddingFailure.Reason.class)
+    void controlledFailureHasOneRecoveryAndNoCommit(WorkerEmbeddingFailure.Reason reason) {
+        var generator = mock(EmbeddingBatchGenerator.class);
+        var committer = mock(EmbeddingBatchCommitter.class);
+        var failures = mock(EmbeddingFailureService.class);
+        var processor = new EmbeddingBatchProcessor(generator, committer, failures,
+                new EmbeddingRebuildProperties(300, 16, 3));
+        var batch = batch(1);
+        var execution = new WorkerExecution(WorkerExecution.Purpose.REBUILD, 4194304, System::nanoTime,
+                (action, nanos) -> () -> { }, Runnable::run);
+        var failure = new WorkerEmbeddingFailure(reason);
+        when(generator.generate(eq(batch), any())).thenThrow(failure);
+        processor.process(batch, execution);
+        verifyNoInteractions(committer);
+        if (failure.controlStop()) {
+            verifyNoInteractions(failures);
+        } else {
+            verify(failures).handle(batch, failure.rebuildCode(), failure.retryable(), 3);
+        }
+    }
+
+    @Test
+    void lateContentFailureAfterLeaseLossDoesNotWriteBlocked() {
+        var generator = mock(EmbeddingBatchGenerator.class);
+        var failures = mock(EmbeddingFailureService.class);
+        var committer = mock(EmbeddingBatchCommitter.class);
+        var batch = batch(1);
+        var execution = new WorkerExecution(WorkerExecution.Purpose.REBUILD, 4194304, System::nanoTime,
+                (action, nanos) -> () -> { }, Runnable::run);
+        when(generator.generate(eq(batch), any())).thenAnswer(call -> {
+            execution.stop(WorkerEmbeddingFailure.Reason.LEASE_LOST);
+            throw new RebuildContentChangedException();
+        });
+        new EmbeddingBatchProcessor(generator, committer, failures, new EmbeddingRebuildProperties(300, 16, 3))
+                .process(batch, execution);
+        verifyNoInteractions(failures, committer);
+    }
+
     private final EmbeddingProfile profile = new EmbeddingProfile("p", "local", "source", "local-hash-v1", "1", 1024,
             "cosine", "identity-v1", "identity-v1", "query", "document", "local-hash-v1");
     private final UUID runId = UUID.randomUUID();

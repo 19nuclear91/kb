@@ -7,6 +7,8 @@ import com.zhishiku.kb.common.embedding.EmbeddingResult;
 import com.zhishiku.kb.common.embedding.EmbeddingRole;
 import com.zhishiku.kb.common.embedding.EmbeddingClientRegistry;
 import com.zhishiku.kb.common.embedding.ProfileEmbeddingClient;
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingSettings;
+import com.zhishiku.kb.worker.embedding.execution.WorkerExecutions;
 import com.zhishiku.kb.worker.embedding.mapper.EmbeddingStateMapper;
 import com.zhishiku.kb.worker.parse.mapper.ParseTaskMapper;
 import com.zhishiku.kb.worker.storage.ObjectStorage;
@@ -26,7 +28,6 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -64,7 +65,7 @@ class ParseTaskTracingTest {
             when(clients.find(anyString(), anyString())).thenReturn(Optional.of(client));
             when(client.role()).thenReturn(EmbeddingRole.DOCUMENT);
             when(client.profile()).thenReturn(ParseEmbeddingFixture.PROFILE);
-            when(client.embed(anyList())).thenAnswer(call -> {
+            when(client.embed(anyList(), any())).thenAnswer(call -> {
                 order.add("embedding");
                 assertThat(tracing.tracer.currentSpan() != null).isEqualTo(enabled);
                 return new EmbeddingResult(ParseEmbeddingFixture.PROFILE, EmbeddingRole.DOCUMENT, List.of(ParseEmbeddingFixture.vector()));
@@ -77,15 +78,15 @@ class ParseTaskTracingTest {
                 assertThat(tracing.tracer.currentSpan() != null).isEqualTo(enabled);
                 return true;
             });
-            var executor = Executors.newSingleThreadExecutor();
+            var executor = new WorkerExecutions(WorkerEmbeddingSettings.defaults());
             var runner = new ParseTaskRunner(mock(ParseTaskMapper.class), pipeline, publisher, new ParseProperties(60, 1, 100, 1000, 10),
                     mock(TaskFailureAlert.class), new FailureClassifier(), mock(ParseTaskRecoveryService.class), new ParseTaskMetrics(),
                     claims, new TaskContextPropagation(ObservationRegistry.NOOP, enabled ? tracing.tracer : Tracer.NOOP), executor);
             runner.setTelemetry(telemetry);
             try {
-                runner.poll();
-                runner.poll();
-                executor.submit(() -> assertThat(tracing.tracer.currentSpan()).isNull()).get();
+                ParseRunnerTestSupport.run(runner);
+                ParseRunnerTestSupport.run(runner);
+                ParseRunnerTestSupport.inspect(executor, ignored -> assertThat(tracing.tracer.currentSpan()).isNull());
                 assertThat(order).containsExactly("claim", "download", "parse", "embedding", "publish",
                         "claim", "download", "parse", "embedding", "publish");
                 var spans = tracing.exporter.getFinishedSpanItems();
@@ -105,12 +106,13 @@ class ParseTaskTracingTest {
                 }
             } finally {
                 runner.shutdownPipelineExecutor();
+                executor.close();
             }
         }
     }
 
     @Test
-    void unavailableParserDoesNotClaimOrCreateTaskSpans() {
+    void unavailableParserDoesNotClaimOrCreateTaskSpans() throws Exception {
         try (var tracing = new InMemoryTracing()) {
             var parser = mock(DocumentParser.class);
             var state = mock(EmbeddingStateMapper.class);
@@ -123,7 +125,7 @@ class ParseTaskTracingTest {
                     mock(TaskFailureAlert.class), new FailureClassifier(), mock(ParseTaskRecoveryService.class), claims);
             runner.setTelemetry(new TaskTelemetry(tracing.tracer, true));
             try {
-                runner.poll();
+                ParseRunnerTestSupport.run(runner);
                 verifyNoInteractions(state, clients, tasks, pipeline, publisher);
                 assertThat(tracing.exporter.getFinishedSpanItems()).isEmpty();
             } finally {
@@ -145,13 +147,13 @@ class ParseTaskTracingTest {
             ParsePipeline pipeline = (task, lease) -> telemetry.inStage(TaskTelemetry.Stage.PARSE, () -> {
                 throw new IOException("secret-parser-body secret-object-key");
             });
-            var executor = Executors.newSingleThreadExecutor();
+            var executor = new WorkerExecutions(WorkerEmbeddingSettings.defaults());
             var runner = new ParseTaskRunner(mock(ParseTaskMapper.class), pipeline, mock(ChunkPublisher.class), new ParseProperties(60, 1, 100, 1000, 10),
                     mock(TaskFailureAlert.class), new FailureClassifier(), mock(ParseTaskRecoveryService.class), new ParseTaskMetrics(), claims,
                     new TaskContextPropagation(ObservationRegistry.NOOP, tracing.tracer), executor);
             runner.setTelemetry(telemetry);
             try {
-                runner.poll();
+                ParseRunnerTestSupport.run(runner);
                 assertThat(tracing.exporter.getFinishedSpanItems()).hasSize(2).allSatisfy(span -> {
                     assertThat(span.getAttributes().get(AttributeKey.stringKey("kb.failure.class"))).isNotBlank();
                     assertThat(span.getAttributes().toString()).doesNotContain("secret-");
@@ -163,6 +165,7 @@ class ParseTaskTracingTest {
                 });
             } finally {
                 runner.shutdownPipelineExecutor();
+                executor.close();
             }
         } finally {
             logger.detachAppender(logs);

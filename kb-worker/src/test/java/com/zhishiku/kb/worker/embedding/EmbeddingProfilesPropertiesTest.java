@@ -1,13 +1,15 @@
 package com.zhishiku.kb.worker.embedding;
 
 import com.zhishiku.kb.common.embedding.EmbeddingRole;
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingJson;
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingSettings;
+import com.zhishiku.kb.worker.embedding.execution.WorkerEmbeddingTransport;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 
 import java.util.HashMap;
 import java.util.List;
@@ -50,7 +52,10 @@ class EmbeddingProfilesPropertiesTest {
     @Test
     void bindsProfilesAndBuildsRegistryWithoutStartingApplicationOrTransport() {
         var properties = bind(settings());
-        var registry = new EmbeddingProfilesConfiguration().embeddingClientRegistry(properties, RestClient.builder());
+        var limits = WorkerEmbeddingSettings.defaults();
+        var json = new WorkerEmbeddingJson(limits);
+        var registry = new EmbeddingProfilesConfiguration().embeddingClientRegistry(properties, limits, json,
+                new WorkerEmbeddingTransport(limits, json));
         var profile = properties.profiles().getFirst().profile();
         var client = registry.find(profile.profileId(), profile.fingerprint()).orElseThrow();
         assertThat(client.role()).isEqualTo(EmbeddingRole.DOCUMENT);

@@ -39,7 +39,7 @@ class ParseTaskRunnerRecoveryTest {
         var heartbeatFinish = new CountDownLatch(1);
         var first = ParseEmbeddingFixture.task();
         var second = ParseEmbeddingFixture.task(3L, 4L, "key", "b.txt", 100, "text/plain");
-        when(claims.claim(anyString(), anyInt(), anyInt())).thenReturn(List.of(first, second));
+        when(claims.claim(anyString(), anyInt(), anyInt())).thenReturn(List.of(first), List.of(second));
         when(pipeline.process(eq(first), any())).thenAnswer(call -> {
             firstStarted.countDown();
             Assertions.assertThat(firstFinish.await(5, TimeUnit.SECONDS)).isTrue();
@@ -60,16 +60,18 @@ class ParseTaskRunnerRecoveryTest {
                 mock(FailureClassifier.class), recovery, claims);
         var executor = Executors.newFixedThreadPool(2);
         try {
-            var poll = executor.submit(runner::poll);
+            var firstPoll = ParseRunnerTestSupport.submit(runner);
             Assertions.assertThat(firstStarted.await(5, TimeUnit.SECONDS)).isTrue();
             var heartbeat = executor.submit(runner::heartbeat);
             Assertions.assertThat(heartbeatStarted.await(5, TimeUnit.SECONDS)).isTrue();
             firstFinish.countDown();
+            firstPoll.exited().get(5, TimeUnit.SECONDS);
+            var secondPoll = ParseRunnerTestSupport.submit(runner);
             Assertions.assertThat(secondStarted.await(5, TimeUnit.SECONDS)).isTrue();
             heartbeatFinish.countDown();
             heartbeat.get(5, TimeUnit.SECONDS);
             secondFinish.countDown();
-            poll.get(5, TimeUnit.SECONDS);
+            secondPoll.exited().get(5, TimeUnit.SECONDS);
             verify(publisher).publish(eq(second), anyString(), any(ParsePipeline.ParsedDocument.class));
         } finally {
             firstFinish.countDown();
@@ -104,7 +106,7 @@ class ParseTaskRunnerRecoveryTest {
         ParseTaskRunner runner = new ParseTaskRunner(mapper, pipeline, publisher,
                 properties(), alert, classifier, recovery, claims);
         try {
-            runner.poll();
+            ParseRunnerTestSupport.run(runner);
         } finally {
             runner.shutdownPipelineExecutor();
         }
@@ -135,7 +137,7 @@ class ParseTaskRunnerRecoveryTest {
         ParseTaskRunner runner = new ParseTaskRunner(mapper, pipeline, publisher,
                 properties(), alert, classifier, recovery, claims);
         try {
-            runner.poll();
+            ParseRunnerTestSupport.run(runner);
         } finally {
             runner.shutdownPipelineExecutor();
         }
@@ -164,7 +166,7 @@ class ParseTaskRunnerRecoveryTest {
         ParseTaskRunner runner = new ParseTaskRunner(mapper, pipeline, publisher,
                 properties(), alert, classifier, recovery, claims);
         try {
-            runner.poll();
+            ParseRunnerTestSupport.run(runner);
         } finally {
             runner.shutdownPipelineExecutor();
         }

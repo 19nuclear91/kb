@@ -1,5 +1,6 @@
 package com.zhishiku.kb.worker.parse;
 
+import com.zhishiku.kb.common.embedding.CallBudget;
 import com.zhishiku.kb.worker.parse.model.DocumentBlock;
 import com.zhishiku.kb.worker.parse.model.ParseExecution;
 import com.zhishiku.kb.worker.parse.model.ParseIssue;
@@ -129,5 +130,10 @@ public interface ParsePipeline {
          * 就是两个实例并发写同一个 versionId 的块，必须停下。
          */
         boolean stillHeld();
+
+        /** 生产执行提供剩余预算；兼容原有纯内存调用方。 */
+        default CallBudget budget() {
+            return null;
+        }
     }
 }

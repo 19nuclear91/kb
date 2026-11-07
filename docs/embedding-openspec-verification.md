@@ -1,5 +1,60 @@
 # Embedding OpenSpec 实现核验
 
+## 2026-11-07 Worker 调用限界证据
+
+变更：`harden-worker-embedding-calls`，schema：`spec-driven`。本节仅对应本变更三份增量规格。
+初次统一白名单于 10:53:14 完成，241 项通过（common 22、app 36、Worker 183）；W1／W2 修复影响回归于 12:34:55 完成，Worker 20 类、103 项通过。两次均为 0 失败／错误／跳过，结果不累加；完整命令、测试类清单及环境见 `docs/embedding-offline-validation.md` 的同日两节记录。
+
+实现路径约定：执行组件位于 `kb-worker/src/main/java/com/zhishiku/kb/worker/embedding/execution/`，解析组件位于相邻 `parse/`，重建服务位于 `embedding/service/`。公共组件位于 `kb-common/src/main/java/com/zhishiku/kb/common/embedding/`。下列测试均位于对应模块的 `src/test/java/`，名称可唯一定位；同名 app／Worker 测试明确标注模块。
+
+### W1／W2 修复证据
+
+- **W1 已修复**：`WorkerExecution.dispatchStop` 在首次逻辑停止时同步通知，`WorkerExecutions.recordStop` 绑定短内存观测，`WorkerEmbeddingMetrics` 预注册 `kb.worker.embedding.execution.stops{purpose,reason}`。该计数不等待调用或取消动作退出；`calls`／`call.duration` 保留完整调用返回口径。`WorkerEmbeddingMetricsTest.timeoutIsObservedBeforeBlockedCallAndCancellationExitWithoutDoubleCounting` 覆盖 PARSE／REBUILD／PROBE、阻塞取消、重复信号、最终退出和跨通道隔离；`emptyClaimsAndSuccessfulHandoffsAreNotCountedAsStops` 验证空领取及成功不误计。
+- **W2 已补齐**：`WorkerExecutionRaceTest.simultaneousSuccessDeadlineAndLeaseLossHaveOneOutcomeWithoutAssumingAWinner` 运行 32 轮无偏序竞争；`eachWinnerKeepsOneSettlementAndOneRelease` 确定覆盖 SUCCESS／TIMEOUT／LEASE_LOST 三种胜者。真实执行协调器配合受控时钟、三方屏障和内存提交／恢复计数，验证唯一收尾、旧截止隔离、退出前禁止新领取、取消完成后恰好释放一次。JUnit 共计 4 项。
+- 修复回归覆盖执行层、三条生产路径、恢复和追踪，共 103 项；原 241 项记录为初次统一验收，未作为本次重跑结果。任务完成 34/34，当前核验为 **0 CRITICAL、0 WARNING、0 SUGGESTION**；21 条需求及 76 个场景的完整矩阵见 `openspec/changes/archive/2026-11-07-harden-worker-embedding-calls/verification.md`。
+
+### worker-embedding-resilience（13 条需求）
+
+| 需求 | 实现入口 | 本次直接／组合证据 |
+| --- | --- | --- |
+| 全部入口统一运行限界 | WorkerEmbeddingSettings、StartupEnvironmentCheck、EmbeddingProfilesConfiguration | WorkerEmbeddingSettingsTest 覆盖默认／非法配置；WorkerEmbeddingWiringTest 与 WorkerEmbeddingPathsTest 覆盖三个用途实际调用；EmbeddingProfileTest／EmbeddingRegistryTest 回归身份 |
+| 条数与编码字节双限制 | WorkerEmbeddingBatchPlanner、WorkerEmbeddingJson、公共 EmbeddingBatchPlanner | WorkerEmbeddingBatchPlannerTest：UTF-8、补充字符、转义、前缀、包络、等号边界、末尾单条超限零发送 |
+| 输入对应与原子交付 | RemoteProfileEmbeddingClient、EmbeddingResult、两条生成流水线 | WorkerEmbeddingResultsTest：局部 index 重排、重复下标、后批失败；RemoteProfileEmbeddingClientTest：缺失下标等协议错误；WorkerEmbeddingPathsTest：成功整批交付／失败零提交 |
+| 读取前响应字节限界 | WorkerEmbeddingTransport.subscriber/read | WorkerEmbeddingTransportTest：声明超限零需求、无长度头、谎报长度、等号／多一字节、错误状态零正文消费 |
+| 严格 JSON | WorkerEmbeddingJson.decode | WorkerEmbeddingTransportTest：重复字段、深度、尾随根、损坏／空／非对象、UTF-8、未知字段与编码 |
+| 单调父／子截止 | WorkerExecution、WorkerEmbeddingTransport、各 Runner | WorkerExecutionTest；ParsePipelineBudgetTest；EmbeddingRebuildBudgetTest；WorkerEmbeddingTransportDeadlineTest：持续未结束正文、迟到响应、客户端终止时间计入截止 |
+| 双通道实际容量 | WorkerExecutions、ParseTaskRunner、EmbeddingRebuildRunner、EmbeddingReadinessScheduler | WorkerExecutionsTest、ParseTaskAdmissionTest、EmbeddingRebuildRunnerTest；WorkerEmbeddingPathsTest：解析仍占用时重建零领取，探测可完成 |
+| 逻辑终结不提前释放 | WorkerExecutions.releaseIfExited、WorkerExecution 资源登记 | WorkerCancellationTest：忽略中断、阻塞取消、关闭；WorkerEmbeddingTransportDeadlineTest／EmbeddingProbeExecutionTest：实际退出之前保留槽位；WorkerExecutionRaceTest：三方竞争、唯一收尾与恰好一次释放，W2 已关闭 |
+| 执行绑定取消 | WorkerExecution.stop、两条 heartbeat、各阶段交接 | WorkerExecutionTest：晚注册及旧计时器；ParseTaskRunnerRecoveryTest／EmbeddingRebuildRunnerTest：旧心跳不取消新执行；EmbeddingRebuildBudgetTest：失租后不发送后批 |
+| 单次传输不重放 | EmbeddingHttpPolicy、WorkerEmbeddingTransport.JdkSession | WorkerEmbeddingWiringTest 验证启动策略；WorkerEmbeddingTransportTest 验证 3xx／429／错误状态一次 Session.send 且不消费错误体。真实 JDK 网络行为仅人工审阅配置，未作网络验收 |
+| 有限故障分类 | WorkerEmbeddingFailure、FailureClassifier、EmbeddingRetryPolicy | WorkerEmbeddingFailureTest；ParseEmbeddingRecoveryTest 全原因分支；EmbeddingRetryTest 全原因恢复及旧持有者拒绝写回；WorkerEmbeddingPathsTest 真实 401 路径 |
+| 探测独立限时与唯一结果 | EmbeddingReadinessScheduler.poll/probe | EmbeddingProbeExecutionTest：截止处成功只写 false、持久化一次失败、实际退出后下一 profile 新预算、关闭不继续；Worker/app EmbeddingReadinessSchedulerTest 与公共 EmbeddingProbeTest 兼容回归 |
+| 诊断反映占用且无敏感内容 | WorkerExecution.dispatchStop、WorkerEmbeddingMetrics、固定故障对象、隔离 JDK transport | WorkerEmbeddingMetricsTest：退出前 stops、重复信号不重计、跨通道隔离、occupied／lingering 和固定标签，W1 已关闭；WorkerEmbeddingFailureTest：无 cause／suppressed；WorkerEmbeddingWiringTest 和两侧 EmbeddingSupplierIsolationTest：内部上下文不外发 |
+
+### document-parsing（4 条需求）
+
+| 需求 | 实现入口 | 本次直接／组合证据 |
+| --- | --- | --- |
+| 分类决定重试／死信 | FailureClassifier、ParseTaskRunner.handleFailure、ParseTaskRecoveryService | FailureClassifierTest、ParseEmbeddingRecoveryTest、ParseTaskRunnerRecoveryTest：固定摘要、永久死信、暂时退避、控制停止；失败服务原资格 SQL 的离线验证由 ParseRecoveryIdentityTest 提供 |
+| 在途无伪失败收敛 | ParseTaskRunner.heartbeat、ParseMaintenanceService、ParseTaskRecoveryService | ParseMaintenanceServiceTest：幂等维护补偿和历史保留；ParseRecoveryIdentityTest：维护／旧身份拒绝；WorkerEmbeddingPathsTest：超时无部分发布；人工核对维护期间重放只入队 |
+| 领取前业务容量 | ParseTaskRunner.poll、ParseTaskClaimService、WorkerExecutions | ParseTaskAdmissionTest：配置多条仍只领取一条、忙时零领取；ParseTaskClaimServiceTest：维护／无解析器门禁；WorkerExecutionsTest：空领取和领取异常释放 |
+| 剩余预算与迟到隔离 | DefaultParsePipeline、ParseTaskRunner.runPipeline／成功交接 | ParsePipelineBudgetTest：899 秒前置耗时和到期零调用；ParseTaskAdmissionTest：逻辑结束仍占用；ParseTaskRunnerRecoveryTest：旧心跳隔离；ParsePublishIdentityTest：原发布身份复核 |
+
+### embedding-rebuild（4 条需求）
+
+| 需求 | 实现入口 | 本次直接／组合证据 |
+| --- | --- | --- |
+| 原子进度与续建 | EmbeddingBatchGenerator、GeneratedRebuildBatch、EmbeddingBatchCommitter | WorkerEmbeddingPathsTest：第二 HTTP 子批失败不交给 committer；EmbeddingBatchCommitterTest：资格／正文复核、写入与进度顺序、失败传播；EmbeddingResumeTest：内存重建服务仅重做未提交项 |
+| 失败保留进度且受控恢复 | EmbeddingBatchProcessor、EmbeddingRetryPolicy、EmbeddingFailureService、既有 app resume 服务 | EmbeddingRetryTest：退避、耗尽 BLOCKED、旧持有者写回无效；EmbeddingResumeTest：成功项保留；人工核对原 resume 的 expectedVersion、目标与权限／幂等门禁，本次未重跑管理 API 全集 |
+| 共享容量内领取 | EmbeddingRebuildRunner.tick、WorkerExecutions | EmbeddingRebuildRunnerTest：解析占用时零领取、空批次释放；WorkerEmbeddingPathsTest：真实解析退出后方可重建；WorkerCancellationTest：取消动作仍占用 |
+| 独立截止与失租取消 | EmbeddingBatchProcessor、EmbeddingBatchGenerator、EmbeddingRebuildRunner.heartbeat | EmbeddingRebuildBudgetTest：读取计时、续租不延长、所有子批共用、旧计时器不撤销交接；EmbeddingRebuildRunnerTest：false／异常取消和迟到心跳；EmbeddingLeaseServiceTest／EmbeddingLeaseClockTest：token／epoch 与数据库时间契约 |
+
+### 证据范围
+
+21 条需求均定位到实现与本次离线证据，组合测试包含真实三条生产组件链路；存储、原件和 HTTP 会话是内存替身。事务声明、SQL 条件和失败传播只能证明调用契约，不能证明真实数据库回滚／锁互斥。没有运行外部组件、前后端联调、文档内容断言或真实供应商验证；JDK 网络重试／终止、真实崩溃恢复、上游取消计算和计费行为均不由这些测试证明。
+
+运维配置、错误码、恢复门禁与指标由人工对照实现核对；以下 2026-10-07 内容保留为另一变更的历史证据，不纳入上述两次回归结果。
+
 日期：2026-10-07
 
 变更：`embedding-profile-consistency-and-rebuild`，schema：`spec-driven`。
