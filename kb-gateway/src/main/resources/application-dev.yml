@@ -5,6 +5,13 @@ spring:
   cloud:
     gateway:
       routes:
+        - id: kb-document-imports
+          uri: ${KB_APP_BASE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/document-imports,/api/document-imports/**
+          metadata:
+            response-timeout: 150000
+            connect-timeout: 2000
         - id: kb-search
           uri: ${KB_APP_BASE_URL:http://localhost:8081}
           predicates:

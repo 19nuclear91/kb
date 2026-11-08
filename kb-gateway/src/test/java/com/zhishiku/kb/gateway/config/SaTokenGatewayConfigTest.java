@@ -131,6 +131,19 @@ class SaTokenGatewayConfigTest {
     }
 
     @Test
+    void importsAlwaysRequireCurrentSession() {
+        for (String path : List.of("/api/document-imports", "/api/document-imports/capabilities",
+                "/api/document-imports/resolve", "/api/document-imports/9/items/2/file")) {
+            SaReactorSyncHolder.setContext(MockServerWebExchange.from(MockServerHttpRequest.post(path)));
+            try {
+                Assertions.assertThatThrownBy(() -> filter.auth.run(null)).isInstanceOf(NotLoginException.class);
+            } finally {
+                SaReactorSyncHolder.clearContext();
+            }
+        }
+    }
+
+    @Test
     void browserHandshakeIsPublicButBindingAndMethodVariantsStillNeedSession() {
         for (String[] route : new String[][]{{"GET", "/api/auth/sso/providers"}, {"GET", "/api/auth/sso/wecom" +
                 "/callback"},

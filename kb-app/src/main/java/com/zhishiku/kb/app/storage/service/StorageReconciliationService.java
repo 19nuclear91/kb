@@ -26,8 +26,8 @@ import java.util.Set;
 /**
  * 对象存储对账的轮次编排：以桶列举为权威方向识别孤儿对象，并按护栏条件删除。
  *
- * <p>孤儿定义为“桶中对象键减去存活引用”。上传侧孤儿（写库失败、进程崩溃）在数据库
- * 中没有任何痕迹，只能从桶方向发现；删除侧孤儿（软删除后对象删除失败）的文档已被
+ * <p>孤儿定义为“桶中对象键减去清理保护”。保护包括存活版本及所有 ACTIVE 导入尝试，
+ * 到期尝试持久失效后才释放保护。上传侧残留从桶方向发现；删除侧孤儿的文档已被
  * 标记 {@code deleted}，也被同一存活谓词覆盖。存活引用与文档状态、空间是否归档、
  * 是否为当前版本均无关：它们仍可被下载、预览与引用，误删即数据丢失。
  *
@@ -122,7 +122,7 @@ public class StorageReconciliationService {
         try {
             liveEmpty = !mapper.hasLiveReference();
         } catch (RuntimeException e) {
-            log.error("存活引用探测失败，本轮跳过", e);
+            log.error("清理保护探测失败，本轮跳过", e);
             return StorageReconciliationReport.empty();
         }
 
@@ -155,7 +155,7 @@ public class StorageReconciliationService {
 
         boolean refuseDeletes = liveEmpty && orphans > 0;
         if (refuseDeletes) {
-            log.warn("存活引用为空但桶中存在 {} 个孤儿对象，疑似连接到错误数据库，本轮拒绝任何删除", orphans);
+            log.warn("清理保护集合为空但桶中存在 {} 个孤儿对象，疑似连接到错误数据库，本轮拒绝任何删除", orphans);
         }
         long deleted = 0;
         long deleteFailed = 0;
@@ -219,15 +219,14 @@ public class StorageReconciliationService {
                 inPrefix.stream().map(StoredObject::key).toList()));
         long orphans = 0;
         for (StoredObject object : inPrefix) {
-            if (live.contains(object.key())) {
+            if (live.contains(object.key()) || !isExpired(object)) {
                 continue;
             }
             orphans++;
             if (orphanLogKeys.size() < LOG_KEY_LIMIT) {
                 orphanLogKeys.add(object.key());
             }
-            if (properties.deleteEnabled() && isExpired(object)
-                    && candidates.size() < properties.maxDeletesPerCycle()) {
+            if (properties.deleteEnabled() && candidates.size() < properties.maxDeletesPerCycle()) {
                 candidates.add(object);
             }
         }

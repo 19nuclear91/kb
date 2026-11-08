@@ -10,6 +10,7 @@ export const routes = {
   detail: ['src/pages/DocumentDetailPage.vue'], account: ['src/pages/AccountPage.vue'],
   search: ['src/pages/SearchPage.vue'], favorites: ['src/pages/FavoritesPage.vue'],
   reviews: ['src/pages/ReviewsPage.vue'], notifications: ['src/pages/NotificationsPage.vue'],
+  imports: ['src/pages/ImportsPage.vue'], importDetail: ['src/pages/ImportDetailPage.vue'],
   assistant: ['src/pages/AssistantPage.vue'], lifecycle: ['src/admin/lifecycle/LifecyclePage.vue'],
   users: ['src/admin/UsersPage.vue'], departments: ['src/admin/DepartmentsPage.vue'],
   roles: ['src/admin/RolesPage.vue'], spaces: ['src/admin/SpacesPage.vue'],
@@ -101,6 +102,7 @@ export function checkIsolation(report) {
   for (const id of ['src/pages/DocumentDetailPage.vue', 'src/comments/CommentPanel.vue', 'src/reviews/VersionReviewPanel.vue', 'src/office/VersionPreview.vue']) {
     if (list.has(id)) fail(`列表包含详情专用模块: ${id}`);
   }
+  if ([...entry, ...list].some(id => id.startsWith('src/imports/'))) fail('入口或文档列表提前包含导入实现');
   const adminPages = Object.values(routes).flat().filter(id => id.startsWith('src/admin/'));
   const userPages = Object.values(routes).flat().filter(id => id.startsWith('src/pages/') && !['login', 'password', 'sso'].some(name => routes[name].includes(id)));
   for (const [name, ids] of Object.entries(routes)) {

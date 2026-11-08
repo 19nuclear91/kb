@@ -6,21 +6,22 @@ import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 /**
- * 对账用的存活引用只读查询。
+ * 对账用的清理保护及存活版本只读查询。
  *
  * <p>存活定义为文档未被软删除（{@code d.status <> 'deleted'}）：这些版本仍可被
  * 下载、预览与引用，与其文档状态、空间是否归档、是否为当前版本无关。
+ * 清理保护另包含所有 ACTIVE 导入尝试，即使已超时也要等待持久失效。
  */
 @Mapper
 public interface StorageReconciliationMapper {
 
     /**
-     * 返回给定对象键中仍被存活引用持有的子集；调用方保证输入非空。
+     * 返回给定对象键中仍被版本或 ACTIVE 尝试保护的子集；调用方保证输入非空。
      */
     List<String> listLiveObjectKeys(@Param("objectKeys") List<String> objectKeys);
 
     /**
-     * 是否存在任一存活引用；为空时删除阶段必须整体拒绝，防止误连错误库清空桶。
+     * 是否存在任一版本或 ACTIVE 保护；为空时拒绝删除，防止误连错误库清空桶。
      */
     boolean hasLiveReference();
 

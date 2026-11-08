@@ -34,7 +34,9 @@ spring:
   servlet:
     multipart:
       max-file-size: ${KB_MAX_UPLOAD_SIZE:50MB}
-      max-request-size: ${KB_MAX_UPLOAD_SIZE:50MB}
+      max-request-size: ${KB_MAX_UPLOAD_REQUEST_SIZE:51MB}
+      file-size-threshold: 0B
+      location: ${KB_UPLOAD_TEMP_DIRECTORY:}
 
   task:
     scheduling:
@@ -67,8 +69,18 @@ logging:
     com.zhishiku.kb.app.auth.mapper.AuditQueryMapper: "OFF"
     com.zhishiku.kb.app.document.mapper.DocumentAdminQueryMapper: "OFF"
     com.zhishiku.kb.app.document.metadata.mapper: "OFF"
+    com.zhishiku.kb.app.document.imports.mapper: "OFF"
 
 kb:
+  document-import:
+    max-items: ${KB_IMPORT_MAX_ITEMS:100}
+    max-total-bytes: ${KB_IMPORT_MAX_TOTAL_BYTES:1073741824}
+    max-concurrent: ${KB_IMPORT_MAX_CONCURRENT:8}
+    max-concurrent-per-user: ${KB_IMPORT_MAX_CONCURRENT_PER_USER:2}
+    attempt-timeout-seconds: ${KB_IMPORT_ATTEMPT_TIMEOUT_SECONDS:120}
+    storage-timeout-seconds: ${KB_IMPORT_STORAGE_TIMEOUT_SECONDS:60}
+    recovery-interval-ms: ${KB_IMPORT_RECOVERY_INTERVAL_MS:30000}
+    recovery-batch-size: ${KB_IMPORT_RECOVERY_BATCH_SIZE:100}
   identity:
     lifecycle:
       dingtalk:
@@ -154,6 +166,7 @@ kb:
       code: ${KB_BOOTSTRAP_DEPARTMENT_CODE:HQ}
       name: ${KB_BOOTSTRAP_DEPARTMENT_NAME:总部}
   storage:
+    max-upload-bytes: ${KB_MAX_UPLOAD_BYTES:52428800}
     endpoint: ${KB_S3_ENDPOINT:}
     region: ${KB_S3_REGION:us-east-1}
     access-key: ${KB_S3_ACCESS_KEY:}

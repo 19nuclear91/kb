@@ -19,6 +19,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -138,7 +139,7 @@ class StorageReconciliationServiceTest {
 
         StorageReconciliationReport report = service(properties(true, 500)).runCycle();
 
-        assertThat(report).isEqualTo(new StorageReconciliationReport(3, 3, 1, 0, 0, 0));
+        assertThat(report).isEqualTo(new StorageReconciliationReport(3, 1, 1, 0, 0, 0));
         verify(storage).delete("documents/old.txt");
         verify(storage, never()).delete("documents/fresh.txt");
         verify(storage, never()).delete("documents/unknown.txt");
@@ -164,6 +165,16 @@ class StorageReconciliationServiceTest {
         verify(storage, never()).delete("documents/3.txt");
         verify(storage, never()).delete("documents/4.txt");
         verify(storage, never()).delete("documents/5.txt");
+    }
+
+    @Test
+    void exactGraceBoundaryAndUnknownModificationTimeAreNotReportedAsOrphans() {
+        when(storage.list(PREFIX, null, 1000)).thenReturn(page(List.of(
+                new StoredObject("documents/boundary", NOW.minusSeconds(GRACE_SECONDS)),
+                new StoredObject("documents/unknown", null), fresh("documents/fresh")), null));
+        when(mapper.listLiveObjectKeys(any())).thenReturn(List.of());
+        assertThat(service(properties(false, 500)).runCycle()).isEqualTo(new StorageReconciliationReport(3, 0, 0, 0, 0, 0));
+        verify(storage, never()).delete(anyString());
     }
 
     @Test
@@ -419,6 +430,41 @@ class StorageReconciliationServiceTest {
 
     private StorageReconciliationService service(StorageReconciliationProperties properties) {
         return new StorageReconciliationService(storage, mapper, dataSource, properties, CLOCK);
+    }
+
+    @Test
+    void expiredActiveImportAndArchivedVersionBothRemainProtected() {
+        var keys = List.of("documents/imports/expired-active", "documents/archived-version");
+        when(storage.list(PREFIX, null, 1000))
+                .thenReturn(page(keys.stream().map(StorageReconciliationServiceTest::expired).toList(), null));
+        when(mapper.listLiveObjectKeys(keys)).thenReturn(keys);
+        assertThat(service(properties(true, 500)).runCycle()).isEqualTo(new StorageReconciliationReport(2, 0, 0, 0, 0, 0));
+        verify(storage, never()).delete(anyString());
+    }
+
+    @Test
+    void activeImportBeforePutIsExcludedFromMissingSample() {
+        when(mapper.hasLiveReference()).thenReturn(true);
+        when(storage.list(PREFIX, null, 1000)).thenReturn(page(List.of(), null));
+        when(mapper.sampleLiveObjectKeys(100)).thenReturn(List.of("documents/existing-version"));
+        when(storage.objectExists("documents/existing-version")).thenReturn(true);
+        assertThat(service(properties(true, 500)).runCycle()).isEqualTo(StorageReconciliationReport.empty());
+        verify(storage).objectExists("documents/existing-version");
+        verify(storage, never()).objectExists("documents/imports/not-put-yet");
+    }
+
+    @Test
+    void acceptedHistoryDoesNotProtectDeletedVersionOrGetDeletedByCleaner() {
+        String key = "documents/imports/accepted";
+        AtomicBoolean documentDeleted = new AtomicBoolean();
+        when(storage.list(PREFIX, null, 1000)).thenReturn(page(List.of(expired(key)), null));
+        when(mapper.listLiveObjectKeys(List.of(key))).thenAnswer(call -> documentDeleted.get() ? List.of() : List.of(key));
+        when(mapper.sampleLiveObjectKeys(100)).thenAnswer(call -> documentDeleted.get() ? List.of() : List.of(key));
+        when(storage.objectExists(key)).thenReturn(true);
+        assertThat(service(properties(true, 500)).runCycle().deleted()).isZero();
+        documentDeleted.set(true);
+        assertThat(service(properties(true, 500)).runCycle().deleted()).isEqualTo(1);
+        verify(storage).delete(key);
     }
 
     private static StorageReconciliationProperties properties(boolean deleteEnabled, int maxDeletes) {

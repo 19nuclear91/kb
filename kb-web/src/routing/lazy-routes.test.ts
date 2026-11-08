@@ -1,4 +1,4 @@
-import { defineComponent, h, onMounted, watch, type Component } from 'vue';
+import { defineComponent, h, onMounted, onBeforeUnmount, watch, type Component } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { flushPromises } from '@vue/test-utils';
 import { fireEvent, screen, waitFor } from '@testing-library/vue';
@@ -24,8 +24,9 @@ vi.mock('../pages/ChangePasswordPage.vue', () => import('../test/stubs').then(m 
 const pending: Record<string, ReturnType<typeof deferred<PageModule>>> = {};
 const loaders: Record<string, ReturnType<typeof vi.fn>> = {};
 const mounted = vi.fn();
+const unmounted = vi.fn();
 beforeEach(() => {
-  mounted.mockClear(); vi.mocked(reloadPage).mockClear();
+  mounted.mockClear(); unmounted.mockClear(); vi.mocked(reloadPage).mockClear();
   vi.spyOn(console, 'error').mockImplementation(() => {});
   for (const name of registry.names) {
     pending[name] = deferred<PageModule>();
@@ -37,12 +38,13 @@ afterEach(() => { Reflect.deleteProperty(document, 'visibilityState'); });
 /** 对应 React 版的 useEffect 探针：挂载后及依赖变化时记录并读取当前目标。 */
 const Probe = defineComponent({ props: { name: { type: String, required: true } }, setup(props) {
   const auth = useSession(), route = useRoute();
-  const target = () => String(route.params.documentId ?? route.params.spaceId ?? '');
+  const target = () => String(route.params.documentId ?? route.params.spaceId ?? route.params.importId ?? '');
   const run = () => {
     mounted(props.name, target(), auth.state.epoch, auth.state.me?.user.userId);
     void auth.session.json(`/api/probe/${props.name}/${target()}`).catch(() => {});
   };
   onMounted(run);
+  onBeforeUnmount(() => unmounted(props.name));
   watch([() => auth.session, () => auth.state.epoch, () => auth.state.me?.user.userId, () => props.name, target], run);
   return () => h('h1', `${props.name}:${target()}`);
 } });
@@ -77,7 +79,7 @@ const expectOnly = (name: string) => {
   for (const other of registry.names.filter(value => value !== name)) expect(loaders[other]).not.toHaveBeenCalled();
 };
 
-it.each(['/documents/1', '/admin/users'])('地址 %s 在身份未确认、匿名、改密或故障时不调用加载器', async path => {
+it.each(['/documents/1', '/admin/users', '/imports', '/imports/9223372036854775807'])('地址 %s 在身份未确认、匿名、改密或故障时不调用加载器', async path => {
   for (const options of [{ saved: false }, { identity: { ...me, mustChangePassword: true } },
     { identity: deferred<Response>().promise }, { identity: new Response(null, { status: 503 }) }]) {
     const h = harness(path, options);
@@ -185,4 +187,11 @@ it('运营报表只由独立权限加载，无空间目录依赖或菜单预取'
   const h = harness('/admin/reports/operations', { permissions: ['operations:reports:read'] });
   await waitFor(() => expect(loaders.OperationsReportsPage).toHaveBeenCalled()); expectOnly('OperationsReportsPage');
   expect(h.transport.mock.calls.some(([url]) => url === '/api/admin/spaces')).toBe(false);
+});
+it.each([['/imports', 'ImportsPage'], ['/imports/9223372036854775807', 'ImportDetailPage']])('导入 %s 只加载当前页面且离页卸载作用域', async (path, name) => {
+  const h = harness(path, { permissions: [] });
+  await waitFor(() => expect(loaders[name]).toHaveBeenCalled()); expectOnly(name); await finish(name);
+  expect(mounted).toHaveBeenCalledTimes(1);
+  await fireEvent.click(screen.getByRole('link', { name: /文档中心/ })); await flushPromises();
+  expect(unmounted).toHaveBeenCalledWith(name); h.view.unmount();
 });

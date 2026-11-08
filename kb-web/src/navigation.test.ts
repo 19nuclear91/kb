@@ -18,7 +18,8 @@ describe('用户端路由', () => {
     expect(screen.getByRole('link', { name: /站内通知/ }).getAttribute('aria-current')).toBe('page');
   });
   it('只恢复明确站内页面', () => {
-    for (const path of ['/documents/7', '/assistant/9', '/account', '/search']) expect(safeReturnPath(path)).toBe(path);
+    for (const path of ['/documents/7', '/assistant/9', '/account', '/search', '/imports', '/imports/9223372036854775807']) expect(safeReturnPath(path)).toBe(path);
+    for (const path of ['/imports?ownerId=1', '/imports/1/file', '//imports', '/imports/0']) expect(safeReturnPath(path)).toBe('/documents');
     for (const path of ['https://bad.test', '//bad.test', '/login', '/documents?query=secret', '/unknown']) expect(safeReturnPath(path)).toBe('/documents');
   });
   it('管理返回地址只接受明确站内路由', () => {

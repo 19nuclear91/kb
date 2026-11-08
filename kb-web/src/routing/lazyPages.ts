@@ -3,6 +3,8 @@ import { lazyPage } from './lazyPage';
 export const LifecyclePage = lazyPage(() => import('../admin/lifecycle/LifecyclePage.vue'));
 export const AccountPage = lazyPage(() => import('../pages/AccountPage.vue'));
 export const DocumentsPage = lazyPage(() => import('../pages/DocumentsPage.vue'));
+export const ImportsPage = lazyPage(() => import('../pages/ImportsPage.vue'));
+export const ImportDetailPage = lazyPage(() => import('../pages/ImportDetailPage.vue'));
 export const DocumentDetailPage = lazyPage(() => import('../pages/DocumentDetailPage.vue'));
 export const SearchPage = lazyPage(() => import('../pages/SearchPage.vue'));
 export const FavoritesPage = lazyPage(() => import('../pages/FavoritesPage.vue'));

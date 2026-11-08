@@ -38,6 +38,14 @@ spring:
       # 光看配置不算验证——这条链路上每一跳都有独立的缓冲开关。
       # ============================================================
       routes:
+        - id: kb-document-imports
+          uri: ${KB_APP_BASE_URL:}
+          predicates:
+            - Path=/api/document-imports,/api/document-imports/**
+          metadata:
+            response-timeout: 150000
+            connect-timeout: 2000
+
         - id: kb-search
           uri: ${KB_APP_BASE_URL:}
           predicates:

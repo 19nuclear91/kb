@@ -24,6 +24,7 @@ export const routes: RouteRecordRaw[] = [
     path: '/', component: ProtectedLayout, children: [
       { path: '', component: Redirect, props: { to: '/documents' } },
       page('/documents', 'DocumentsPage'), page('/documents/:documentId', 'DocumentDetailPage'),
+      page('/imports', 'ImportsPage'), page('/imports/:importId', 'ImportDetailPage'),
       page('/favorites', 'FavoritesPage'),
       page('/reviews', 'ReviewsPage'),
       page('/notifications', 'NotificationsPage'),

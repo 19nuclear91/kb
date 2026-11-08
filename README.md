@@ -13,6 +13,7 @@
 | 页面加载与恢复 | 按身份和路由加载业务及管理页面，拆分文档列表/详情与登录/账户依赖 | 加载状态和异常局限于页面区域，导航与退出保持可用；失败后可主动刷新，不自动重放写入。见[前端路由加载](kb-web/README.md#路由加载与恢复) |
 | 空间与授权 | 空间创建、归档、授权、批量授予与撤销，文档例外授权 | 空间为授权主单位；主体支持用户、角色和部门树。见[空间与文档管理](docs/admin-space-document-web.md) |
 | 文档生命周期 | 原件上传、多版本、处理状态、失败重试、独立操作资格重核、软删除、搬迁、密级调整 | 新版本上传被拒后暂停并重核，不自动重传；用户端删除与管理端删除分别校验编辑和空间管理资格；搬迁会清空文档例外授权。见[用户端说明](kb-web/README.md)、[文档密级管理](docs/document-security-level.md) |
+| 批量文件导入 | 本地多选／拖拽、固定清单、逐项幂等受理、本人持久任务、跨登录人工恢复 | `/imports` 与 `/imports/:importId`；同名同内容不同项允许新建，响应未知先核对，未完成文件需重选匹配。见[导入 API](docs/document-import-api.md)、[导入运维](docs/document-import-operations.md) |
 | 文档资料 | 标题、人工摘要、空间分类树、全局标签，以及文档列表组合筛选 | 分类属于空间，标签可跨空间使用；资料修改作用于整份文档。见[资料与目录](docs/document-metadata-web.md) |
 | 审核与协作 | 空间发布策略、固定版本送审/通过/驳回/撤回、个人收藏、版本评论与回复、站内通知 | 解析完成、审核通过和发布是不同状态；评论和审核分别需要对应资格。见[版本审核](docs/document-review.md)、[收藏](docs/document-favorites.md)、[评论](docs/version-comments.md)、[通知](docs/in-app-notifications.md) |
 | 文件阅读 | PDF、UTF-8 TXT/Markdown 预览，以及独立授权的原件下载 | 下载拒绝不等于阅读拒绝，重核保持原版本且不自动打开文件；docx/xlsx/pptx 原生只读预览通过可选 ONLYOFFICE 服务提供，默认关闭；doc/xls/ppt 不进入该预览流程。见[Office 预览](docs/office-preview.md) |
@@ -81,7 +82,7 @@ docker compose ps
 | MinIO S3 | `http://localhost:9000` | Access Key `kbminio`，Secret Key `kbminio_dev_pwd`，桶 `kb-documents` |
 | MinIO 控制台 | `http://localhost:9001` | 使用上述 MinIO 凭据 |
 
-上传路径在桶不存在时会尝试建桶，需要相应存储权限；读取路径不会自动建桶。
+既有单文件上传路径在桶不存在时会尝试建桶，需要相应存储权限；读取与批量导入专用 PUT 不会自动建桶，批量导入部署需事先准备既有配置桶。
 
 ### 2. 构建并启动业务应用
 
@@ -92,7 +93,7 @@ mvn -pl kb-app spring-boot:run '-Dspring-boot.run.profiles=dev'
 
 第一条命令安装模块间依赖并打包，跳过测试；成功后再运行第二条。等待 `kb-app` 完成 Flyway 迁移和 Embedding profile 登记，再启动 Worker。
 
-正式迁移位于 [db/migration](kb-app/src/main/resources/db/migration)，当前最高版本为 **V35**，包含 V18.1；V29–V35 引入人工启用状态、认证代次、生命周期登记/事件/权限、轮次代次及输出停止证据。V3/V6 位于 [db/dev](kb-app/src/main/resources/db/dev)，仅 `dev` profile 加载。不要在已有生产库上切换到 `dev` 来补种子，也不要用 Flyway repair 跳过迁移问题；存量系统升级须遵守[生命周期协调发布](docs/lifecycle-rollout.md)。
+正式迁移位于 [db/migration](kb-app/src/main/resources/db/migration)，当前最高版本为 **V36**，包含 V18.1；V29–V35 引入人工启用状态、认证代次、生命周期登记/事件/权限、轮次代次及输出停止证据，V36 新增批量导入任务、文件项和上传尝试账本。V3/V6 位于 [db/dev](kb-app/src/main/resources/db/dev)，仅 `dev` profile 加载。不要在已有生产库上切换到 `dev` 来补种子，也不要用 Flyway repair 跳过迁移问题；存量系统升级须遵守[生命周期协调发布](docs/lifecycle-rollout.md)及[导入升级与回退](docs/document-import-operations.md#对账升级与回退)。
 
 ### 3. 分别启动其他服务
 
@@ -159,6 +160,21 @@ npm run dev
 - **监控通知需要单独部署。** 应用指标不等于告警链路；未配置 Prometheus、Alertmanager 和通知适配器时不会自动发送钉钉。关闭会话或 AI 用量采集也不会停止 app 对历史结算账本的只读采样。
 
 ## 功能配置
+
+### 批量文件导入
+
+从文档中心“批量导入文件”或主导航“我的导入任务”进入。每批固定一个空间和密级，文件标题可逐项编辑；同一项重试返回原受理回执，不同项及新批次允许同名同内容的新文档。响应未知先核对持久任务，未完成文件重新选择并匹配名称、大小和 SHA-256 后由用户主动继续。
+
+| 配置 | 默认值 | 作用 |
+| --- | ---: | --- |
+| `KB_IMPORT_MAX_ITEMS` / `KB_IMPORT_MAX_TOTAL_BYTES` | 100 / 1073741824（1 GiB） | 单批项数与总字节上限 |
+| `KB_IMPORT_MAX_CONCURRENT` / `KB_IMPORT_MAX_CONCURRENT_PER_USER` | 8 / 2 | 每实例及每用户每实例实际在途上限，容量不足返回 429 |
+| `KB_IMPORT_ATTEMPT_TIMEOUT_SECONDS` / `KB_IMPORT_STORAGE_TIMEOUT_SECONDS` | 120 / 60 | 尝试期限与完整存储调用预算（秒） |
+| `KB_IMPORT_RECOVERY_INTERVAL_MS` / `KB_IMPORT_RECOVERY_BATCH_SIZE` | 30000 / 100 | 到期尝试恢复间隔（毫秒）与单轮上限 |
+
+单文件默认 50 MiB，`KB_MAX_UPLOAD_SIZE` 与 `KB_MAX_UPLOAD_BYTES` 必须等值；`KB_MAX_UPLOAD_REQUEST_SIZE` 默认 51 MiB，`KB_UPLOAD_TEMP_DIRECTORY` 可指定上传临时卷。浏览器最多并行上传两项，网关导入响应等待 150 秒、前端单项等待 180 秒。参数范围、入站体限时与磁盘配置见[导入运维](docs/document-import-operations.md)。
+
+上传资格撤销时清理整个任务的旧文件描述和本地选择，迟到响应不能恢复这些内容；重新取得资格后仍需重选并主动继续。已受理回执与固定版本的解析、审核、发布及阅读资格分别处理。对象对账同时保护存活版本和尚未持久失效的 ACTIVE 尝试，单纯期限到达不会解除保护。
 
 ### Embedding、rerank 与解析
 
@@ -275,6 +291,7 @@ app / Worker / AI / gateway 管理端口
 | 页面 | 路径 |
 | --- | --- |
 | 文档中心、知识搜索、收藏 | `/documents`、`/search`、`/favorites` |
+| 批量文件导入、本人任务详情 | `/imports`、`/imports/:importId` |
 | 版本审核、站内通知、个人账户 | `/reviews`、`/notifications`、`/account` |
 | AI 助手 | `/assistant` |
 | 用户、部门、角色 | `/admin/users`、`/admin/departments`、`/admin/roles` |
@@ -285,6 +302,8 @@ app / Worker / AI / gateway 管理端口
 | AI 用量、调用审计、运营概览 | `/admin/ai/usage`、`/admin/ai/audits`、`/admin/reports/operations` |
 
 业务 API 统一经网关 `http://localhost:8080/api/**` 访问。搜索使用 `POST /api/search` 的 JSON 请求体，不使用 URL 查询参数。文档上传使用 `POST /api/documents` 的 multipart 请求体。管理写入通常需要 `X-Request-Id`，有版本前置条件的操作还需读取最新版本值。
+
+批量导入使用 `POST /api/document-imports` 创建固定 JSON 清单，再逐项上传文件。发布顺序为全实例暂停对象删除 → app 迁移与升级 → 恢复清理配置 → gateway → web；旧 app 删除扫描不可与新导入混跑。回退保留账本和受理历史，并在回退旧 app 期间保持删除关闭。
 
 开发环境可直连 `kb-app` 或 `kb-ai` 的 `/doc.html`、`/v3/api-docs` 查看接口定义；当前网关没有转发这些文档路径。生产环境应按部署网络策略限制接口文档和管理端点访问。
 
@@ -313,6 +332,12 @@ try {
 仓库包含权限、业务状态、Mapper 映射、模块边界、AI 无数据库依赖、响应式链路及前端模拟 DOM 等测试。真实 PostgreSQL 烟测由 `KB_TEST_POSTGRES_URL`、`KB_TEST_POSTGRES_USER`、`KB_TEST_POSTGRES_PASSWORD` 指向专用测试库；未配置 URL 时相关用例跳过，跳过不代表数据库行为已验证。
 
 [db/verify_paradedb.sql](db/verify_paradedb.sql)、[db/verify_permission.sql](db/verify_permission.sql)、[db/verify_identity_department.sql](db/verify_identity_department.sql) 提供数据库检查脚本，部分依赖开发种子或创建测试数据，使用前阅读脚本并选择测试库。真实迁移、索引行为、权限隔离、并发发布、SSE 转发和供应商兼容性需要在目标环境另行验证；各专项文档保留其具体离线验证范围。
+
+### 批量文件导入核验
+
+`batch-document-import` 已于 2026-11-08 同步 3 份主规格并归档，新增 27 条、修改 3 条需求，任务 **38/38** 完成，独立核验为 **0 CRITICAL / 0 WARNING / 0 SUGGESTION**。行为契约见[导入主规格](openspec/specs/document-imports/spec.md)，30 条需求与 80 个场景映射及撤权竞争复核见[归档核验报告](openspec/changes/archive/2026-11-08-batch-document-import/verification-review.md)。
+
+实施阶段后端显式离线白名单 **178 项**、前端白名单 **125 项**通过；权限竞争修复后导入模块 **9 个文件 / 43 项**通过，最终独立核验另有 **2 项**实际 Session/API 配合内存传输实验通过。各组有重叠，分别记录、不累计；类型检查、生产构建和包体隔离通过，完整命令及边界见[实施验证记录](openspec/changes/archive/2026-11-08-batch-document-import/verification.md)。同步后主规格普通校验 **60/60** 通过，含 `admin-web-access` 的既有长文本警告。
 
 ### Worker Embedding 调用限界核验
 

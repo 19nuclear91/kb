@@ -11,6 +11,8 @@ vi.mock('./pages/ChangePasswordPage.vue', () => import('./test/stubs').then(m =>
 vi.mock('./pages/AccountPage.vue', () => import('./test/stubs').then(m => m.stubPage('账户入口')));
 vi.mock('./pages/DocumentsPage.vue', () => import('./test/stubs').then(m => m.stubPage('文档入口')));
 vi.mock('./pages/DocumentDetailPage.vue', () => import('./test/stubs').then(m => m.stubPage('详情入口')));
+vi.mock('./pages/ImportsPage.vue', () => import('./test/stubs').then(m => m.stubPage('导入入口')));
+vi.mock('./pages/ImportDetailPage.vue', () => import('./test/stubs').then(m => m.stubPage('导入详情入口')));
 vi.mock('./pages/SearchPage.vue', () => import('./test/stubs').then(m => m.stubPage('搜索入口')));
 vi.mock('./pages/AssistantPage.vue', () => import('./test/stubs').then(m => m.stubPage('助手入口')));
 vi.mock('./admin/UsersPage.vue', () => import('./test/stubs').then(m => m.stubPage('账号管理入口')));
@@ -18,6 +20,19 @@ vi.mock('./admin/DepartmentsPage.vue', () => import('./test/stubs').then(m => m.
 vi.mock('./admin/RolesPage.vue', () => import('./test/stubs').then(m => m.stubPage('角色管理入口')));
 import AppRoutes from './routing/AppRoutes.vue';
 beforeEach(() => { context.state = { phase: 'ready', me, epoch: 1 }; context.session.json.mockReset(); context.session.json.mockResolvedValue([]); });
+it('导入根与精确详情可直达，匿名/加载/改密不加载内容且登录返回合法', async () => {
+  for (const path of ['/imports', '/imports/9223372036854775807']) {
+    for (const phase of ['anonymous', 'loading', 'password'] as const) {
+      context.state.phase = phase; const view = show(path);
+      expect(screen.queryByText('导入入口')).toBeNull(); expect(screen.queryByText('导入详情入口')).toBeNull();
+      if (phase === 'anonymous') expect(await screen.findByText(`from:${path}`)).toBeTruthy();
+      expect(context.session.json).not.toHaveBeenCalled(); view.unmount();
+    }
+    context.state.phase = 'ready'; const view = show(path);
+    expect(await screen.findByText(path === '/imports' ? '导入入口' : '导入详情入口')).toBeTruthy(); view.unmount();
+    context.session.json.mockClear();
+  }
+});
 function show(path: string) { return mountRouter(() => [h(AppRoutes), h(LocationProbe), h(FromProbe)], { path }); }
 it('初始地址默认文档，保留合法详情路由，未知页面明确提示', async () => {
   const view = show('/'); expect(await screen.findByText('文档入口')).toBeTruthy(); expect(screen.getByText('/documents')).toBeTruthy(); view.unmount();

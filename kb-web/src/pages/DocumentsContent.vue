@@ -42,7 +42,7 @@ function uploaded(result: UploadResult) {
 </script>
 
 <template>
-  <PageHeader title="文档中心" description="整理团队知识，在权限范围内发现可靠资料"><template #extra><ElButton type="primary" size="large" @click="upload = true">上传文档</ElButton></template></PageHeader>
+  <PageHeader title="文档中心" description="整理团队知识，在权限范围内发现可靠资料"><template #extra><RouterLink to="/imports">批量导入文件</RouterLink><ElButton type="primary" size="large" @click="upload = true">上传文档</ElButton></template></PageHeader>
   <KbAlert v-if="deletionNotice === auth.state.epoch" type="success" title="文档已删除" />
   <ProgressCard v-if="submitted && !favorites.unavailable(submitted.documentId)" :key="submitted.versionId" :document-id="submitted.documentId" :version-id="submitted.versionId" submitted />
   <section class="panel"><MetadataFilters :spaces="spaces.data ?? []" @submit="filter" />

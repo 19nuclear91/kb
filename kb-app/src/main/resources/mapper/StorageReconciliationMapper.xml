@@ -4,17 +4,21 @@
 
 <mapper namespace="com.zhishiku.kb.app.storage.mapper.StorageReconciliationMapper">
 
-    <!-- 存活引用：文档未被软删除即可下载、预览与引用，与其状态、空间归档和版本无关。 -->
-    <select id="listLiveObjectKeys" resultType="string">
+    <!-- 清理保护：版本存活或尝试仍 ACTIVE；时钟到期不能代替持久失效。 -->
+    <select id="listLiveObjectKeys" resultType="string" useCache="false" flushCache="true">
         SELECT DISTINCT v.object_key
         FROM kb_document_version v
         JOIN kb_document d ON d.id = v.doc_id
         WHERE d.status &lt;&gt; 'deleted'
         AND v.object_key IN
         <foreach item="objectKey" collection="objectKeys" open="(" separator="," close=")">#{objectKey}</foreach>
+        UNION
+        SELECT a.object_key FROM kb_document_import_attempt a
+        WHERE a.state = 'ACTIVE' AND a.object_key IN
+        <foreach item="objectKey" collection="objectKeys" open="(" separator="," close=")">#{objectKey}</foreach>
     </select>
 
-    <select id="hasLiveReference" resultType="boolean">
+    <select id="hasLiveReference" resultType="boolean" useCache="false" flushCache="true">
         SELECT EXISTS (
         SELECT 1
         FROM kb_document_version v
@@ -22,6 +26,7 @@
         WHERE d.status &lt;&gt; 'deleted'
         LIMIT 1
         )
+        OR EXISTS (SELECT 1 FROM kb_document_import_attempt WHERE state = 'ACTIVE' LIMIT 1)
     </select>
 
     <select id="sampleLiveObjectKeys" resultType="string">
