@@ -1,6 +1,6 @@
 # 用户端
 
-独立 React/TypeScript/Vite/Ant Design 工程，要求 Node.js 24+、npm 11+。依赖版本与锁文件一并提交，构建不属于 Maven reactor。
+独立 Vue 3 / TypeScript 6 / Vite / Element Plus 工程，路由使用 vue-router 5，会话与管理资格通过 Pinia 暴露，组件统一使用 `<script setup lang="ts">`。要求 Node.js 24+、npm 11+。依赖版本与锁文件一并提交，构建不属于 Maven reactor。
 
 从仓库根目录执行：
 
@@ -14,6 +14,10 @@ npm run build
 
 单元测试仅使用内存替身和模拟 DOM，不启动应用、浏览器、数据库、Redis、MinIO 或模型服务，不测试说明文档内容。
 
+类型检查由 `vue-tsc --noEmit` 完成；组件测试使用 `@testing-library/vue`、Vitest 与 jsdom，文件统一为 `src/**/*.test.ts`。`src/test/render.ts` 提供 Pinia/内存路由宿主和 Element Plus 交互辅助。`vite.config.ts` 的 Element Plus 测试内联配置用于正确处理 `async-validator` 默认导出，确保非法表单输入确实被拒绝。
+
+会话和管理资格 facade 保持对象引用，在渲染、`computed` 或 `watch` 中读取当前属性，避免解构成快照；文档操作和评论使用子树级 `provide/inject`。外部核心对象与写入 Binding 保持原始身份，使用浅响应式容器桥接。组件显式导入 Element Plus，生产样式按需注入，根部提供中文语言包；正文只以文本插值展示，静态检查禁止 `v-html`。
+
 ## 构建与包体分析
 
 包体分析使用当前源码生产构建；`dist` 只保留发布资产，manifest 和有效模块归属清单保存在本地 `.bundle-analysis`。首轮拆分的正式基线与候选报告已归档；日常检查在本目录执行以下命令，输出到本地目录：
@@ -24,13 +28,15 @@ npm run build
 npm run bundle:report -- --check-isolation --out .bundle-analysis/current-report.json
 ```
 
-与首轮拆分前基线比较时，须使用基线记录的锁文件、Node/npm、production 模式及公开构建开关重新构建，再运行：
+与本次 Vue 迁移的 React 基线比较时，使用基线记录的 Node/npm、production 模式及公开构建开关。框架替换必然改变锁文件，须显式登记这一差异；`lifecycle` 是本轮补入报告的场景，旧报告没有独立基线：
 
 ```powershell
-npm run bundle:report -- --baseline ../openspec/changes/archive/2026-11-06-frontend-route-lazy-loading/bundle-baseline.json --check-isolation --check-reduction --out .bundle-analysis/comparison-report.json
+npm run bundle:report -- --baseline ../openspec/changes/archive/2026-11-08-migrate-web-to-vue3/bundle-baseline.json --allow-lock-change --new-scenarios lifecycle --check-isolation --check-growth --out .bundle-analysis/comparison-report.json
 ```
 
-报告按 HTML 入口及递归静态依赖统计冷启动集合，动态页面只计入对应路由；共享 JS/CSS 按最终文件名去重，每个文件分别以 gzip level 9、Brotli quality 11 压缩后求和。路由报告包含累计及增量字节、文件数、有效项目模块归属和构建身份；旧单包的全部路由计入入口。缺少资源/模块映射或基线条件不一致会失败。入口、登录和文档列表累计 gzip 必须下降，详情及其他路由同时记录差异。公开开关仅记录白名单，报告不收集私有环境变量。
+报告按 HTML 入口及递归静态依赖统计冷启动集合，动态页面只计入对应路由；共享 JS/CSS 按最终文件名去重，每个文件分别以 gzip level 9、Brotli quality 11 压缩后求和。路由报告包含累计及增量字节、文件数、有效项目模块归属和构建身份。缺少资源/模块映射或未经显式登记的基线条件差异会失败；`--allow-lock-change` 只允许锁摘要不同，两个摘要均写入报告，其他条件仍严格核对。`--check-growth` 要求入口、登录与文档列表累计 gzip 不超过基线 10%；旧的 `--check-reduction` 仍可用于同条件优化的严格下降检查。新增无基线场景只记录候选值，不能豁免门槛场景。公开开关仅记录白名单，报告不收集私有环境变量。
+
+Vue 切换后的入口/登录、文档列表、文档详情累计 gzip 分别为 126,896、232,444、256,878 字节；前两项较迁移基线减少 43.28%、34.52%，隔离与 10% 门槛通过。完整结果见[迁移验证记录](../openspec/changes/archive/2026-11-08-migrate-web-to-vue3/verification.md)。
 
 首轮优化后，入口/登录、文档列表、文档详情累计 gzip 分别为 223,276、354,522、383,591 字节，相比原单包下降 45.50%、13.47%、6.37%。完整 26 个场景及测试范围见[归档实施记录](../openspec/changes/archive/2026-11-06-frontend-route-lazy-loading/verification.md)和[核验报告](../openspec/changes/archive/2026-11-06-frontend-route-lazy-loading/verification-review.md)。后续优化应在修改前为对应变更建立新基线，保留本次归档数据；依赖或运行环境变化后不能直接沿用历史比较条件。
 
@@ -146,12 +152,12 @@ SSE error 可选 `code=SEARCH_UNAVAILABLE` 显示固定检索不可用提示；�
 
 管理区与用户端同一工程、同一登录与静态托管，入口为 `/admin/users`、`/admin/departments`、`/admin/roles`，分别需要 `identity:user:read`、`identity:dept:read`、`identity:role:read`。导航只显示有读取资格的入口；本人权限按完整 code 判断，不依据角色名称。写操作和部门/角色候选另需对应权限，缺少候选资格时禁用并说明，不提供手工输入 ID。完整权限矩阵、页面规则与错误分类见 [身份管理 Web 说明](../docs/admin-identity-web.md)。
 
-工程约定：管理代码集中在 `src/admin`，复用现有 `Session`、`api.ts` 的安全 JSON 编解码、管理上下文与 `components.tsx`，不新增依赖或部署单元。读取拒绝状态和成功回执只在当前会话 epoch 内保留，资格事实变化允许重新读取，身份切换立即清空。
+工程约定：管理代码集中在 `src/admin`，复用 `Session`、`api.ts` 的安全 JSON 编解码、Pinia 管理资格与 `src/ui` 的共享 SFC。读取拒绝状态和成功回执只在当前会话 epoch 内保留，资格事实变化允许重新读取，身份切换立即清空。
 
-- `access.tsx`：本人权限上下文（与会话 epoch 对齐）、页面守卫和管理导航。
+- `access.ts` 与 `src/stores/adminAccess.ts`：本人权限 facade 与 Pinia store，随保护布局 attach/detach，与会话 epoch 对齐；`AdminGuard.vue`、`AdminNavigation.vue` 分别负责守卫与导航。
 - `api.ts`：管理 DTO 路径、写意图构造、`adminWrite` 与有界错误消费。
-- `hooks.ts`：`useAdminWrite`（请求标识绑定、互斥、不确定结果）、`useAdminResource`、`useCursorList`。
-- `ui.tsx`：写入状态提示、操作弹窗和密码输入。
+- `hooks.ts`：`useAdminWrite`（请求标识绑定、互斥、不确定结果）、`useAdminResource`、`useCursorList` 等组合式函数。
+- `WriteNotice.vue`、`AdminModal.vue`、`PasswordFields.vue`：写入状态提示、操作弹窗和密码输入；`ui.ts` 保留共享结算辅助。
 
 管理写入一律经 `useAdminWrite`：请求标识只放 `X-Request-Id`，结果不确定时只允许按原内容重试或重新读取核对，不自动重发；ID 与 version 按精确整数回传。
 
@@ -160,7 +166,7 @@ SSE error 可选 `code=SEARCH_UNAVAILABLE` 显示固定检索不可用提示；�
 在本目录执行以下命令，运行完整的恢复与空间页面测试文件，不使用名称筛选或放宽超时：
 
 ```powershell
-npm test -- --run src/documents/recovery.test.tsx src/admin/space-pages.test.tsx
+npm test -- --run src/documents/recovery.test.ts src/admin/space-pages.test.ts
 ```
 
 恢复回归包含下载/上传 403/404、固定原版本、主动重核、同文档旧能力响应迟到、身份与页面生命周期，以及上传未确认时的删除协调。空间页面回归保留 301 次实际选择及原 30 秒限制，检查超出 300 条不能提交、减少后可确认且不拆批。

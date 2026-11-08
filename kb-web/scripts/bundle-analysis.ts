@@ -5,7 +5,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import type { Plugin, ResolvedConfig } from 'vite';
 
 const publicFlags = ['VITE_CONVERSATION_ENABLED', 'VITE_NOTIFICATION_POLL_MS', 'VITE_OFFICE_PREVIEW_ORIGIN', 'VITE_SEARCH_MAX_QUERY_CODEPOINTS'];
-export function bundleAnalysis(): Plugin {
+export function bundleAnalysis({ output: outputDir = '.bundle-analysis' }: { output?: string } = {}): Plugin {
   let config: ResolvedConfig;
   return {
     name: 'kb-bundle-analysis',
@@ -30,7 +30,7 @@ export function bundleAnalysis(): Plugin {
       }));
       const git = (...args: string[]) => execFileSync('git', args, { cwd: config.root, encoding: 'utf8' }).trim();
       const digest = (value: Buffer) => createHash('sha256').update(value).digest('hex');
-      const output = resolve(config.root, '.bundle-analysis');
+      const output = resolve(config.root, outputDir);
       mkdirSync(output, { recursive: true });
       const manifestPath = resolve(config.root, config.build.outDir, '.vite/manifest.json');
       writeFileSync(resolve(output, 'manifest.json'), readFileSync(manifestPath));

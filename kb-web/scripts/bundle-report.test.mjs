@@ -52,13 +52,72 @@ test('缺少资源、映射、路由、入口或不一致构建必须失败', ()
   input = make(); input.readAsset = () => { throw new Error('ENOENT'); }; assert.throws(() => bundleReport(input), /ENOENT/);
 });
 test('结构和基线门槛不会把无改善视为成功', () => {
-  const input = fixture({ 'entry.js': { modules: ['list', 'detail', 'src/pages/AccountPage.tsx'] } });
+  const input = fixture({ 'entry.js': { modules: ['list', 'detail', 'src/pages/AccountPage.vue'] } });
   const report = bundleReport(input);
   report.scenarios.login = report.scenarios.entry;
   report.provenance = { node: 'same' };
   assert.throws(() => checkIsolation(report), /受保护页面/);
-  assert.throws(() => compare(report, report, true), /未下降/);
+  assert.throws(() => compare(report, report, { requireReduction: true }), /未下降/);
   assert.throws(() => compare(report, { ...report, provenance: { node: 'different' } }), /基线条件不同/);
+});
+test('Vue 并行路径与 SFC 子模块参与路由归属及隔离，最终路径规则一致', () => {
+  for (const source of ['src-vue', 'src']) {
+    const input = fixture({
+      'entry.js': { modules: [`${source}/main.ts`], dynamicImports: ['list.js', 'detail.js'] },
+      'list.js': { modules: [`${source}/pages/DocumentsPage.vue?vue&type=script&setup=true&lang.ts`] },
+      'detail.js': { modules: [`${source}/pages/DocumentDetailPage.vue`] },
+    });
+    input.routeModules = { documents: ['src/pages/DocumentsPage.vue'], detail: ['src/pages/DocumentDetailPage.vue'] };
+    const report = bundleReport(input); report.scenarios.login = report.scenarios.entry;
+    assert.deepEqual(report.scenarios.documents.incremental.files, ['list.js']);
+    assert.equal(report.files['list.js'].modules.length, 1);
+    checkIsolation(report);
+    report.files['list.js'].modules.push(`${source}/office/VersionPreview.vue?vue&type=script&lang.ts`);
+    assert.throws(() => checkIsolation(report), /详情专用/);
+    report.files['entry.js'].modules.push(`${source}/sso/BindingPanel.vue`);
+    assert.throws(() => checkIsolation(report), /账户绑定/);
+  }
+});
+test('管理与普通页面不能交叉内联，员工生命周期同样受入口隔离约束', () => {
+  const report = bundleReport(fixture({ 'entry.js': { modules: ['list', 'detail'] } }));
+  report.scenarios.login = report.scenarios.entry;
+  report.files['entry.js'].modules.push('src-vue/admin/lifecycle/LifecyclePage.vue');
+  assert.throws(() => checkIsolation(report), /受保护页面/);
+  report.files['entry.js'].modules = [];
+  report.files['user.js'] = { modules: ['src/pages/SearchPage.vue'] };
+  report.scenarios.users = { files: ['user.js'] };
+  assert.throws(() => checkIsolation(report), /交叉内联/);
+});
+test('跨栈比较须显式允许锁变化，其他构建条件仍严格匹配', () => {
+  const before = bundleReport(fixture({ 'entry.js': { modules: ['list', 'detail'] } }));
+  before.scenarios.login = before.scenarios.entry;
+  before.provenance = { lockSha256: 'react-lock', node: '24', npm: '11', mode: 'production', publicFlags: { feature: null } };
+  const after = structuredClone(before); after.provenance.lockSha256 = 'vue-lock';
+  assert.throws(() => compare(after, before), /lockSha256/);
+  compare(after, before, { allowLockChange: true });
+  for (const key of ['node', 'npm', 'mode', 'publicFlags']) {
+    const changed = structuredClone(after); changed.provenance[key] = 'changed';
+    assert.throws(() => compare(changed, before, { allowLockChange: true }), new RegExp(key));
+  }
+  after.compression.gzipLevel = 1;
+  assert.throws(() => compare(after, before, { allowLockChange: true }), /压缩条件/);
+});
+test('10% 包体边界精确计算，新场景只记录且不能豁免门槛场景或丢失原场景', () => {
+  const before = bundleReport(fixture({ 'entry.js': { modules: ['list', 'detail'] } }));
+  before.scenarios.login = before.scenarios.entry; before.provenance = {};
+  for (const name of ['entry', 'login', 'documents']) before.scenarios[name].total.all.gzip = 100;
+  const after = structuredClone(before);
+  for (const name of ['entry', 'login', 'documents']) after.scenarios[name].total.all.gzip = 110;
+  compare(after, before, { checkGrowth: true });
+  after.scenarios.documents.total.all.gzip++;
+  assert.throws(() => compare(after, before, { checkGrowth: true }), /超过基线 10%/);
+  after.scenarios.lifecycle = after.scenarios.detail;
+  assert.throws(() => compare(after, before), /基线缺少场景: lifecycle/);
+  assert.equal(compare(after, before, { newScenarios: ['lifecycle'] }).lifecycle.gzip.delta, null);
+  const missing = structuredClone(before); delete missing.scenarios.login;
+  assert.throws(() => compare(after, missing, { newScenarios: ['login', 'lifecycle'] }), /基线缺少场景: login/);
+  delete after.scenarios.detail;
+  assert.throws(() => compare(after, before, { newScenarios: ['lifecycle'] }), /候选缺少场景: detail/);
 });
 test('CLI 缺少分析文件时非零退出，不输出成功报告', () => {
   const result = spawnSync(process.execPath, ['scripts/bundle-report.mjs', '--analysis', 'missing-fixture-analysis'], { encoding: 'utf8' });

@@ -1,6 +1,6 @@
 # 企业智能知识库系统
 
-面向企业内部的知识库，提供知识空间、文档版本与审核、权限受控的混合检索和 RAG 问答。业务数据与检索索引统一存储在 PostgreSQL / ParadeDB，原件使用 S3 兼容对象存储；用户端与管理端由独立的 React 应用提供。
+面向企业内部的知识库，提供知识空间、文档版本与审核、权限受控的混合检索和 RAG 问答。业务数据与检索索引统一存储在 PostgreSQL / ParadeDB，原件使用 S3 兼容对象存储；用户端与管理端由独立的 Vue 3 应用提供。
 
 当前仓库包含 **8 个 Maven 模块、1 个前端工程**，以及独立的监控告警和可选 Office 预览部署配置。本文按现有代码、配置和迁移整理；各功能的离线验证记录见对应文档，不能据此认定真实数据库、第三方服务和完整部署链路已验收。
 
@@ -37,7 +37,7 @@
 | `kb-alert-notifier` | 8090（通知） / 9090（管理） | 独立钉钉群机器人适配器；接收 Alertmanager 聚合通知，不依赖业务模块、数据库、Redis 或 Sa-Token；两个端口仅供受控内网使用 |
 | `kb-eval` | — | 离线检索质量评测与报告 CLI |
 | `kb-eval-collector` | — | 核对会话身份、串行调用搜索 API 并输出评测输入的 CLI |
-| `kb-web` | 5173（Vite 默认） | React / TypeScript / Ant Design 用户端与管理端；独立安装和构建，不属于 Maven reactor |
+| `kb-web` | 5173（Vite 默认） | Vue 3 / TypeScript 6 / Element Plus，vue-router 5 与 Pinia；独立安装和构建，不属于 Maven reactor |
 
 浏览器通过同源 `/api/**` 访问网关；网关将业务请求转发到 `kb-app`，将 `/api/ai/**` 转发到 `kb-ai`。网关、应用与 AI 通过 Redis 共享 Sa-Token 会话。当前路由使用配置的服务地址，不依赖注册中心。
 
@@ -332,6 +332,8 @@ try {
 
 ### 前端路由懒加载与包体分析
 
+当前前端已迁至 Vue 3，类型检查使用 `vue-tsc`，组件测试使用 `@testing-library/vue`，测试文件为 `*.test.ts`。原 88 文件、1104 项用例完整保留，另新增 26 项框架绑定与边界测试；变更已于 2026-11-08 归档，迁移前后包体及验证结果见[迁移记录](openspec/changes/archive/2026-11-08-migrate-web-to-vue3/verification.md)。
+
 登录、强制改密和 SSO 结果页随入口直接可用，业务及管理页面在当前身份和路由资格通过后按需加载，不因菜单展示或悬停主动预取。文档列表不再依赖详情专用评论、版本审核与 Office 预览界面，登录和改密不再依赖账户绑定面板。
 
 首轮优化使用同一锁文件、Node/npm、生产模式和公开构建开关比较，累计冷启动 gzip 字节如下；统计包含入口、目标页面及其静态共享依赖，并按文件去重。
@@ -358,7 +360,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Push-Location .\kb-web
 try {
-    npm test -- --run src/documents/recovery.test.tsx src/admin/space-pages.test.tsx
+    npm test -- --run src/documents/recovery.test.ts src/admin/space-pages.test.ts
     if ($LASTEXITCODE -ne 0) {
         throw '文档资格恢复或空间授权回归失败'
     }

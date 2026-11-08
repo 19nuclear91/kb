@@ -164,4 +164,4 @@ mvn -o -q -pl kb-app -am test '-Dtest=IdentityManagementFeedbackTest,GlobalExcep
 
 生命周期流程点击“放弃核对”会撤销旧证明、退出确认并重新读取当前事实。原请求仍可能已经执行，必须核对重读结果；只有再次进入操作并完成新的显式核验、填写原因和确认后，才会生成新的请求标识，不能复用旧证明提交新原因。该规则不改变其他管理操作的共用绑定重置行为。
 
-验证采用 jsdom、API mock 与可控时间，不启动前端服务或外部组件；另运行 TypeScript 检查及生产构建。相关测试位于 `kb-web/src/admin/lifecycle/lifecycle.test.tsx`。
+验证采用 jsdom、API mock 与可控时间，不启动前端服务或外部组件；另运行 TypeScript 检查及生产构建。相关测试位于 `kb-web/src/admin/lifecycle/lifecycle.test.ts`，使用 `@testing-library/vue`。

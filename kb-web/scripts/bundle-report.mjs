@@ -5,26 +5,25 @@ import { pathToFileURL } from 'node:url';
 import { gzipSync, brotliCompressSync, constants } from 'node:zlib';
 
 export const routes = {
-  login: ['src/pages/LoginPage.tsx', 'src/pages/AuthPages.tsx'],
-  password: ['src/pages/ChangePasswordPage.tsx', 'src/pages/AuthPages.tsx'],
-  sso: ['src/pages/SsoResultPage.tsx'],
-  documents: ['src/pages/DocumentsPage.tsx', 'src/pages/Documents.tsx'],
-  detail: ['src/pages/DocumentDetailPage.tsx', 'src/pages/Documents.tsx'],
-  account: ['src/pages/AccountPage.tsx', 'src/pages/AuthPages.tsx'],
-  search: ['src/pages/Search.tsx'], favorites: ['src/pages/Favorites.tsx'],
-  reviews: ['src/pages/Reviews.tsx'], notifications: ['src/pages/Notifications.tsx'],
-  assistant: ['src/pages/Assistant.tsx'],
-  users: ['src/admin/UsersPage.tsx'], departments: ['src/admin/DepartmentsPage.tsx'],
-  roles: ['src/admin/RolesPage.tsx'], spaces: ['src/admin/SpacesPage.tsx'],
-  spaceDetail: ['src/admin/SpaceDetailPage.tsx'], adminDocuments: ['src/admin/DocumentsIndexPage.tsx'],
-  documentPanel: ['src/admin/DocumentPanelPage.tsx'], embedding: ['src/admin/EmbeddingPage.tsx'],
-  deadLetters: ['src/admin/ParseDeadLettersPage.tsx'], audits: ['src/admin/AuditsPage.tsx'],
-  aiUsage: ['src/admin/AiUsagePages.tsx'], aiAudits: ['src/admin/AiUsagePages.tsx'],
-  operations: ['src/admin/OperationsReportsPage.tsx'], tags: ['src/admin/DocumentTaxonomy.tsx'],
+  login: ['src/pages/LoginPage.vue'], password: ['src/pages/ChangePasswordPage.vue'],
+  sso: ['src/pages/SsoResultPage.vue'], documents: ['src/pages/DocumentsPage.vue'],
+  detail: ['src/pages/DocumentDetailPage.vue'], account: ['src/pages/AccountPage.vue'],
+  search: ['src/pages/SearchPage.vue'], favorites: ['src/pages/FavoritesPage.vue'],
+  reviews: ['src/pages/ReviewsPage.vue'], notifications: ['src/pages/NotificationsPage.vue'],
+  assistant: ['src/pages/AssistantPage.vue'], lifecycle: ['src/admin/lifecycle/LifecyclePage.vue'],
+  users: ['src/admin/UsersPage.vue'], departments: ['src/admin/DepartmentsPage.vue'],
+  roles: ['src/admin/RolesPage.vue'], spaces: ['src/admin/SpacesPage.vue'],
+  spaceDetail: ['src/admin/SpaceDetailPage.vue'], adminDocuments: ['src/admin/DocumentsIndexPage.vue'],
+  documentPanel: ['src/admin/DocumentPanelPage.vue'], embedding: ['src/admin/EmbeddingPage.vue'],
+  deadLetters: ['src/admin/ParseDeadLettersPage.vue'], audits: ['src/admin/AuditsPage.vue'],
+  aiUsage: ['src/admin/AiUsagePage.vue'], aiAudits: ['src/admin/AiAuditsPage.vue'],
+  operations: ['src/admin/OperationsReportsPage.vue'], tags: ['src/admin/DocumentTagsPage.vue'],
 };
 export const compression = { gzipLevel: 9, brotliQuality: 11, basis: '逐文件压缩后求和，字节' };
 const fail = message => { throw new Error(message); };
 const digest = data => createHash('sha256').update(data).digest('hex');
+// 并行树和切换后的树使用同一规则；SFC 子模块也属于对应源码模块。
+const sourceId = id => id.replace(/^src-vue\//, 'src/').split('?')[0];
 
 export function bundleReport({ manifest, analysis, html, readAsset, routeModules = routes }) {
   if (analysis.schema !== 1 || !analysis.chunks || !analysis.assets) fail('缺少有效模块归属分析');
@@ -53,7 +52,7 @@ export function bundleReport({ manifest, analysis, html, readAsset, routeModules
     files[file] = { type: file.endsWith('.css') ? 'css' : 'js', raw: data.length,
       gzip: gzipSync(data, { level: compression.gzipLevel }).length,
       brotli: brotliCompressSync(data, { params: { [constants.BROTLI_PARAM_QUALITY]: compression.brotliQuality } }).length,
-      sha256: analysis.assets[file], modules: (chunks[file]?.modules ?? []).filter(id => id.startsWith('src/')) };
+      sha256: analysis.assets[file], modules: (chunks[file]?.modules ?? []).filter(id => /^src(?:-vue)?\//.test(id)) };
   }
   const htmlAssets = [...html.matchAll(/<(script|link)\b[^>]*>/gi)].flatMap(([tag, kind]) => {
     if (kind.toLowerCase() === 'link' && !/rel=["'](?:stylesheet|modulepreload)["']/i.test(tag)) return [];
@@ -86,7 +85,7 @@ export function bundleReport({ manifest, analysis, html, readAsset, routeModules
   };
   const scenarios = { entry: scenario(entry) };
   for (const [name, modules] of Object.entries(routeModules)) {
-    const owners = Object.entries(chunks).filter(([, chunk]) => modules.some(id => chunk.modules.includes(id))).map(([file]) => file);
+    const owners = Object.entries(chunks).filter(([, chunk]) => modules.some(id => chunk.modules.some(module => sourceId(module) === sourceId(id)))).map(([file]) => file);
     if (owners.length === 0) fail(`缺少路由模块归属: ${name}`);
     scenarios[name] = scenario(closure([...entry, ...owners]));
   }
@@ -94,26 +93,39 @@ export function bundleReport({ manifest, analysis, html, readAsset, routeModules
 }
 
 export function checkIsolation(report) {
-  const modules = name => new Set(report.scenarios[name].files.flatMap(file => report.files[file].modules));
+  const modules = name => new Set(report.scenarios[name].files.flatMap(file => report.files[file].modules.map(sourceId)));
   const entry = modules('entry'), login = modules('login'), list = modules('documents');
   const protectedModules = Object.entries(routes).filter(([name]) => !['login', 'password', 'sso'].includes(name)).flatMap(([, ids]) => ids);
   if (protectedModules.some(id => entry.has(id))) fail('入口包含受保护页面实现');
-  if (login.has('src/sso/BindingPanel.tsx')) fail('认证入口包含账户绑定面板');
-  for (const id of ['src/pages/DocumentDetailPage.tsx', 'src/comments/CommentPanel.tsx', 'src/reviews/VersionReviewPanel.tsx', 'src/office/VersionPreview.tsx']) {
+  if (login.has('src/sso/BindingPanel.vue')) fail('认证入口包含账户绑定面板');
+  for (const id of ['src/pages/DocumentDetailPage.vue', 'src/comments/CommentPanel.vue', 'src/reviews/VersionReviewPanel.vue', 'src/office/VersionPreview.vue']) {
     if (list.has(id)) fail(`列表包含详情专用模块: ${id}`);
+  }
+  const adminPages = Object.values(routes).flat().filter(id => id.startsWith('src/admin/'));
+  const userPages = Object.values(routes).flat().filter(id => id.startsWith('src/pages/') && !['login', 'password', 'sso'].some(name => routes[name].includes(id)));
+  for (const [name, ids] of Object.entries(routes)) {
+    if (!report.scenarios[name]) continue;
+    const current = modules(name), opposite = ids.some(id => id.startsWith('src/admin/')) ? userPages : adminPages;
+    if (opposite.some(id => current.has(id))) fail(`管理与普通页面交叉内联: ${name}`);
   }
 }
 
-export function compare(report, baseline, requireReduction = false) {
+export function compare(report, baseline, { requireReduction = false, allowLockChange = false, newScenarios = [], checkGrowth = false } = {}) {
   if (JSON.stringify(report.compression) !== JSON.stringify(baseline.compression)) fail('基线压缩条件不同');
   for (const key of ['lockSha256', 'node', 'npm', 'mode', 'publicFlags']) {
+    if (key === 'lockSha256' && allowLockChange) continue;
     if (JSON.stringify(report.provenance[key]) !== JSON.stringify(baseline.provenance[key])) fail(`基线条件不同: ${key}`);
   }
+  for (const name of Object.keys(baseline.scenarios)) {
+    if (!report.scenarios[name]) fail(`候选缺少场景: ${name}`);
+  }
   const comparison = Object.fromEntries(Object.entries(report.scenarios).map(([name, scenario]) => {
-    const before = baseline.scenarios[name]?.total.all ?? fail(`基线缺少场景: ${name}`);
-    return [name, Object.fromEntries(['files', 'raw', 'gzip', 'brotli'].map(metric => [metric, { baseline: before[metric], candidate: scenario.total.all[metric], delta: scenario.total.all[metric] - before[metric] }]))];
+    const before = baseline.scenarios[name]?.total.all;
+    if (!before && (!newScenarios.includes(name) || ['entry', 'login', 'documents'].includes(name))) fail(`基线缺少场景: ${name}`);
+    return [name, Object.fromEntries(['files', 'raw', 'gzip', 'brotli'].map(metric => [metric, { baseline: before?.[metric] ?? null, candidate: scenario.total.all[metric], delta: before ? scenario.total.all[metric] - before[metric] : null }]))];
   }));
   if (requireReduction && ['entry', 'login', 'documents'].some(name => comparison[name].gzip.delta >= 0)) fail('入口/登录/列表累计 gzip 未下降');
+  if (checkGrowth && ['entry', 'login', 'documents'].some(name => comparison[name].gzip.candidate * 10 > comparison[name].gzip.baseline * 11)) fail('入口/登录/列表累计 gzip 超过基线 10%');
   return comparison;
 }
 
@@ -133,14 +145,20 @@ function main() {
     return readFileSync(target);
   };
   const analysis = json(resolve(analysisDir, 'modules.json'));
-  const html = readAsset('index.html');
-  if (digest(html) !== analysis.assets['index.html']) fail('HTML 与分析不一致');
+  const entryHtml = option('--html', 'index.html'), html = readAsset(entryHtml);
+  if (digest(html) !== analysis.assets[entryHtml]) fail('HTML 与分析不一致');
   const report = bundleReport({ manifest: json(resolve(analysisDir, 'manifest.json')), analysis, html: html.toString(), readAsset });
   if (args.includes('--check-isolation')) checkIsolation(report);
   const baseline = option('--baseline');
-  if (args.includes('--check-reduction') && !baseline) fail('比较下降必须提供基线');
-  if (baseline) report.comparison = compare(report, json(resolve(baseline)), args.includes('--check-reduction'));
-  const out = option('--out', '.bundle-analysis/report.json');
+  const comparisonOptions = { requireReduction: args.includes('--check-reduction'), allowLockChange: args.includes('--allow-lock-change'),
+    checkGrowth: args.includes('--check-growth'), newScenarios: option('--new-scenarios', '').split(',').filter(Boolean) };
+  if (!baseline && (comparisonOptions.requireReduction || comparisonOptions.allowLockChange || comparisonOptions.checkGrowth || comparisonOptions.newScenarios.length)) fail('比较选项必须提供基线');
+  if (baseline) {
+    const before = json(resolve(baseline));
+    report.comparison = compare(report, before, comparisonOptions);
+    report.comparisonConditions = { ...comparisonOptions, baselineLockSha256: before.provenance.lockSha256, candidateLockSha256: report.provenance.lockSha256 };
+  }
+  const out = option('--out', resolve(analysisDir, 'report.json'));
   writeFileSync(resolve(out), JSON.stringify(report, null, 2) + '\n');
   console.table(Object.fromEntries(Object.entries(report.scenarios).map(([name, value]) => [name, value.total.all])));
   console.log(`报告已保存: ${out}`);

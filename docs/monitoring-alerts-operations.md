@@ -72,6 +72,6 @@ $adminUrl = 'http://127.0.0.1:9093'
 
 ## 页面权限和通知边界
 
-既有 `kb-web/src/App.tsx` 的 AdminGuard 继续保护 `/admin/parse/dead-letters`、`/admin/embedding`、`/admin/ai/audits`，分别需要死信读取、索引读取和 AI 审计读取资格。通知只构造固定路径，不携带用户、文档、轮次、对象键、会话令牌或分享凭据；点击不会获得额外权限。AI 观测关闭或覆盖不足时，审计页面没有记录不代表没有结算积压，优先查看独立结算面板。
+`kb-web/src/routing/routes.ts` 登记的管理路由继续由 `kb-web/src/admin/AdminGuard.vue` 保护；`/admin/parse/dead-letters`、`/admin/embedding`、`/admin/ai/audits` 分别需要死信读取、索引读取和 AI 审计读取资格。通知只构造固定路径，不携带用户、文档、轮次、对象键、会话令牌或分享凭据；点击不会获得额外权限。AI 观测关闭或覆盖不足时，审计页面没有记录不代表没有结算积压，优先查看独立结算面板。
 
 钉钉收到通知不意味着处理完成；本地健康不意味着可送达。适配器对外失败返回 503，Alertmanager 重试；回执丢失可能重复。整套监控停止、Prometheus 无法求值、适配器或钉钉出口整体故障时，同一链路无法保证报告自身故障。独立外部探活、通知 HA 和真实群验收不在本次交付范围。

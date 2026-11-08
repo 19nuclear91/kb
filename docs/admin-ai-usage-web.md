@@ -12,12 +12,18 @@ KNOWN 表示可靠累计输入/输出统计，两个零也是合法已知样本�
 
 审计按事件身份去重，同一个 callId 可以出现多个阶段。事件类型为 REGISTERED、ACQUIRE_INTENDED、RESERVED、DISPATCHED、FINALIZED、SETTLED、REVIEW、QUOTA_REJECTED。状态筛选针对事件提交时快照，详情不会自动变成当前调用状态。身份、调用、内部序号、发生时间或类型不匹配的详情视为依赖故障；404 提示不存在或已清理，保持现有列表。快照不可用时只显示安全事件元数据。
 
-前端对安全 DTO 的未知枚举保留有界原始文本，兼容服务端新增的安全代码；筛选输入仍只接受当前列出的约定值。所有文本均通过 React 渲染，即使包含 HTML 样式也不会执行。
+前端对安全 DTO 的未知枚举保留有界原始文本，兼容服务端新增的安全代码；筛选输入仍只接受当前列出的约定值。所有文本均通过 Vue 插值渲染，禁止 `v-html`，即使包含 HTML 标记也不会执行。
 
 页面退出、切换身份、强制改密、权限撤销、后台和离页时取消请求并清空资料及草稿。后台恢复后由现有会话机制重新核对身份、精确资格，再读取默认窗口。403 先清理，同一会话代次与权限上下文最多自动核对一次，不通过重新挂载循环请求；显式恢复重新使用默认条件。列表、汇总、详情均检查请求代次和 AbortSignal，旧响应不能恢复资料。
 
-资料只保存在页面内存，不写 localStorage/sessionStorage、URL、控制台或遥测。页面地址始终是固定路由，安全登录返回地址只接受精确路径。详情使用 React 文本显示，不执行 HTML，不补查正文和名称，也不提供导出、删除或改账操作。
+资料只保存在页面内存，不写 localStorage/sessionStorage、URL、控制台或遥测。页面地址始终是固定路由，安全登录返回地址只接受精确路径。详情使用 Vue 文本插值显示，不执行 HTML，不补查正文和名称，也不提供导出、删除或改账操作。
 
 托管时将这两条固定前端路由回退到 SPA 入口，保持 `/api/admin/ai/**` 代理到现有网关管理 API 路由。网关和 app 在鉴权前设置 no-store，反向代理不得缓存这些 API 的成功或拒绝响应；静态资源仍采用现有发布策略。不得对查询值、调用 ID、事件 ID 或响应体启用访问分析和客户端回放采集。内部 `/internal/ai-observability/**` 不配置公网路由。
 
-验证只使用模拟 DOM、内存请求、受控 Promise 和虚拟时间，不启动浏览器、HTTP 服务、数据库或 Redis。类型检查与静态构建单独执行。实际命令和范围见 [离线验证记录](ai-usage-validation.md)，接口口径见 [协议说明](ai-usage-api.md)。
+验证只使用模拟 DOM、内存请求、受控 Promise 和虚拟时间，不启动浏览器、HTTP 服务、数据库或 Redis。类型检查与静态构建单独执行。历史执行记录见 [离线验证记录](ai-usage-validation.md)，接口口径见 [协议说明](ai-usage-api.md)。当前 Vue 版本在 `kb-web` 目录执行：
+
+```powershell
+npm test -- --run src/admin/aiUsageApi.test.ts src/admin/aiUsageQuery.test.ts src/admin/aiUsagePages.test.ts src/admin/aiUsageAccess.test.ts src/admin/aiUsageRoutes.test.ts
+npm run typecheck
+npm run build
+```

@@ -1,3 +1,18 @@
+:root {
+  --el-color-primary: #4f46e5;
+  --el-color-primary-light-1: #6159e8;
+  --el-color-primary-light-2: #726bea;
+  --el-color-primary-light-3: #847eed;
+  --el-color-primary-light-4: #9590ef;
+  --el-color-primary-light-5: #a7a3f2;
+  --el-color-primary-light-6: #b9b5f5;
+  --el-color-primary-light-7: #cac8f7;
+  --el-color-primary-light-8: #dcdafa;
+  --el-color-primary-light-9: #ededfc;
+  --el-color-primary-dark-2: #3f38b7;
+  --el-border-radius-base: 10px;
+  --el-font-family: Inter, "Microsoft YaHei", sans-serif;
+}
 * { box-sizing: border-box; }
 body { margin: 0; color: #202534; background: #f6f7fb; font-family: Inter, "Microsoft YaHei", sans-serif; }
 button, input, textarea, select { font: inherit; }
@@ -60,4 +75,7 @@ h2 { font-size: 19px; margin: 0 0 20px; }
 .comment-replies { margin: 12px 0 0 20px; padding-left: 14px; border-left: 2px solid #edf0f5; }
 .comment-composer { display: grid; gap: 8px; margin: 12px 0 18px; }
 .comment-composer textarea { display: block; width: 100%; min-height: 88px; margin-top: 6px; padding: 8px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font: inherit; resize: vertical; }
+.kb-spin { display: inline-block; width: 16px; height: 16px; vertical-align: middle; border: 2px solid var(--el-color-primary-light-7); border-top-color: var(--el-color-primary); border-radius: 50%; animation: kb-spin .8s linear infinite; }
+@keyframes kb-spin { to { transform: rotate(360deg); } }
+.kb-alert__action { margin-top: 8px; }
 @media (max-width: 900px) { .sidebar { width: 180px; padding: 24px 12px; } .workspace { padding: 24px; } .assistant-layout,.account-grid,.admin-columns { grid-template-columns: 1fr; } }

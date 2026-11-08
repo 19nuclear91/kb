@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, vi } from 'vitest';
-import { cleanup } from '@testing-library/react';
+import { cleanup } from '@testing-library/vue';
 
 Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }) });
 globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };

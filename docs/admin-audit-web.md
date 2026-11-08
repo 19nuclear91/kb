@@ -36,9 +36,19 @@
 
 ## 验证边界
 
-仅执行明确文件白名单的进程内单元测试、TypeScript 类型检查与 Vite 静态构建。API 传输、会话和权限均使用替身；页面单元测试替换查询 Hook，权限组件独立挂载。
+仅执行明确文件白名单的进程内单元测试、TypeScript 类型检查与 Vite 静态构建。API 传输、会话和权限均使用替身；页面单元测试替换查询组合式函数，权限组件独立挂载。
 
 未执行集成或端到端测试，未启动应用、浏览器、HTTP 测试服务器、数据库、Redis、MinIO、Docker、模型或供应商服务。未编写或执行 README、说明文档、注释、规格或示例的内容断言测试。这些检查不能证明真实服务、浏览器、部署效果或审计生产者的完整性。
+
+## 当前前端回归
+
+Vue 版本在 `kb-web` 目录执行：
+
+```powershell
+npm test -- --run src/admin/auditApi.test.ts src/admin/auditQuery.test.ts src/admin/audits.test.ts src/admin/audit-access.test.ts src/navigation.test.ts src/session.test.ts src/api.test.ts
+npm run typecheck
+npm run build
+```
 
 ## 本次执行记录
 

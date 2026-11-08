@@ -1,0 +1,4140 @@
+{
+  "schema": 1,
+  "compression": {
+    "gzipLevel": 9,
+    "brotliQuality": 11,
+    "basis": "逐文件压缩后求和，字节"
+  },
+  "provenance": {
+    "revision": "31e68cc5d8c717f46ee86cd7e4f888120759df51",
+    "worktree": "M ../.agents/skills/openspec-apply-change/SKILL.md\n M ../.agents/skills/openspec-archive-change/SKILL.md\n M ../.agents/skills/openspec-bulk-archive-change/SKILL.md\n M ../.agents/skills/openspec-continue-change/SKILL.md\n M ../.agents/skills/openspec-explore/SKILL.md\n M ../.agents/skills/openspec-ff-change/SKILL.md\n M ../.agents/skills/openspec-new-change/SKILL.md\n M ../.agents/skills/openspec-onboard/SKILL.md\n M ../.agents/skills/openspec-propose/SKILL.md\n M ../.agents/skills/openspec-sync-specs/SKILL.md\n M ../.agents/skills/openspec-update-change/SKILL.md\n M ../.agents/skills/openspec-verify-change/SKILL.md\n M .gitignore\n M package-lock.json\n M package.json\n M scripts/bundle-analysis.ts\n?? index.vue.html\n?? src-vue/App.vue\n?? src-vue/CitationContent.vue\n?? src-vue/CitationDrawer.vue\n?? src-vue/DownloadButton.vue\n?? src-vue/FileAccess.ts\n?? src-vue/FilePreview.vue\n?? src-vue/SessionHost.vue\n?? src-vue/SessionProvider.ts\n?? src-vue/admin/AclPanel.vue\n?? src-vue/admin/AclPanelContent.vue\n?? src-vue/admin/AclRevokeButton.vue\n?? src-vue/admin/AdminAccessProvider.vue\n?? src-vue/admin/AdminGuard.vue\n?? src-vue/admin/AdminModal.vue\n?? src-vue/admin/AdminNavigation.vue\n?? src-vue/admin/AiAuditsPage.vue\n?? src-vue/admin/AiContent.vue\n?? src-vue/admin/AiCoverage.vue\n?? src-vue/admin/AiEventDrawer.vue\n?? src-vue/admin/AiEventTable.vue\n?? src-vue/admin/AiGroupTable.vue\n?? src-vue/admin/AiPage.vue\n?? src-vue/admin/AiTime.vue\n?? src-vue/admin/AiUsagePage.vue\n?? src-vue/admin/AuditDrawer.vue\n?? src-vue/admin/AuditResult.vue\n?? src-vue/admin/AuditTime.vue\n?? src-vue/admin/AuditsContent.vue\n?? src-vue/admin/AuditsPage.vue\n?? src-vue/admin/CategoryManagement.vue\n?? src-vue/admin/CategoryManager.vue\n?? src-vue/admin/DeadLettersContent.vue\n?? src-vue/admin/DeleteSpace.vue\n?? src-vue/admin/DeletionBox.vue\n?? src-vue/admin/DepartmentsPage.vue\n?? src-vue/admin/DocumentPanel.vue\n?? src-vue/admin/DocumentPanelPage.vue\n?? src-vue/admin/DocumentTagsPage.vue\n?? src-vue/admin/DocumentsIndexPage.vue\n?? src-vue/admin/EmbeddingContent.vue\n?? src-vue/admin/EmbeddingDialog.vue\n?? src-vue/admin/EmbeddingPage.vue\n?? src-vue/admin/ManagedDocuments.vue\n?? src-vue/admin/MultiPrincipalPicker.test.ts\n?? src-vue/admin/MultiPrincipalPicker.vue\n?? src-vue/admin/Note.vue\n?? src-vue/admin/OperationDialog.vue\n?? src-vue/admin/OperationsCoverage.vue\n?? src-vue/admin/OperationsReport.vue\n?? src-vue/admin/OperationsReportsPage.vue\n?? src-vue/admin/ParseDeadLettersPage.vue\n?? src-vue/admin/PasswordFields.vue\n?? src-vue/admin/PrincipalPicker.vue\n?? src-vue/admin/RelocationBox.vue\n?? src-vue/admin/ReportMetric.vue\n?? src-vue/admin/ResourceStatus.vue\n?? src-vue/admin/ResourceWriteDialog.vue\n?? src-vue/admin/RolesPage.vue\n?? src-vue/admin/SecurityBox.vue\n?? src-vue/admin/SpaceDetail.vue\n?? src-vue/admin/SpaceDetailPage.vue\n?? src-vue/admin/SpacesPage.vue\n?? src-vue/admin/TagManagement.vue\n?? src-vue/admin/TextField.vue\n?? src-vue/admin/UsersPage.vue\n?? src-vue/admin/WriteNotice.vue\n?? src-vue/admin/access-spaces.test.ts\n?? src-vue/admin/access.test.ts\n?? src-vue/admin/access.ts\n?? src-vue/admin/aiUsageAccess.test.ts\n?? src-vue/admin/aiUsageApi.test.ts\n?? src-vue/admin/aiUsageApi.ts\n?? src-vue/admin/aiUsagePages.test.ts\n?? src-vue/admin/aiUsageQuery.test.ts\n?? src-vue/admin/aiUsageQuery.ts\n?? src-vue/admin/aiUsageRoutes.test.ts\n?? src-vue/admin/api.test.ts\n?? src-vue/admin/api.ts\n?? src-vue/admin/audit-access.test.ts\n?? src-vue/admin/auditApi.test.ts\n?? src-vue/admin/auditApi.ts\n?? src-vue/admin/auditQuery.test.ts\n?? src-vue/admin/auditQuery.ts\n?? src-vue/admin/audits.test.ts\n?? src-vue/admin/departmentTree.ts\n?? src-vue/admin/departments.test.ts\n?? src-vue/admin/departments/CreateDepartmentDialog.vue\n?? src-vue/admin/departments/DepartmentNode.vue\n?? src-vue/admin/departments/EnabledDepartmentDialog.vue\n?? src-vue/admin/departments/MoveDepartmentDialog.vue\n?? src-vue/admin/departments/RenameDepartmentDialog.vue\n?? src-vue/admin/documents-index.test.ts\n?? src-vue/admin/hooks.test.ts\n?? src-vue/admin/hooks.ts\n?? src-vue/admin/lifecycle/Emergency.vue\n?? src-vue/admin/lifecycle/EmergencyDialog.vue\n?? src-vue/admin/lifecycle/Events.vue\n?? src-vue/admin/lifecycle/Items.vue\n?? src-vue/admin/lifecycle/LifecycleActionDialog.vue\n?? src-vue/admin/lifecycle/LifecycleContent.vue\n?? src-vue/admin/lifecycle/LifecyclePage.vue\n?? src-vue/admin/lifecycle/LifecycleScope.vue\n?? src-vue/admin/lifecycle/MappingDialog.vue\n?? src-vue/admin/lifecycle/ProofNotice.vue\n?? src-vue/admin/lifecycle/ReasonField.vue\n?? src-vue/admin/lifecycle/RestorationDialog.vue\n?? src-vue/admin/lifecycle/UserLifecycleContent.vue\n?? src-vue/admin/lifecycle/UserLifecyclePanel.vue\n?? src-vue/admin/lifecycle/api.ts\n?? src-vue/admin/lifecycle/labels.ts\n?? src-vue/admin/lifecycle/lifecycle.test.ts\n?? src-vue/admin/lifecycle/scope.ts\n?? src-vue/admin/lifecycle/types.ts\n?? src-vue/admin/lifecycle/useLifecycleWrite.ts\n?? src-vue/admin/operations-pages.test.ts\n?? src-vue/admin/operations-routing.test.ts\n?? src-vue/admin/operationsApi.test.ts\n?? src-vue/admin/operationsApi.ts\n?? src-vue/admin/operationsReportLabels.ts\n?? src-vue/admin/operationsReportsAccess.test.ts\n?? src-vue/admin/operationsReportsApi.test.ts\n?? src-vue/admin/operationsReportsApi.ts\n?? src-vue/admin/operationsReportsPages.test.ts\n?? src-vue/admin/operationsReportsQuery.test.ts\n?? src-vue/admin/operationsReportsQuery.ts\n?? src-vue/admin/operationsReportsRoutes.test.ts\n?? src-vue/admin/roleGroups.ts\n?? src-vue/admin/roles.test.ts\n?? src-vue/admin/roles/CreateRoleDialog.vue\n?? src-vue/admin/roles/DeleteRoleDialog.vue\n?? src-vue/admin/roles/RenameRoleDialog.vue\n?? src-vue/admin/space-pages.test.ts\n?? src-vue/admin/spaceApi.test.ts\n?? src-vue/admin/spaceApi.ts\n?? src-vue/admin/spaceUi.ts\n?? src-vue/admin/taxonomy.test.ts\n?? src-vue/admin/types.ts\n?? src-vue/admin/ui.ts\n?? src-vue/admin/users.test.ts\n?? src-vue/admin/users/AssignRoleDialog.vue\n?? src-vue/admin/users/ClearanceDialog.vue\n?? src-vue/admin/users/CreateUserDialog.vue\n?? src-vue/admin/users/EnabledUserDialog.vue\n?? src-vue/admin/users/MoveUserDialog.vue\n?? src-vue/admin/users/PasswordDialog.vue\n?? src-vue/admin/users/RevokeRoleDialog.vue\n?? src-vue/admin/users/UserDetail.vue\n?? src-vue/admin/users/labels.ts\n?? src-vue/api.test.ts\n?? src-vue/api.ts\n?? src-vue/assistant.test.ts\n?? src-vue/assistant/AssistantWorkspace.vue\n?? src-vue/assistant/ConversationContent.vue\n?? src-vue/assistant/ConversationPanel.vue\n?? src-vue/auth/PasswordForm.vue\n?? src-vue/auth/forms.test.ts\n?? src-vue/comments/CommentBody.vue\n?? src-vue/comments/CommentContext.vue\n?? src-vue/comments/CommentPanel.vue\n?? src-vue/comments/CommentTargetPanel.vue\n?? src-vue/comments/Composer.vue\n?? src-vue/comments/DeleteDialog.vue\n?? src-vue/comments/Denied.vue\n?? src-vue/comments/Failure.vue\n?? src-vue/comments/ListStatus.vue\n?? src-vue/comments/More.vue\n?? src-vue/comments/Replies.vue\n?? src-vue/comments/RootItem.vue\n?? src-vue/comments/Roots.vue\n?? src-vue/comments/TargetContext.vue\n?? src-vue/comments/TargetDetail.vue\n?? src-vue/comments/VersionComments.vue\n?? src-vue/comments/api.test.ts\n?? src-vue/comments/api.ts\n?? src-vue/comments/hooks.ts\n?? src-vue/comments/lifecycle.test.ts\n?? src-vue/comments/panel.test.ts\n?? src-vue/comments/thread.ts\n?? src-vue/components.test.ts\n?? src-vue/documents.test.ts\n?? src-vue/documents/DeleteConfirmation.vue\n?? src-vue/documents/DeletionFeedback.vue\n?? src-vue/documents/OperationContext.ts\n?? src-vue/documents/ProgressCard.vue\n?? src-vue/documents/ReadableProgress.vue\n?? src-vue/documents/SubmittedVersion.vue\n?? src-vue/documents/UploadDialog.vue\n?? src-vue/documents/capabilities.test.ts\n?? src-vue/documents/capabilities.ts\n?? src-vue/documents/controls.test.ts\n?? src-vue/documents/deletion.test.ts\n?? src-vue/documents/deletion.ts\n?? src-vue/documents/metadata/CategoryBranch.vue\n?? src-vue/documents/metadata/CategoryBrowser.vue\n?? src-vue/documents/metadata/Filters.vue\n?? src-vue/documents/metadata/MetadataEditor.vue\n?? src-vue/documents/metadata/MetadataForm.vue\n?? src-vue/documents/metadata/MetadataPanel.vue\n?? src-vue/documents/metadata/TagPicker.vue\n?? src-vue/documents/metadata/api.test.ts\n?? src-vue/documents/metadata/api.ts\n?? src-vue/documents/metadata/components.test.ts\n?? src-vue/documents/metadata/query-page.test.ts\n?? src-vue/documents/notice.test.ts\n?? src-vue/documents/notice.ts\n?? src-vue/documents/operations.test.ts\n?? src-vue/documents/operations.ts\n?? src-vue/documents/recovery.test.ts\n?? src-vue/documents/useProgress.ts\n?? src-vue/documents/write-coordination.test.ts\n?? src-vue/env.d.ts\n?? src-vue/favorites/FavoriteButton.vue\n?? src-vue/favorites/FavoriteList.vue\n?? src-vue/favorites/FavoriteWorkspace.vue\n?? src-vue/favorites/api.test.ts\n?? src-vue/favorites/api.ts\n?? src-vue/favorites/button.test.ts\n?? src-vue/favorites/documents.test.ts\n?? src-vue/favorites/lifecycle.test.ts\n?? src-vue/favorites/page.test.ts\n?? src-vue/favorites/store.test.ts\n?? src-vue/favorites/store.ts\n?? src-vue/favorites/useFavorites.ts\n?? src-vue/lifecycle.test.ts\n?? src-vue/liveView.ts\n?? src-vue/logic.test.ts\n?? src-vue/logic.ts\n?? src-vue/main.test.ts\n?? src-vue/main.ts\n?? src-vue/navigation.test.ts\n?? src-vue/navigation.ts\n?? src-vue/notifications/NotificationList.vue\n?? src-vue/notifications/NotificationTargetPanel.vue\n?? src-vue/notifications/NotificationWorkspace.vue\n?? src-vue/notifications/UnreadBadge.vue\n?? src-vue/notifications/api.test.ts\n?? src-vue/notifications/api.ts\n?? src-vue/notifications/page.test.ts\n?? src-vue/notifications/unread.test.ts\n?? src-vue/notifications/unread.ts\n?? src-vue/notifications/unreadPoller.ts\n?? src-vue/office/PreviewOpening.vue\n?? src-vue/office/VersionPreview.vue\n?? src-vue/office/api.test.ts\n?? src-vue/office/api.ts\n?? src-vue/office/citation.test.ts\n?? src-vue/office/legacy-preview.test.ts\n?? src-vue/office/preview.test.ts\n?? src-vue/pages/AccountPage.vue\n?? src-vue/pages/AssistantPage.vue\n?? src-vue/pages/ChangePasswordPage.vue\n?? src-vue/pages/DocumentDetail.vue\n?? src-vue/pages/DocumentDetailPage.vue\n?? src-vue/pages/DocumentWorkspace.vue\n?? src-vue/pages/DocumentsContent.vue\n?? src-vue/pages/DocumentsPage.vue\n?? src-vue/pages/FavoritesPage.vue\n?? src-vue/pages/LoginPage.vue\n?? src-vue/pages/NotificationsPage.vue\n?? src-vue/pages/ReviewsPage.vue\n?? src-vue/pages/SearchPage.vue\n?? src-vue/pages/SsoResultPage.vue\n?? src-vue/rendering-safety.test.ts\n?? src-vue/reviews/CommandDialog.vue\n?? src-vue/reviews/Opinions.vue\n?? src-vue/reviews/PolicyDialog.vue\n?? src-vue/reviews/PublicationPolicyPanel.vue\n?? src-vue/reviews/ReviewContext.vue\n?? src-vue/reviews/ReviewList.vue\n?? src-vue/reviews/ReviewWorkspace.vue\n?? src-vue/reviews/VersionReviewPanel.vue\n?? src-vue/reviews/api.test.ts\n?? src-vue/reviews/api.ts\n?? src-vue/reviews/command-lifecycle.test.ts\n?? src-vue/reviews/documents.test.ts\n?? src-vue/reviews/file-lifecycle.test.ts\n?? src-vue/reviews/labels.ts\n?? src-vue/reviews/lifecycle.test.ts\n?? src-vue/reviews/lifecycle.ts\n?? src-vue/reviews/page.test.ts\n?? src-vue/reviews/policy.test.ts\n?? src-vue/routing.test.ts\n?? src-vue/routing/AppRoutes.vue\n?? src-vue/routing/NavItem.vue\n?? src-vue/routing/Navigation.vue\n?? src-vue/routing/NotFound.vue\n?? src-vue/routing/PageErrorBoundary.vue\n?? src-vue/routing/PageLoadBoundary.test.ts\n?? src-vue/routing/PageLoadBoundary.vue\n?? src-vue/routing/PageLoading.vue\n?? src-vue/routing/PageRoute.vue\n?? src-vue/routing/ProtectedLayout.vue\n?? src-vue/routing/Redirect.vue\n?? src-vue/routing/errorSource.test.ts\n?? src-vue/routing/errorSource.ts\n?? src-vue/routing/lazy-routes.test.ts\n?? src-vue/routing/lazyPage.ts\n?? src-vue/routing/lazyPages.ts\n?? src-vue/routing/locationState.ts\n?? src-vue/routing/reloadPage.ts\n?? src-vue/routing/reportCaughtError.ts\n?? src-vue/routing/routes.ts\n?? src-vue/search.test.ts\n?? src-vue/search.ts\n?? src-vue/search/FilterFields.vue\n?? src-vue/search/SearchWorkspace.vue\n?? src-vue/search/api.test.ts\n?? src-vue/search/api.ts\n?? src-vue/search/draft.ts\n?? src-vue/search/page.test.ts\n?? src-vue/search/selectors.test.ts\n?? src-vue/session-binding.test.ts\n?? src-vue/session.test.ts\n?? src-vue/session.ts\n?? src-vue/sso/BindingPanel.vue\n?? src-vue/sso/EnterpriseLogin.vue\n?? src-vue/sso/api.test.ts\n?? src-vue/sso/api.ts\n?? src-vue/sso/bindings.test.ts\n?? src-vue/sso/enterprise-login.test.ts\n?? src-vue/sso/flow.test.ts\n?? src-vue/sso/flow.ts\n?? src-vue/sso/login.test.ts\n?? src-vue/sso/provider.test.ts\n?? src-vue/sso/result.test.ts\n?? src-vue/sso/route.test.ts\n?? src-vue/sso/storage.ts\n?? src-vue/sso/useSso.ts\n?? src-vue/stores/adminAccess.ts\n?? src-vue/stores/session.ts\n?? src-vue/stream.test.ts\n?? src-vue/stream.ts\n?? src-vue/styles.css\n?? src-vue/test/HelperFixture.vue\n?? src-vue/test/access.ts\n?? src-vue/test/aiUsageFixtures.ts\n?? src-vue/test/app.ts\n?? src-vue/test/fixtures.ts\n?? src-vue/test/history.ts\n?? src-vue/test/operationsReportsFixtures.ts\n?? src-vue/test/render.test.ts\n?? src-vue/test/render.ts\n?? src-vue/test/setup.ts\n?? src-vue/test/stubs.ts\n?? src-vue/types.ts\n?? src-vue/ui/Feedback.vue\n?? src-vue/ui/KbAlert.vue\n?? src-vue/ui/KbDialog.vue\n?? src-vue/ui/KbDrawer.vue\n?? src-vue/ui/KbSpin.vue\n?? src-vue/ui/PageHeader.vue\n?? src-vue/ui/References.vue\n?? src-vue/ui/SafeText.vue\n?? src-vue/ui/TurnCard.vue\n?? src-vue/useExternalStore.ts\n?? src-vue/useResource.ts\n?? tsconfig.vue.json\n?? vite.vue.config.ts\n?? ../openspec/changes/migrate-web-to-vue3/.openspec.yaml\n?? ../openspec/changes/migrate-web-to-vue3/bundle-baseline.json\n?? ../openspec/changes/migrate-web-to-vue3/compare-tests.ps1\n?? ../openspec/changes/migrate-web-to-vue3/design.md\n?? ../openspec/changes/migrate-web-to-vue3/proposal.md\n?? ../openspec/changes/migrate-web-to-vue3/tasks.md\n?? ../openspec/changes/migrate-web-to-vue3/test-inventory.md\n?? ../openspec/changes/migrate-web-to-vue3/verification.md",
+    "lockSha256": "1785fc8ce57c185712883f5488cab0c9591a8b17287419340bdf7f1f2040c279",
+    "node": "v24.21.0",
+    "npm": "11.19.0",
+    "mode": "production",
+    "publicFlags": {
+      "VITE_CONVERSATION_ENABLED": null,
+      "VITE_NOTIFICATION_POLL_MS": null,
+      "VITE_OFFICE_PREVIEW_ORIGIN": null,
+      "VITE_SEARCH_MAX_QUERY_CODEPOINTS": null
+    }
+  },
+  "files": {
+    "assets/AccountPage-W_t_WCm3.js": {
+      "type": "js",
+      "raw": 4245,
+      "gzip": 2109,
+      "brotli": 1722,
+      "sha256": "b108f85a1a355c6833b73d58e755c7808f945b84c2baae925fc89dfc973485c0",
+      "modules": [
+        "src-vue/pages/AccountPage.vue",
+        "src-vue/pages/AccountPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/sso/BindingPanel.vue",
+        "src-vue/sso/BindingPanel.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/AclPanel-BdW4Wcjy.js": {
+      "type": "js",
+      "raw": 16804,
+      "gzip": 5586,
+      "brotli": 4715,
+      "sha256": "c37806fa91a10ca837b02560c20698505b8869ebffd5ba73814f35d7cca1f922",
+      "modules": [
+        "src-vue/admin/AclPanel.vue",
+        "src-vue/admin/AclPanel.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AclPanelContent.vue",
+        "src-vue/admin/AclPanelContent.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AclRevokeButton.vue",
+        "src-vue/admin/AclRevokeButton.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/MultiPrincipalPicker.vue",
+        "src-vue/admin/MultiPrincipalPicker.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/PrincipalPicker.vue",
+        "src-vue/admin/PrincipalPicker.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/AdminModal-CWuZcnYP.js": {
+      "type": "js",
+      "raw": 6202,
+      "gzip": 2326,
+      "brotli": 2122,
+      "sha256": "51a5a5dda4f75c9e85f1c1f750c6c6f0fcbc61a854ab8d93aa739ad15e5e5200",
+      "modules": [
+        "src-vue/admin/AdminModal.vue",
+        "src-vue/admin/AdminModal.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/hooks.ts"
+      ]
+    },
+    "assets/AiAuditsPage-CiYyapW7.js": {
+      "type": "js",
+      "raw": 207,
+      "gzip": 182,
+      "brotli": 173,
+      "sha256": "bc89672eb0319b12d390513316c6ec3c22b1b7ca6156aba38394e1b0911e66dc",
+      "modules": [
+        "src-vue/admin/AiAuditsPage.vue",
+        "src-vue/admin/AiAuditsPage.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/AiPage-cyP0z4kJ.js": {
+      "type": "js",
+      "raw": 23907,
+      "gzip": 8746,
+      "brotli": 7542,
+      "sha256": "be05a44cf3a33e54282f96c3a8d5ffa71b48cc8079c09ccb9fb42b69a5da1999",
+      "modules": [
+        "src-vue/admin/AiContent.vue",
+        "src-vue/admin/AiContent.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AiCoverage.vue",
+        "src-vue/admin/AiCoverage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AiEventDrawer.vue",
+        "src-vue/admin/AiEventDrawer.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AiEventTable.vue",
+        "src-vue/admin/AiEventTable.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AiGroupTable.vue",
+        "src-vue/admin/AiGroupTable.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AiPage.vue",
+        "src-vue/admin/AiPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AiTime.vue",
+        "src-vue/admin/AiTime.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/aiUsageApi.ts",
+        "src-vue/admin/aiUsageQuery.ts"
+      ]
+    },
+    "assets/AiUsagePage-wETFaKcC.js": {
+      "type": "js",
+      "raw": 205,
+      "gzip": 182,
+      "brotli": 158,
+      "sha256": "7031658ba8f2605985796426f119ac3f6331469afb7627c2813d54fd412ac840",
+      "modules": [
+        "src-vue/admin/AiUsagePage.vue",
+        "src-vue/admin/AiUsagePage.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/AssistantPage--j8M494u.js": {
+      "type": "js",
+      "raw": 16067,
+      "gzip": 6319,
+      "brotli": 5359,
+      "sha256": "f4323971ac924e4d0378128e7b3a1e5555f9428c7cee53c118ca62e4d1230a38",
+      "modules": [
+        "src-vue/assistant/AssistantWorkspace.vue",
+        "src-vue/assistant/AssistantWorkspace.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/assistant/ConversationContent.vue",
+        "src-vue/assistant/ConversationContent.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/assistant/ConversationPanel.vue",
+        "src-vue/assistant/ConversationPanel.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/pages/AssistantPage.vue",
+        "src-vue/pages/AssistantPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/stream.ts",
+        "src-vue/ui/References.vue",
+        "src-vue/ui/References.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/ui/TurnCard.vue",
+        "src-vue/ui/TurnCard.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/AuditsPage-DLiFajH9.js": {
+      "type": "js",
+      "raw": 14939,
+      "gzip": 5663,
+      "brotli": 4781,
+      "sha256": "b6a073b40dc890fbf89601e5ed0169471af8261fd23a557dfa4965d09849e152",
+      "modules": [
+        "src-vue/admin/AuditDrawer.vue",
+        "src-vue/admin/AuditDrawer.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AuditResult.vue",
+        "src-vue/admin/AuditResult.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AuditTime.vue",
+        "src-vue/admin/AuditTime.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AuditsContent.vue",
+        "src-vue/admin/AuditsContent.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AuditsPage.vue",
+        "src-vue/admin/AuditsPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/auditQuery.ts"
+      ]
+    },
+    "assets/CategoryBrowser-CjyT-K1d.js": {
+      "type": "js",
+      "raw": 7284,
+      "gzip": 3314,
+      "brotli": 2876,
+      "sha256": "48bc2adda1a53e216859ec96baaa83d582f1454ef0e1983e5e3ef401395adcf8",
+      "modules": [
+        "src-vue/documents/metadata/CategoryBranch.vue",
+        "src-vue/documents/metadata/CategoryBranch.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/documents/metadata/CategoryBrowser.vue",
+        "src-vue/documents/metadata/CategoryBrowser.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/search/api.ts"
+      ]
+    },
+    "assets/CitationDrawer-d04Ejeyv.js": {
+      "type": "js",
+      "raw": 2531,
+      "gzip": 1344,
+      "brotli": 1136,
+      "sha256": "96ca09818cc3513f0b8cd2f38262306d1ff48991423d1ca874797232a85666b2",
+      "modules": [
+        "src-vue/CitationContent.vue",
+        "src-vue/CitationContent.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/CitationDrawer.vue",
+        "src-vue/CitationDrawer.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/CommentPanel-D-koFRWq.js": {
+      "type": "js",
+      "raw": 21147,
+      "gzip": 7990,
+      "brotli": 6923,
+      "sha256": "dc62065219c1f6c28abf9e449a6c8afdcb82ad25959cc5a5f35de03a92ac22b5",
+      "modules": [
+        "src-vue/comments/CommentBody.vue",
+        "src-vue/comments/CommentBody.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/CommentContext.vue",
+        "src-vue/comments/CommentContext.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/CommentPanel.vue",
+        "src-vue/comments/CommentPanel.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/Composer.vue",
+        "src-vue/comments/Composer.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/DeleteDialog.vue",
+        "src-vue/comments/DeleteDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/Denied.vue",
+        "src-vue/comments/Denied.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/Failure.vue",
+        "src-vue/comments/Failure.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/ListStatus.vue",
+        "src-vue/comments/ListStatus.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/More.vue",
+        "src-vue/comments/More.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/Replies.vue",
+        "src-vue/comments/Replies.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/RootItem.vue",
+        "src-vue/comments/RootItem.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/Roots.vue",
+        "src-vue/comments/Roots.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/api.ts",
+        "src-vue/comments/hooks.ts",
+        "src-vue/comments/thread.ts"
+      ]
+    },
+    "assets/DepartmentsPage-Byzh7m4Y.js": {
+      "type": "js",
+      "raw": 14059,
+      "gzip": 4550,
+      "brotli": 3873,
+      "sha256": "b98b431efa21a1ccfdf62574ad7c8685866574ce1e3700bb0575d50a6c2c3b05",
+      "modules": [
+        "src-vue/admin/DepartmentsPage.vue",
+        "src-vue/admin/DepartmentsPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/departmentTree.ts",
+        "src-vue/admin/departments/CreateDepartmentDialog.vue",
+        "src-vue/admin/departments/CreateDepartmentDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/departments/DepartmentNode.vue",
+        "src-vue/admin/departments/DepartmentNode.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/departments/EnabledDepartmentDialog.vue",
+        "src-vue/admin/departments/EnabledDepartmentDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/departments/MoveDepartmentDialog.vue",
+        "src-vue/admin/departments/MoveDepartmentDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/departments/RenameDepartmentDialog.vue",
+        "src-vue/admin/departments/RenameDepartmentDialog.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/DocumentDetailPage-vZTWjn8b.js": {
+      "type": "js",
+      "raw": 25376,
+      "gzip": 8765,
+      "brotli": 7521,
+      "sha256": "9703dce1e077e6210e99d71edb1b146654c0827b0f5078e32ea6e908faf1cd24",
+      "modules": [
+        "src-vue/comments/VersionComments.vue",
+        "src-vue/comments/VersionComments.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/documents/DeleteConfirmation.vue",
+        "src-vue/documents/DeleteConfirmation.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/documents/DeletionFeedback.vue",
+        "src-vue/documents/DeletionFeedback.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/documents/capabilities.ts",
+        "src-vue/documents/deletion.ts",
+        "src-vue/documents/metadata/MetadataEditor.vue",
+        "src-vue/documents/metadata/MetadataEditor.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/documents/metadata/MetadataForm.vue",
+        "src-vue/documents/metadata/MetadataForm.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/documents/metadata/MetadataPanel.vue",
+        "src-vue/documents/metadata/MetadataPanel.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/pages/DocumentDetail.vue",
+        "src-vue/pages/DocumentDetail.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/pages/DocumentDetailPage.vue",
+        "src-vue/pages/DocumentDetailPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/pages/DocumentWorkspace.vue",
+        "src-vue/pages/DocumentWorkspace.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/DocumentPanelPage-CQCyDOWQ.js": {
+      "type": "js",
+      "raw": 12155,
+      "gzip": 5040,
+      "brotli": 4223,
+      "sha256": "42eddceee3f9a2379e33dd763a672f7252f5721365e04d59a13d8438f1982fa4",
+      "modules": [
+        "src-vue/admin/DeletionBox.vue",
+        "src-vue/admin/DeletionBox.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/DocumentPanel.vue",
+        "src-vue/admin/DocumentPanel.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/DocumentPanelPage.vue",
+        "src-vue/admin/DocumentPanelPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/RelocationBox.vue",
+        "src-vue/admin/RelocationBox.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/SecurityBox.vue",
+        "src-vue/admin/SecurityBox.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/DocumentTagsPage-C15zt6cx.js": {
+      "type": "js",
+      "raw": 3814,
+      "gzip": 2001,
+      "brotli": 1662,
+      "sha256": "2da65921150a12a1ab3c0b1cf8ca7449d7fea17b32e8e9861a751cfbf8a17cac",
+      "modules": [
+        "src-vue/admin/DocumentTagsPage.vue",
+        "src-vue/admin/DocumentTagsPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/TagManagement.vue",
+        "src-vue/admin/TagManagement.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/DocumentsIndexPage-CM9fPsVP.js": {
+      "type": "js",
+      "raw": 1436,
+      "gzip": 1033,
+      "brotli": 830,
+      "sha256": "fe0c4da7c217cde0b96f6de3928862295f6b4419985a98b74c8f3820de3c8087",
+      "modules": [
+        "src-vue/admin/DocumentsIndexPage.vue",
+        "src-vue/admin/DocumentsIndexPage.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/DocumentsPage-B7gvwdWB.css": {
+      "type": "css",
+      "raw": 6958,
+      "gzip": 1170,
+      "brotli": 993,
+      "sha256": "6c24d4b069715a0940f2bd2bc17c2f25c074930f051ff5bd635b4aac24476c6d",
+      "modules": []
+    },
+    "assets/DocumentsPage-Cx5zXiOF.js": {
+      "type": "js",
+      "raw": 17693,
+      "gzip": 6552,
+      "brotli": 5662,
+      "sha256": "41e95523184592922bee252f9fa2f2c4294136c03ca2cbd6eb74741cfad2aa2b",
+      "modules": [
+        "src-vue/documents/metadata/Filters.vue",
+        "src-vue/documents/metadata/Filters.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/pages/DocumentsContent.vue",
+        "src-vue/pages/DocumentsContent.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/pages/DocumentsPage.vue",
+        "src-vue/pages/DocumentsPage.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/DownloadButton-DFbbckb7.js": {
+      "type": "js",
+      "raw": 10374,
+      "gzip": 4417,
+      "brotli": 3772,
+      "sha256": "bc2799dc8c44e628ca1c2421d14aea1e3a682293c8812dc4e6c82664997a8856",
+      "modules": [
+        "src-vue/DownloadButton.vue",
+        "src-vue/DownloadButton.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/FileAccess.ts",
+        "src-vue/FilePreview.vue",
+        "src-vue/FilePreview.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/office/PreviewOpening.vue",
+        "src-vue/office/PreviewOpening.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/office/VersionPreview.vue",
+        "src-vue/office/VersionPreview.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/office/api.ts",
+        "src-vue/ui/SafeText.vue",
+        "src-vue/ui/SafeText.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/EmbeddingPage-DRpk0hrq.js": {
+      "type": "js",
+      "raw": 9042,
+      "gzip": 3860,
+      "brotli": 3147,
+      "sha256": "1b679147bc3e2577561d6174e03ae3b32d5dcaceefb24fbb791b258a9c11127c",
+      "modules": [
+        "src-vue/admin/EmbeddingContent.vue",
+        "src-vue/admin/EmbeddingContent.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/EmbeddingDialog.vue",
+        "src-vue/admin/EmbeddingDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/EmbeddingPage.vue",
+        "src-vue/admin/EmbeddingPage.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/FavoriteButton-DnRtxRPu.js": {
+      "type": "js",
+      "raw": 6617,
+      "gzip": 2650,
+      "brotli": 2325,
+      "sha256": "76d16c1ea94c03c9a1e11423decb60fb5dd2307a8be23fc760a32cca786f7f71",
+      "modules": [
+        "src-vue/favorites/FavoriteButton.vue",
+        "src-vue/favorites/FavoriteButton.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/favorites/api.ts",
+        "src-vue/favorites/store.ts",
+        "src-vue/favorites/useFavorites.ts"
+      ]
+    },
+    "assets/FavoritesPage-C8mE0M-K.js": {
+      "type": "js",
+      "raw": 3248,
+      "gzip": 1653,
+      "brotli": 1371,
+      "sha256": "ac1a9048798820c4334755c2b5c9011bea550ed95245f11eaceae649c1e50d14",
+      "modules": [
+        "src-vue/favorites/FavoriteList.vue",
+        "src-vue/favorites/FavoriteList.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/favorites/FavoriteWorkspace.vue",
+        "src-vue/favorites/FavoriteWorkspace.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/pages/FavoritesPage.vue",
+        "src-vue/pages/FavoritesPage.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/Feedback-CDebW7CQ.js": {
+      "type": "js",
+      "raw": 5085,
+      "gzip": 1988,
+      "brotli": 1759,
+      "sha256": "7559ce05b9488c3aa4c68a6bf0a941a0c817f046e0619d10028b5191d567830e",
+      "modules": [
+        "src-vue/ui/Feedback.vue",
+        "src-vue/ui/Feedback.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/Feedback-S7fQQ3B8.css": {
+      "type": "css",
+      "raw": 1156,
+      "gzip": 456,
+      "brotli": 343,
+      "sha256": "691fbbed21e9c4279f70c333db58305fa2fb0f6aa36b070c21f85b7b2d316dc0",
+      "modules": []
+    },
+    "assets/KbDialog-08BSQ41i.js": {
+      "type": "js",
+      "raw": 6525,
+      "gzip": 2779,
+      "brotli": 2525,
+      "sha256": "f49f1c9ab8689ab0d51733ad949a7aac031e397ea401e25a371c68aacebe7ab1",
+      "modules": [
+        "src-vue/ui/KbDialog.vue",
+        "src-vue/ui/KbDialog.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/KbDialog-DUbGnqO_.css": {
+      "type": "css",
+      "raw": 3544,
+      "gzip": 971,
+      "brotli": 816,
+      "sha256": "8f39099fc168e3d4174af2cb37bd56042501343200172640ee021d038f7a960a",
+      "modules": []
+    },
+    "assets/KbDrawer-4p2NeA9E.js": {
+      "type": "js",
+      "raw": 5728,
+      "gzip": 2605,
+      "brotli": 2367,
+      "sha256": "d1fa48571ce64ea915d2a736454befff1ec4aa561d235a951af2ff0a554fbf92",
+      "modules": [
+        "src-vue/ui/KbDrawer.vue",
+        "src-vue/ui/KbDrawer.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/KbDrawer-BmQQuU66.css": {
+      "type": "css",
+      "raw": 4078,
+      "gzip": 1058,
+      "brotli": 888,
+      "sha256": "c342877193bd85353d5ad3efe4299f4fbdc1aa73f79b9484886323ca73ac1eef",
+      "modules": []
+    },
+    "assets/LifecycleActionDialog-B_0u1Kee.js": {
+      "type": "js",
+      "raw": 10628,
+      "gzip": 4298,
+      "brotli": 3731,
+      "sha256": "27b77797afac326015f7eb86d5a72fc09f25756a43e14279a8afbed1b4a67bdf",
+      "modules": [
+        "src-vue/admin/lifecycle/LifecycleActionDialog.vue",
+        "src-vue/admin/lifecycle/LifecycleActionDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/LifecycleScope.vue",
+        "src-vue/admin/lifecycle/LifecycleScope.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/ProofNotice.vue",
+        "src-vue/admin/lifecycle/ProofNotice.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/ReasonField.vue",
+        "src-vue/admin/lifecycle/ReasonField.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/api.ts",
+        "src-vue/admin/lifecycle/scope.ts",
+        "src-vue/admin/lifecycle/useLifecycleWrite.ts"
+      ]
+    },
+    "assets/LifecyclePage-DIpLYL57.js": {
+      "type": "js",
+      "raw": 12390,
+      "gzip": 4600,
+      "brotli": 3851,
+      "sha256": "90a0e2ed5c057c60432ea72544c8de86ca005536a9335a9a1fb473b5d6900fee",
+      "modules": [
+        "src-vue/admin/lifecycle/Emergency.vue",
+        "src-vue/admin/lifecycle/Emergency.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/EmergencyDialog.vue",
+        "src-vue/admin/lifecycle/EmergencyDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/Events.vue",
+        "src-vue/admin/lifecycle/Events.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/Items.vue",
+        "src-vue/admin/lifecycle/Items.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/LifecycleContent.vue",
+        "src-vue/admin/lifecycle/LifecycleContent.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/LifecyclePage.vue",
+        "src-vue/admin/lifecycle/LifecyclePage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/labels.ts"
+      ]
+    },
+    "assets/Note-Dd0KF6tM.js": {
+      "type": "js",
+      "raw": 245,
+      "gzip": 214,
+      "brotli": 180,
+      "sha256": "9cdb9958d35ab4ffbe15f3ae0fd246b0575ee9e201e0839d416d09e27f2266e1",
+      "modules": [
+        "src-vue/admin/Note.vue"
+      ]
+    },
+    "assets/NotificationsPage-C-9u39-W.js": {
+      "type": "js",
+      "raw": 9358,
+      "gzip": 3696,
+      "brotli": 3087,
+      "sha256": "3f6dbc50ee7287ef0d7c2a567884712d93da7bc0e1bafc0084a3ed382b62ca74",
+      "modules": [
+        "src-vue/comments/CommentTargetPanel.vue",
+        "src-vue/comments/CommentTargetPanel.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/TargetContext.vue",
+        "src-vue/comments/TargetContext.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/comments/TargetDetail.vue",
+        "src-vue/comments/TargetDetail.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/notifications/NotificationList.vue",
+        "src-vue/notifications/NotificationList.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/notifications/NotificationTargetPanel.vue",
+        "src-vue/notifications/NotificationTargetPanel.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/notifications/NotificationWorkspace.vue",
+        "src-vue/notifications/NotificationWorkspace.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/pages/NotificationsPage.vue",
+        "src-vue/pages/NotificationsPage.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/OperationContext-DaVy6cwb.js": {
+      "type": "js",
+      "raw": 1430,
+      "gzip": 685,
+      "brotli": 588,
+      "sha256": "7dccedf4cdd5b4d289df08b783609eef118891cbb78c95e5a781784ebb73eb3a",
+      "modules": [
+        "src-vue/documents/OperationContext.ts",
+        "src-vue/documents/operations.ts"
+      ]
+    },
+    "assets/OperationDialog-BZ9BJs3X.js": {
+      "type": "js",
+      "raw": 6727,
+      "gzip": 3182,
+      "brotli": 2765,
+      "sha256": "c65d15f7f92e1987d5b0c0dd406164b9892261bb2501a86a21708d6db77bad94",
+      "modules": [
+        "src-vue/admin/OperationDialog.vue",
+        "src-vue/admin/OperationDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/operationsApi.ts"
+      ]
+    },
+    "assets/OperationsReportsPage-BfZe5754.js": {
+      "type": "js",
+      "raw": 14938,
+      "gzip": 5876,
+      "brotli": 4989,
+      "sha256": "a8f51bc5459d5468039e237ac05069eae83dbfa5440bcaddaf7640588beafc3d",
+      "modules": [
+        "src-vue/admin/OperationsCoverage.vue",
+        "src-vue/admin/OperationsCoverage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/OperationsReport.vue",
+        "src-vue/admin/OperationsReport.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/OperationsReportsPage.vue",
+        "src-vue/admin/OperationsReportsPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/ReportMetric.vue",
+        "src-vue/admin/ReportMetric.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/operationsReportLabels.ts",
+        "src-vue/admin/operationsReportsApi.ts",
+        "src-vue/admin/operationsReportsQuery.ts"
+      ]
+    },
+    "assets/PageHeader-BZ02KYyW.css": {
+      "type": "css",
+      "raw": 31221,
+      "gzip": 4455,
+      "brotli": 3732,
+      "sha256": "304730c7ecf26ac217c776300ca0a0962ed9fc523a588f8eee501598fdd48c76",
+      "modules": []
+    },
+    "assets/PageHeader-D6_q9aTY.js": {
+      "type": "js",
+      "raw": 166576,
+      "gzip": 62697,
+      "brotli": 55223,
+      "sha256": "eecb18e800026c0f2fa3d737af34371099ee6ca7b2106be0f4465941d4e79718",
+      "modules": [
+        "src-vue/SessionProvider.ts",
+        "src-vue/api.ts",
+        "src-vue/stores/session.ts",
+        "src-vue/ui/KbAlert.vue",
+        "src-vue/ui/KbAlert.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/ui/PageHeader.vue",
+        "src-vue/ui/PageHeader.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/ParseDeadLettersPage--emZUDOd.js": {
+      "type": "js",
+      "raw": 8220,
+      "gzip": 3224,
+      "brotli": 2724,
+      "sha256": "8880477f2d396880dd34201dda0322a85644654d476fb23dc79e5564bb5fe56b",
+      "modules": [
+        "src-vue/admin/DeadLettersContent.vue",
+        "src-vue/admin/DeadLettersContent.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/ParseDeadLettersPage.vue",
+        "src-vue/admin/ParseDeadLettersPage.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/ResourceStatus-DlrpOzFO.js": {
+      "type": "js",
+      "raw": 521,
+      "gzip": 390,
+      "brotli": 328,
+      "sha256": "b13c8ea95a65d56406512b8fd1111ae1bbf8fc0c99222b26a0b9d25ef09291b4",
+      "modules": [
+        "src-vue/admin/ResourceStatus.vue",
+        "src-vue/admin/ResourceStatus.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/ReviewsPage-BFcCGq_w.js": {
+      "type": "js",
+      "raw": 2740,
+      "gzip": 1325,
+      "brotli": 1128,
+      "sha256": "0a10b532b5783d8dc7ccfc855fedccdb6186e7686d6c9d0298982b5c866dd18c",
+      "modules": [
+        "src-vue/pages/ReviewsPage.vue",
+        "src-vue/pages/ReviewsPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/reviews/ReviewList.vue",
+        "src-vue/reviews/ReviewList.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/reviews/ReviewWorkspace.vue",
+        "src-vue/reviews/ReviewWorkspace.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/RolesPage-DyRWPzHi.js": {
+      "type": "js",
+      "raw": 11312,
+      "gzip": 4226,
+      "brotli": 3517,
+      "sha256": "ce3390a34490fe891d6ec0d15e6c650554942a7e4c02e2fc5f9a8dadf1629558",
+      "modules": [
+        "src-vue/admin/RolesPage.vue",
+        "src-vue/admin/RolesPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/roleGroups.ts",
+        "src-vue/admin/roles/CreateRoleDialog.vue",
+        "src-vue/admin/roles/CreateRoleDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/roles/DeleteRoleDialog.vue",
+        "src-vue/admin/roles/DeleteRoleDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/roles/RenameRoleDialog.vue",
+        "src-vue/admin/roles/RenameRoleDialog.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/SearchPage-BK1sqjmA.js": {
+      "type": "js",
+      "raw": 9516,
+      "gzip": 4317,
+      "brotli": 3651,
+      "sha256": "f066a51ec49a7aad6d65a30e89471f5db110c44175b11d9b206c2616a17b5aca",
+      "modules": [
+        "src-vue/pages/SearchPage.vue",
+        "src-vue/pages/SearchPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/search.ts",
+        "src-vue/search/FilterFields.vue",
+        "src-vue/search/FilterFields.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/search/SearchWorkspace.vue",
+        "src-vue/search/SearchWorkspace.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/search/draft.ts"
+      ]
+    },
+    "assets/SpaceDetailPage-BTeJjEMs.js": {
+      "type": "js",
+      "raw": 12696,
+      "gzip": 4911,
+      "brotli": 4092,
+      "sha256": "8daa6e6c3524b36eaee6ee003756acadbf4b4875fe070d73804651fd80931938",
+      "modules": [
+        "src-vue/admin/CategoryManagement.vue",
+        "src-vue/admin/CategoryManagement.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/CategoryManager.vue",
+        "src-vue/admin/CategoryManager.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/DeleteSpace.vue",
+        "src-vue/admin/DeleteSpace.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/ManagedDocuments.vue",
+        "src-vue/admin/ManagedDocuments.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/SpaceDetail.vue",
+        "src-vue/admin/SpaceDetail.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/SpaceDetailPage.vue",
+        "src-vue/admin/SpaceDetailPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/reviews/PolicyDialog.vue",
+        "src-vue/reviews/PolicyDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/reviews/PublicationPolicyPanel.vue",
+        "src-vue/reviews/PublicationPolicyPanel.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/SpacesPage-PR_RVXZR.js": {
+      "type": "js",
+      "raw": 1981,
+      "gzip": 1102,
+      "brotli": 942,
+      "sha256": "cf80792eb52f195b130ca00ef7776cb0d797321a18a0de7eba9860271592f16b",
+      "modules": [
+        "src-vue/admin/SpacesPage.vue",
+        "src-vue/admin/SpacesPage.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/TagPicker-5-ea4Uq6.js": {
+      "type": "js",
+      "raw": 3258,
+      "gzip": 1628,
+      "brotli": 1423,
+      "sha256": "d40958582d824b2b706e7dbac27e22526c0ecace0969c89fbae9c17d082b0b09",
+      "modules": [
+        "src-vue/documents/metadata/TagPicker.vue",
+        "src-vue/documents/metadata/TagPicker.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/TextField-WTbHJkta.js": {
+      "type": "js",
+      "raw": 2255,
+      "gzip": 1122,
+      "brotli": 1002,
+      "sha256": "b2e4963cff7da814d4ee0a3142bb8ed4de4150b44847bb1c9e7edf0202b4ac52",
+      "modules": [
+        "src-vue/admin/ResourceWriteDialog.vue",
+        "src-vue/admin/ResourceWriteDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/TextField.vue",
+        "src-vue/admin/TextField.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/UploadDialog-Dju7S1hm.js": {
+      "type": "js",
+      "raw": 9836,
+      "gzip": 4259,
+      "brotli": 3592,
+      "sha256": "5fb295e96795c9475e8bac74282a597045c3b0b68f4ce4e6b7aacaf6856ba21f",
+      "modules": [
+        "src-vue/documents/ProgressCard.vue",
+        "src-vue/documents/ProgressCard.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/documents/ReadableProgress.vue",
+        "src-vue/documents/ReadableProgress.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/documents/SubmittedVersion.vue",
+        "src-vue/documents/SubmittedVersion.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/documents/UploadDialog.vue",
+        "src-vue/documents/UploadDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/documents/notice.ts",
+        "src-vue/documents/useProgress.ts"
+      ]
+    },
+    "assets/UsersPage-BVlseeWR.js": {
+      "type": "js",
+      "raw": 36923,
+      "gzip": 9801,
+      "brotli": 8151,
+      "sha256": "6eb6b7a3cd489f36fc0d8e7b36abaa2bb4652d6166b0e68c8e91f4d42e1852a7",
+      "modules": [
+        "src-vue/admin/PasswordFields.vue",
+        "src-vue/admin/PasswordFields.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/UsersPage.vue",
+        "src-vue/admin/UsersPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/MappingDialog.vue",
+        "src-vue/admin/lifecycle/MappingDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/RestorationDialog.vue",
+        "src-vue/admin/lifecycle/RestorationDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/UserLifecycleContent.vue",
+        "src-vue/admin/lifecycle/UserLifecycleContent.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/lifecycle/UserLifecyclePanel.vue",
+        "src-vue/admin/lifecycle/UserLifecyclePanel.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/users/AssignRoleDialog.vue",
+        "src-vue/admin/users/AssignRoleDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/users/ClearanceDialog.vue",
+        "src-vue/admin/users/ClearanceDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/users/CreateUserDialog.vue",
+        "src-vue/admin/users/CreateUserDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/users/EnabledUserDialog.vue",
+        "src-vue/admin/users/EnabledUserDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/users/MoveUserDialog.vue",
+        "src-vue/admin/users/MoveUserDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/users/PasswordDialog.vue",
+        "src-vue/admin/users/PasswordDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/users/RevokeRoleDialog.vue",
+        "src-vue/admin/users/RevokeRoleDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/users/UserDetail.vue",
+        "src-vue/admin/users/UserDetail.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/users/labels.ts"
+      ]
+    },
+    "assets/VersionReviewPanel-wTzkGo-s.js": {
+      "type": "js",
+      "raw": 8979,
+      "gzip": 3847,
+      "brotli": 3211,
+      "sha256": "8eae214ad7ae0ff57ce615a6bf40ab61db3b8e80cd668b566b9b6beb1ebb0d1e",
+      "modules": [
+        "src-vue/reviews/CommandDialog.vue",
+        "src-vue/reviews/CommandDialog.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/reviews/Opinions.vue",
+        "src-vue/reviews/Opinions.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/reviews/ReviewContext.vue",
+        "src-vue/reviews/ReviewContext.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/reviews/VersionReviewPanel.vue",
+        "src-vue/reviews/VersionReviewPanel.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/reviews/labels.ts"
+      ]
+    },
+    "assets/WriteNotice-Cmz_jTMP.js": {
+      "type": "js",
+      "raw": 1390,
+      "gzip": 781,
+      "brotli": 589,
+      "sha256": "c1959161e5d47ce7df1e7c85e014d22916ada8a7913619d73cc16166860a7b2a",
+      "modules": [
+        "src-vue/admin/WriteNotice.vue",
+        "src-vue/admin/WriteNotice.vue?vue&type=script&setup=true&lang.ts"
+      ]
+    },
+    "assets/api-CXpF---_.js": {
+      "type": "js",
+      "raw": 4963,
+      "gzip": 2388,
+      "brotli": 2000,
+      "sha256": "2d8b8011bdc4f432b8da37f1168f1512ac8c61b1485df2d4df604e34d16bfb98",
+      "modules": [
+        "src-vue/reviews/api.ts"
+      ]
+    },
+    "assets/api-mVIM_WrL.js": {
+      "type": "js",
+      "raw": 6903,
+      "gzip": 3028,
+      "brotli": 2580,
+      "sha256": "eb4e7d6c6ec450591a0575c078552f73354a9e04b32d068629f3c3dba202fdb8",
+      "modules": [
+        "src-vue/documents/metadata/api.ts"
+      ]
+    },
+    "assets/auditApi-PyGxvPLF.js": {
+      "type": "js",
+      "raw": 4945,
+      "gzip": 2153,
+      "brotli": 1948,
+      "sha256": "32e32f5bbd02a47c19d2b5da752872d8249e70ac26bcc3ad3cd38d815c200e30",
+      "modules": [
+        "src-vue/admin/auditApi.ts"
+      ]
+    },
+    "assets/browser-BkZzsJ4x.js": {
+      "type": "js",
+      "raw": 242,
+      "gzip": 186,
+      "brotli": 148,
+      "sha256": "189cd8e3262c721b22d9f264018cbf566f78707af660be14ef47dcb261707e47",
+      "modules": []
+    },
+    "assets/css-1VV9QMa7.css": {
+      "type": "css",
+      "raw": 6022,
+      "gzip": 943,
+      "brotli": 756,
+      "sha256": "f1047013b3fa8085cfd287f3ca8ff7aee99ec7375677cf7486e1a455abf58c5f",
+      "modules": []
+    },
+    "assets/css-1dY0uqB-.js": {
+      "type": "js",
+      "raw": 6700,
+      "gzip": 2689,
+      "brotli": 2406,
+      "sha256": "b1b77261d85791a6fc918c674bb0c2d0a781df72f63edc66b14591bea5df234b",
+      "modules": []
+    },
+    "assets/css-BQqIGfRx.js": {
+      "type": "js",
+      "raw": 30913,
+      "gzip": 10554,
+      "brotli": 9624,
+      "sha256": "39babd5325d1a6b87378e2a233c509aa2b7c7a87e116e6d38bde229dfb7ef6f2",
+      "modules": []
+    },
+    "assets/css-BYA7z23t.js": {
+      "type": "js",
+      "raw": 4350,
+      "gzip": 1736,
+      "brotli": 1583,
+      "sha256": "b3d1f5e6847fafc507bae23ad2b178bd7dfbe56544d7de4606be5b0e527e7ac1",
+      "modules": []
+    },
+    "assets/css-BpDzfuC8.css": {
+      "type": "css",
+      "raw": 3417,
+      "gzip": 599,
+      "brotli": 477,
+      "sha256": "b59c8d737ed198eeeba0d5dced06797af6a68a701c8ed8d82ade9ec83654292f",
+      "modules": []
+    },
+    "assets/css-CJgVDStF.js": {
+      "type": "js",
+      "raw": 15641,
+      "gzip": 5688,
+      "brotli": 5146,
+      "sha256": "500b9712285e9da6b1ccfc0fa29e37958b6a797bc3f86ff2ae78308ef21662d9",
+      "modules": []
+    },
+    "assets/css-CiUvAR8P.css": {
+      "type": "css",
+      "raw": 8207,
+      "gzip": 1911,
+      "brotli": 1594,
+      "sha256": "74cf016c19cf19175e96243066f336674ca92a3f599ecfae637591d9a5eeef99",
+      "modules": []
+    },
+    "assets/css-CvO7mB41.css": {
+      "type": "css",
+      "raw": 19337,
+      "gzip": 2865,
+      "brotli": 2481,
+      "sha256": "b25377550b7c5ebff7c734269c60c78017cfe22a53fd434428a51484189e0282",
+      "modules": []
+    },
+    "assets/css-CyReMpbV.js": {
+      "type": "js",
+      "raw": 76448,
+      "gzip": 25846,
+      "brotli": 23353,
+      "sha256": "897737c31869407f91b6b102d6c27c7f9bfec478ad2a8ec87647936900626e74",
+      "modules": []
+    },
+    "assets/css-CzNtyWdF.css": {
+      "type": "css",
+      "raw": 6512,
+      "gzip": 1219,
+      "brotli": 1040,
+      "sha256": "fa10637bcf2fc245c410dbe74a7846d9380df27b20421423e95c8c9cf7435f1f",
+      "modules": []
+    },
+    "assets/css-D_fmW1Hm.js": {
+      "type": "js",
+      "raw": 9757,
+      "gzip": 3610,
+      "brotli": 3307,
+      "sha256": "e31d1781526fed29c4b326560dc8ab12653993c0478adccd50d1da7b5c49d8c3",
+      "modules": []
+    },
+    "assets/css-HQ15WyCq.js": {
+      "type": "js",
+      "raw": 1874,
+      "gzip": 846,
+      "brotli": 758,
+      "sha256": "609c339b192691ff8ea9ae93e1c75f3d38ffeabb1b87b1f37e8ab49a57e3eae9",
+      "modules": []
+    },
+    "assets/css-Nqb2n_Xn.css": {
+      "type": "css",
+      "raw": 11189,
+      "gzip": 1859,
+      "brotli": 1575,
+      "sha256": "5c1332148663146ad250803befe2077c194b7198a2c45008902547915c4b712a",
+      "modules": []
+    },
+    "assets/css-VJpID-9r.css": {
+      "type": "css",
+      "raw": 5327,
+      "gzip": 1143,
+      "brotli": 955,
+      "sha256": "c9c553a4b8558c687be4e19cb17be159e5e78394bbffa6633cbd4343bf250293",
+      "modules": []
+    },
+    "assets/css-Wv38huFO.css": {
+      "type": "css",
+      "raw": 162,
+      "gzip": 136,
+      "brotli": 95,
+      "sha256": "85e23358c649b8feb68c49bcfb0ad85133f64160292e879d72fcb61370e0320c",
+      "modules": []
+    },
+    "assets/css-YdQkbZbA.js": {
+      "type": "js",
+      "raw": 49688,
+      "gzip": 17367,
+      "brotli": 15738,
+      "sha256": "6968024e98d6e26f0f447059b8bf75285e81692352f1b935a4d6595385471b33",
+      "modules": []
+    },
+    "assets/dist-CqBTHfyr.js": {
+      "type": "js",
+      "raw": 4574,
+      "gzip": 1999,
+      "brotli": 1785,
+      "sha256": "746c37fb12d3e2d4f2b86131ffdb64ee9b2a313adab133cc20effde646546983",
+      "modules": []
+    },
+    "assets/focus-trap-CdXQ1uxb.js": {
+      "type": "js",
+      "raw": 6460,
+      "gzip": 2735,
+      "brotli": 2448,
+      "sha256": "06810bb4618e2eca707f5221e4cae584caff3911a209a94f57395192880c330f",
+      "modules": []
+    },
+    "assets/index-U0U15P7d.css": {
+      "type": "css",
+      "raw": 11350,
+      "gzip": 2682,
+      "brotli": 2306,
+      "sha256": "3ffb2290f7e410186eb149629fbffd5172119a890f258705a91c601184c92ad7",
+      "modules": []
+    },
+    "assets/index.vue-BiTKAvZO.js": {
+      "type": "js",
+      "raw": 129442,
+      "gzip": 44551,
+      "brotli": 38474,
+      "sha256": "d10c2c2310506f0feeed3ff8241de390f641018b519350623f5ec9f4e8ad3fd0",
+      "modules": [
+        "src-vue/App.vue",
+        "src-vue/App.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/SessionHost.vue",
+        "src-vue/SessionHost.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AdminAccessProvider.vue",
+        "src-vue/admin/AdminAccessProvider.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AdminGuard.vue",
+        "src-vue/admin/AdminGuard.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/AdminNavigation.vue",
+        "src-vue/admin/AdminNavigation.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/admin/access.ts",
+        "src-vue/admin/api.ts",
+        "src-vue/admin/spaceApi.ts",
+        "src-vue/auth/PasswordForm.vue",
+        "src-vue/auth/PasswordForm.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/liveView.ts",
+        "src-vue/main.ts",
+        "src-vue/navigation.ts",
+        "src-vue/notifications/UnreadBadge.vue",
+        "src-vue/notifications/UnreadBadge.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/notifications/api.ts",
+        "src-vue/notifications/unread.ts",
+        "src-vue/notifications/unreadPoller.ts",
+        "src-vue/pages/ChangePasswordPage.vue",
+        "src-vue/pages/ChangePasswordPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/pages/LoginPage.vue",
+        "src-vue/pages/LoginPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/pages/SsoResultPage.vue",
+        "src-vue/pages/SsoResultPage.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/routing/AppRoutes.vue",
+        "src-vue/routing/AppRoutes.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/routing/NavItem.vue",
+        "src-vue/routing/NavItem.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/routing/Navigation.vue",
+        "src-vue/routing/Navigation.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/routing/NotFound.vue",
+        "src-vue/routing/NotFound.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/routing/PageErrorBoundary.vue",
+        "src-vue/routing/PageErrorBoundary.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/routing/PageLoadBoundary.vue",
+        "src-vue/routing/PageLoadBoundary.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/routing/PageLoading.vue",
+        "src-vue/routing/PageLoading.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/routing/PageRoute.vue",
+        "src-vue/routing/PageRoute.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/routing/ProtectedLayout.vue",
+        "src-vue/routing/ProtectedLayout.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/routing/Redirect.vue",
+        "src-vue/routing/Redirect.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/routing/errorSource.ts",
+        "src-vue/routing/lazyPage.ts",
+        "src-vue/routing/lazyPages.ts",
+        "src-vue/routing/locationState.ts",
+        "src-vue/routing/reloadPage.ts",
+        "src-vue/routing/reportCaughtError.ts",
+        "src-vue/routing/routes.ts",
+        "src-vue/session.ts",
+        "src-vue/sso/EnterpriseLogin.vue",
+        "src-vue/sso/EnterpriseLogin.vue?vue&type=script&setup=true&lang.ts",
+        "src-vue/sso/api.ts",
+        "src-vue/sso/flow.ts",
+        "src-vue/sso/storage.ts",
+        "src-vue/sso/useSso.ts",
+        "src-vue/stores/adminAccess.ts",
+        "src-vue/ui/KbSpin.vue",
+        "src-vue/useExternalStore.ts",
+        "src-vue/useResource.ts"
+      ]
+    },
+    "assets/lifecycle-BIHjys5p.js": {
+      "type": "js",
+      "raw": 728,
+      "gzip": 393,
+      "brotli": 334,
+      "sha256": "338f26e70bf3c8dd0bad4fbc54e66aba681698853f76f31c32e471e00613a5d7",
+      "modules": [
+        "src-vue/reviews/lifecycle.ts"
+      ]
+    },
+    "assets/logic-C0612cLn.js": {
+      "type": "js",
+      "raw": 2723,
+      "gzip": 1452,
+      "brotli": 1178,
+      "sha256": "54aaf5b5f7c9884b09656f7f08b1557cd15b3e06f97faf617ec1797d2466efa9",
+      "modules": [
+        "src-vue/logic.ts"
+      ]
+    },
+    "assets/spaceUi-DkiL_kT5.js": {
+      "type": "js",
+      "raw": 639,
+      "gzip": 366,
+      "brotli": 326,
+      "sha256": "7503178d3f2de7709b0e6207af61abebea8945acf59219c0894abf2a6eec9572",
+      "modules": [
+        "src-vue/admin/spaceUi.ts"
+      ]
+    },
+    "assets/ui-BVO6Wtgn.js": {
+      "type": "js",
+      "raw": 191,
+      "gzip": 154,
+      "brotli": 129,
+      "sha256": "f496668bcbdeb2b01f3bbbd65ce9b5eac7b57081c08336f25dc75b35945828e1",
+      "modules": [
+        "src-vue/admin/ui.ts"
+      ]
+    },
+    "assets/use-aria-CmCD4t9i.js": {
+      "type": "js",
+      "raw": 6784,
+      "gzip": 2789,
+      "brotli": 2521,
+      "sha256": "67f93ab7849445d05629a255414f8fd32428439fd723ca95457e923cd97f5ed4",
+      "modules": []
+    }
+  },
+  "scenarios": {
+    "entry": {
+      "files": [
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 6,
+          "raw": 323259,
+          "gzip": 117910,
+          "brotli": 103297
+        },
+        "css": {
+          "files": 3,
+          "raw": 53760,
+          "gzip": 8996,
+          "brotli": 7613
+        },
+        "all": {
+          "files": 9,
+          "raw": 377019,
+          "gzip": 126906,
+          "brotli": 110910
+        }
+      },
+      "incremental": {
+        "files": [],
+        "total": {
+          "js": {
+            "files": 0,
+            "raw": 0,
+            "gzip": 0,
+            "brotli": 0
+          },
+          "css": {
+            "files": 0,
+            "raw": 0,
+            "gzip": 0,
+            "brotli": 0
+          },
+          "all": {
+            "files": 0,
+            "raw": 0,
+            "gzip": 0,
+            "brotli": 0
+          }
+        }
+      }
+    },
+    "login": {
+      "files": [
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 6,
+          "raw": 323259,
+          "gzip": 117910,
+          "brotli": 103297
+        },
+        "css": {
+          "files": 3,
+          "raw": 53760,
+          "gzip": 8996,
+          "brotli": 7613
+        },
+        "all": {
+          "files": 9,
+          "raw": 377019,
+          "gzip": 126906,
+          "brotli": 110910
+        }
+      },
+      "incremental": {
+        "files": [],
+        "total": {
+          "js": {
+            "files": 0,
+            "raw": 0,
+            "gzip": 0,
+            "brotli": 0
+          },
+          "css": {
+            "files": 0,
+            "raw": 0,
+            "gzip": 0,
+            "brotli": 0
+          },
+          "all": {
+            "files": 0,
+            "raw": 0,
+            "gzip": 0,
+            "brotli": 0
+          }
+        }
+      }
+    },
+    "password": {
+      "files": [
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 6,
+          "raw": 323259,
+          "gzip": 117910,
+          "brotli": 103297
+        },
+        "css": {
+          "files": 3,
+          "raw": 53760,
+          "gzip": 8996,
+          "brotli": 7613
+        },
+        "all": {
+          "files": 9,
+          "raw": 377019,
+          "gzip": 126906,
+          "brotli": 110910
+        }
+      },
+      "incremental": {
+        "files": [],
+        "total": {
+          "js": {
+            "files": 0,
+            "raw": 0,
+            "gzip": 0,
+            "brotli": 0
+          },
+          "css": {
+            "files": 0,
+            "raw": 0,
+            "gzip": 0,
+            "brotli": 0
+          },
+          "all": {
+            "files": 0,
+            "raw": 0,
+            "gzip": 0,
+            "brotli": 0
+          }
+        }
+      }
+    },
+    "sso": {
+      "files": [
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 6,
+          "raw": 323259,
+          "gzip": 117910,
+          "brotli": 103297
+        },
+        "css": {
+          "files": 3,
+          "raw": 53760,
+          "gzip": 8996,
+          "brotli": 7613
+        },
+        "all": {
+          "files": 9,
+          "raw": 377019,
+          "gzip": 126906,
+          "brotli": 110910
+        }
+      },
+      "incremental": {
+        "files": [],
+        "total": {
+          "js": {
+            "files": 0,
+            "raw": 0,
+            "gzip": 0,
+            "brotli": 0
+          },
+          "css": {
+            "files": 0,
+            "raw": 0,
+            "gzip": 0,
+            "brotli": 0
+          },
+          "all": {
+            "files": 0,
+            "raw": 0,
+            "gzip": 0,
+            "brotli": 0
+          }
+        }
+      }
+    },
+    "documents": {
+      "files": [
+        "assets/CategoryBrowser-CjyT-K1d.js",
+        "assets/DocumentsPage-B7gvwdWB.css",
+        "assets/DocumentsPage-Cx5zXiOF.js",
+        "assets/FavoriteButton-DnRtxRPu.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/TagPicker-5-ea4Uq6.js",
+        "assets/UploadDialog-Dju7S1hm.js",
+        "assets/api-CXpF---_.js",
+        "assets/api-mVIM_WrL.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-BQqIGfRx.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-CiUvAR8P.css",
+        "assets/css-CvO7mB41.css",
+        "assets/css-CyReMpbV.js",
+        "assets/css-CzNtyWdF.css",
+        "assets/css-D_fmW1Hm.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-VJpID-9r.css",
+        "assets/css-Wv38huFO.css",
+        "assets/css-YdQkbZbA.js",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/lifecycle-BIHjys5p.js",
+        "assets/logic-C0612cLn.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 25,
+          "raw": 578144,
+          "gzip": 212673,
+          "brotli": 187773
+        },
+        "css": {
+          "files": 12,
+          "raw": 110985,
+          "gzip": 19810,
+          "brotli": 16686
+        },
+        "all": {
+          "files": 37,
+          "raw": 689129,
+          "gzip": 232483,
+          "brotli": 204459
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/CategoryBrowser-CjyT-K1d.js",
+          "assets/DocumentsPage-B7gvwdWB.css",
+          "assets/DocumentsPage-Cx5zXiOF.js",
+          "assets/FavoriteButton-DnRtxRPu.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/TagPicker-5-ea4Uq6.js",
+          "assets/UploadDialog-Dju7S1hm.js",
+          "assets/api-CXpF---_.js",
+          "assets/api-mVIM_WrL.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-BQqIGfRx.js",
+          "assets/css-CiUvAR8P.css",
+          "assets/css-CvO7mB41.css",
+          "assets/css-CyReMpbV.js",
+          "assets/css-CzNtyWdF.css",
+          "assets/css-D_fmW1Hm.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-VJpID-9r.css",
+          "assets/css-Wv38huFO.css",
+          "assets/css-YdQkbZbA.js",
+          "assets/focus-trap-CdXQ1uxb.js",
+          "assets/lifecycle-BIHjys5p.js",
+          "assets/logic-C0612cLn.js"
+        ],
+        "total": {
+          "js": {
+            "files": 19,
+            "raw": 254885,
+            "gzip": 94763,
+            "brotli": 84476
+          },
+          "css": {
+            "files": 9,
+            "raw": 57225,
+            "gzip": 10814,
+            "brotli": 9073
+          },
+          "all": {
+            "files": 28,
+            "raw": 312110,
+            "gzip": 105577,
+            "brotli": 93549
+          }
+        }
+      }
+    },
+    "detail": {
+      "files": [
+        "assets/AdminModal-CWuZcnYP.js",
+        "assets/CategoryBrowser-CjyT-K1d.js",
+        "assets/CommentPanel-D-koFRWq.js",
+        "assets/DocumentDetailPage-vZTWjn8b.js",
+        "assets/DownloadButton-DFbbckb7.js",
+        "assets/FavoriteButton-DnRtxRPu.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/KbDrawer-4p2NeA9E.js",
+        "assets/KbDrawer-BmQQuU66.css",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/ResourceStatus-DlrpOzFO.js",
+        "assets/TagPicker-5-ea4Uq6.js",
+        "assets/UploadDialog-Dju7S1hm.js",
+        "assets/VersionReviewPanel-wTzkGo-s.js",
+        "assets/WriteNotice-Cmz_jTMP.js",
+        "assets/api-CXpF---_.js",
+        "assets/api-mVIM_WrL.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-BQqIGfRx.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-CiUvAR8P.css",
+        "assets/css-CvO7mB41.css",
+        "assets/css-CyReMpbV.js",
+        "assets/css-CzNtyWdF.css",
+        "assets/css-D_fmW1Hm.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-VJpID-9r.css",
+        "assets/css-Wv38huFO.css",
+        "assets/css-YdQkbZbA.js",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/lifecycle-BIHjys5p.js",
+        "assets/logic-C0612cLn.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 32,
+          "raw": 640168,
+          "gzip": 237242,
+          "brotli": 208944
+        },
+        "css": {
+          "files": 12,
+          "raw": 108105,
+          "gzip": 19698,
+          "brotli": 16581
+        },
+        "all": {
+          "files": 44,
+          "raw": 748273,
+          "gzip": 256940,
+          "brotli": 225525
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AdminModal-CWuZcnYP.js",
+          "assets/CategoryBrowser-CjyT-K1d.js",
+          "assets/CommentPanel-D-koFRWq.js",
+          "assets/DocumentDetailPage-vZTWjn8b.js",
+          "assets/DownloadButton-DFbbckb7.js",
+          "assets/FavoriteButton-DnRtxRPu.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/KbDrawer-4p2NeA9E.js",
+          "assets/KbDrawer-BmQQuU66.css",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/ResourceStatus-DlrpOzFO.js",
+          "assets/TagPicker-5-ea4Uq6.js",
+          "assets/UploadDialog-Dju7S1hm.js",
+          "assets/VersionReviewPanel-wTzkGo-s.js",
+          "assets/WriteNotice-Cmz_jTMP.js",
+          "assets/api-CXpF---_.js",
+          "assets/api-mVIM_WrL.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-BQqIGfRx.js",
+          "assets/css-CiUvAR8P.css",
+          "assets/css-CvO7mB41.css",
+          "assets/css-CyReMpbV.js",
+          "assets/css-CzNtyWdF.css",
+          "assets/css-D_fmW1Hm.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-VJpID-9r.css",
+          "assets/css-Wv38huFO.css",
+          "assets/css-YdQkbZbA.js",
+          "assets/focus-trap-CdXQ1uxb.js",
+          "assets/lifecycle-BIHjys5p.js",
+          "assets/logic-C0612cLn.js"
+        ],
+        "total": {
+          "js": {
+            "files": 26,
+            "raw": 316909,
+            "gzip": 119332,
+            "brotli": 105647
+          },
+          "css": {
+            "files": 9,
+            "raw": 54345,
+            "gzip": 10702,
+            "brotli": 8968
+          },
+          "all": {
+            "files": 35,
+            "raw": 371254,
+            "gzip": 130034,
+            "brotli": 114615
+          }
+        }
+      }
+    },
+    "account": {
+      "files": [
+        "assets/AccountPage-W_t_WCm3.js",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-Wv38huFO.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 11,
+          "raw": 349063,
+          "gzip": 129068,
+          "brotli": 113156
+        },
+        "css": {
+          "files": 6,
+          "raw": 63488,
+          "gzip": 11046,
+          "brotli": 9280
+        },
+        "all": {
+          "files": 17,
+          "raw": 412551,
+          "gzip": 140114,
+          "brotli": 122436
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AccountPage-W_t_WCm3.js",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-Wv38huFO.css",
+          "assets/focus-trap-CdXQ1uxb.js"
+        ],
+        "total": {
+          "js": {
+            "files": 5,
+            "raw": 25804,
+            "gzip": 11158,
+            "brotli": 9859
+          },
+          "css": {
+            "files": 3,
+            "raw": 9728,
+            "gzip": 2050,
+            "brotli": 1667
+          },
+          "all": {
+            "files": 8,
+            "raw": 35532,
+            "gzip": 13208,
+            "brotli": 11526
+          }
+        }
+      }
+    },
+    "search": {
+      "files": [
+        "assets/CategoryBrowser-CjyT-K1d.js",
+        "assets/CitationDrawer-d04Ejeyv.js",
+        "assets/DownloadButton-DFbbckb7.js",
+        "assets/FavoriteButton-DnRtxRPu.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/KbDrawer-4p2NeA9E.js",
+        "assets/KbDrawer-BmQQuU66.css",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/SearchPage-BK1sqjmA.js",
+        "assets/TagPicker-5-ea4Uq6.js",
+        "assets/api-mVIM_WrL.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-Wv38huFO.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/logic-C0612cLn.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 21,
+          "raw": 406267,
+          "gzip": 154387,
+          "brotli": 135089
+        },
+        "css": {
+          "files": 8,
+          "raw": 68722,
+          "gzip": 12560,
+          "brotli": 10511
+        },
+        "all": {
+          "files": 29,
+          "raw": 474989,
+          "gzip": 166947,
+          "brotli": 145600
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/CategoryBrowser-CjyT-K1d.js",
+          "assets/CitationDrawer-d04Ejeyv.js",
+          "assets/DownloadButton-DFbbckb7.js",
+          "assets/FavoriteButton-DnRtxRPu.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/KbDrawer-4p2NeA9E.js",
+          "assets/KbDrawer-BmQQuU66.css",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/SearchPage-BK1sqjmA.js",
+          "assets/TagPicker-5-ea4Uq6.js",
+          "assets/api-mVIM_WrL.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-Wv38huFO.css",
+          "assets/focus-trap-CdXQ1uxb.js",
+          "assets/logic-C0612cLn.js"
+        ],
+        "total": {
+          "js": {
+            "files": 15,
+            "raw": 83008,
+            "gzip": 36477,
+            "brotli": 31792
+          },
+          "css": {
+            "files": 5,
+            "raw": 14962,
+            "gzip": 3564,
+            "brotli": 2898
+          },
+          "all": {
+            "files": 20,
+            "raw": 97970,
+            "gzip": 40041,
+            "brotli": 34690
+          }
+        }
+      }
+    },
+    "favorites": {
+      "files": [
+        "assets/FavoriteButton-DnRtxRPu.js",
+        "assets/FavoritesPage-C8mE0M-K.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-CJgVDStF.js",
+        "assets/css-CvO7mB41.css",
+        "assets/css-CyReMpbV.js",
+        "assets/css-CzNtyWdF.css",
+        "assets/css-D_fmW1Hm.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-VJpID-9r.css",
+        "assets/css-YdQkbZbA.js",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 15,
+          "raw": 483866,
+          "gzip": 175290,
+          "brotli": 154944
+        },
+        "css": {
+          "files": 8,
+          "raw": 92114,
+          "gzip": 15622,
+          "brotli": 13188
+        },
+        "all": {
+          "files": 23,
+          "raw": 575980,
+          "gzip": 190912,
+          "brotli": 168132
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/FavoriteButton-DnRtxRPu.js",
+          "assets/FavoritesPage-C8mE0M-K.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-CvO7mB41.css",
+          "assets/css-CyReMpbV.js",
+          "assets/css-CzNtyWdF.css",
+          "assets/css-D_fmW1Hm.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-VJpID-9r.css",
+          "assets/css-YdQkbZbA.js",
+          "assets/focus-trap-CdXQ1uxb.js"
+        ],
+        "total": {
+          "js": {
+            "files": 9,
+            "raw": 160607,
+            "gzip": 57380,
+            "brotli": 51647
+          },
+          "css": {
+            "files": 5,
+            "raw": 38354,
+            "gzip": 6626,
+            "brotli": 5575
+          },
+          "all": {
+            "files": 14,
+            "raw": 198961,
+            "gzip": 64006,
+            "brotli": 57222
+          }
+        }
+      }
+    },
+    "reviews": {
+      "files": [
+        "assets/AdminModal-CWuZcnYP.js",
+        "assets/DownloadButton-DFbbckb7.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/KbDrawer-4p2NeA9E.js",
+        "assets/KbDrawer-BmQQuU66.css",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/ReviewsPage-BFcCGq_w.js",
+        "assets/VersionReviewPanel-wTzkGo-s.js",
+        "assets/api-CXpF---_.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-Wv38huFO.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/lifecycle-BIHjys5p.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 19,
+          "raw": 391047,
+          "gzip": 146933,
+          "brotli": 128715
+        },
+        "css": {
+          "files": 8,
+          "raw": 68722,
+          "gzip": 12560,
+          "brotli": 10511
+        },
+        "all": {
+          "files": 27,
+          "raw": 459769,
+          "gzip": 159493,
+          "brotli": 139226
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AdminModal-CWuZcnYP.js",
+          "assets/DownloadButton-DFbbckb7.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/KbDrawer-4p2NeA9E.js",
+          "assets/KbDrawer-BmQQuU66.css",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/ReviewsPage-BFcCGq_w.js",
+          "assets/VersionReviewPanel-wTzkGo-s.js",
+          "assets/api-CXpF---_.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-Wv38huFO.css",
+          "assets/focus-trap-CdXQ1uxb.js",
+          "assets/lifecycle-BIHjys5p.js"
+        ],
+        "total": {
+          "js": {
+            "files": 13,
+            "raw": 67788,
+            "gzip": 29023,
+            "brotli": 25418
+          },
+          "css": {
+            "files": 5,
+            "raw": 14962,
+            "gzip": 3564,
+            "brotli": 2898
+          },
+          "all": {
+            "files": 18,
+            "raw": 82750,
+            "gzip": 32587,
+            "brotli": 28316
+          }
+        }
+      }
+    },
+    "notifications": {
+      "files": [
+        "assets/AdminModal-CWuZcnYP.js",
+        "assets/CommentPanel-D-koFRWq.js",
+        "assets/DownloadButton-DFbbckb7.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/KbDrawer-4p2NeA9E.js",
+        "assets/KbDrawer-BmQQuU66.css",
+        "assets/NotificationsPage-C-9u39-W.js",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/VersionReviewPanel-wTzkGo-s.js",
+        "assets/WriteNotice-Cmz_jTMP.js",
+        "assets/api-CXpF---_.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-Wv38huFO.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/lifecycle-BIHjys5p.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 21,
+          "raw": 420202,
+          "gzip": 158075,
+          "brotli": 138186
+        },
+        "css": {
+          "files": 8,
+          "raw": 68722,
+          "gzip": 12560,
+          "brotli": 10511
+        },
+        "all": {
+          "files": 29,
+          "raw": 488924,
+          "gzip": 170635,
+          "brotli": 148697
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AdminModal-CWuZcnYP.js",
+          "assets/CommentPanel-D-koFRWq.js",
+          "assets/DownloadButton-DFbbckb7.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/KbDrawer-4p2NeA9E.js",
+          "assets/KbDrawer-BmQQuU66.css",
+          "assets/NotificationsPage-C-9u39-W.js",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/VersionReviewPanel-wTzkGo-s.js",
+          "assets/WriteNotice-Cmz_jTMP.js",
+          "assets/api-CXpF---_.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-Wv38huFO.css",
+          "assets/focus-trap-CdXQ1uxb.js",
+          "assets/lifecycle-BIHjys5p.js"
+        ],
+        "total": {
+          "js": {
+            "files": 15,
+            "raw": 96943,
+            "gzip": 40165,
+            "brotli": 34889
+          },
+          "css": {
+            "files": 5,
+            "raw": 14962,
+            "gzip": 3564,
+            "brotli": 2898
+          },
+          "all": {
+            "files": 20,
+            "raw": 111905,
+            "gzip": 43729,
+            "brotli": 37787
+          }
+        }
+      }
+    },
+    "assistant": {
+      "files": [
+        "assets/AssistantPage--j8M494u.js",
+        "assets/CitationDrawer-d04Ejeyv.js",
+        "assets/DownloadButton-DFbbckb7.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/KbDrawer-4p2NeA9E.js",
+        "assets/KbDrawer-BmQQuU66.css",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-Wv38huFO.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/logic-C0612cLn.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 16,
+          "raw": 387326,
+          "gzip": 145084,
+          "brotli": 127005
+        },
+        "css": {
+          "files": 8,
+          "raw": 68722,
+          "gzip": 12560,
+          "brotli": 10511
+        },
+        "all": {
+          "files": 24,
+          "raw": 456048,
+          "gzip": 157644,
+          "brotli": 137516
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AssistantPage--j8M494u.js",
+          "assets/CitationDrawer-d04Ejeyv.js",
+          "assets/DownloadButton-DFbbckb7.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/KbDrawer-4p2NeA9E.js",
+          "assets/KbDrawer-BmQQuU66.css",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-Wv38huFO.css",
+          "assets/focus-trap-CdXQ1uxb.js",
+          "assets/logic-C0612cLn.js"
+        ],
+        "total": {
+          "js": {
+            "files": 10,
+            "raw": 64067,
+            "gzip": 27174,
+            "brotli": 23708
+          },
+          "css": {
+            "files": 5,
+            "raw": 14962,
+            "gzip": 3564,
+            "brotli": 2898
+          },
+          "all": {
+            "files": 15,
+            "raw": 79029,
+            "gzip": 30738,
+            "brotli": 26606
+          }
+        }
+      }
+    },
+    "lifecycle": {
+      "files": [
+        "assets/AdminModal-CWuZcnYP.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/KbDrawer-4p2NeA9E.js",
+        "assets/KbDrawer-BmQQuU66.css",
+        "assets/LifecycleActionDialog-B_0u1Kee.js",
+        "assets/LifecyclePage-DIpLYL57.js",
+        "assets/Note-Dd0KF6tM.js",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/WriteNotice-Cmz_jTMP.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-BQqIGfRx.js",
+        "assets/css-BYA7z23t.js",
+        "assets/css-BpDzfuC8.css",
+        "assets/css-CJgVDStF.js",
+        "assets/css-CiUvAR8P.css",
+        "assets/css-CvO7mB41.css",
+        "assets/css-CyReMpbV.js",
+        "assets/css-CzNtyWdF.css",
+        "assets/css-D_fmW1Hm.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-VJpID-9r.css",
+        "assets/css-Wv38huFO.css",
+        "assets/css-YdQkbZbA.js",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 23,
+          "raw": 559072,
+          "gzip": 203569,
+          "brotli": 180226
+        },
+        "css": {
+          "files": 13,
+          "raw": 111522,
+          "gzip": 20297,
+          "brotli": 17058
+        },
+        "all": {
+          "files": 36,
+          "raw": 670594,
+          "gzip": 223866,
+          "brotli": 197284
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AdminModal-CWuZcnYP.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/KbDrawer-4p2NeA9E.js",
+          "assets/KbDrawer-BmQQuU66.css",
+          "assets/LifecycleActionDialog-B_0u1Kee.js",
+          "assets/LifecyclePage-DIpLYL57.js",
+          "assets/Note-Dd0KF6tM.js",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/WriteNotice-Cmz_jTMP.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-BQqIGfRx.js",
+          "assets/css-BYA7z23t.js",
+          "assets/css-BpDzfuC8.css",
+          "assets/css-CiUvAR8P.css",
+          "assets/css-CvO7mB41.css",
+          "assets/css-CyReMpbV.js",
+          "assets/css-CzNtyWdF.css",
+          "assets/css-D_fmW1Hm.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-VJpID-9r.css",
+          "assets/css-Wv38huFO.css",
+          "assets/css-YdQkbZbA.js",
+          "assets/focus-trap-CdXQ1uxb.js"
+        ],
+        "total": {
+          "js": {
+            "files": 17,
+            "raw": 235813,
+            "gzip": 85659,
+            "brotli": 76929
+          },
+          "css": {
+            "files": 10,
+            "raw": 57762,
+            "gzip": 11301,
+            "brotli": 9445
+          },
+          "all": {
+            "files": 27,
+            "raw": 293575,
+            "gzip": 96960,
+            "brotli": 86374
+          }
+        }
+      }
+    },
+    "users": {
+      "files": [
+        "assets/AdminModal-CWuZcnYP.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/KbDrawer-4p2NeA9E.js",
+        "assets/KbDrawer-BmQQuU66.css",
+        "assets/LifecycleActionDialog-B_0u1Kee.js",
+        "assets/Note-Dd0KF6tM.js",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/UsersPage-BVlseeWR.js",
+        "assets/WriteNotice-Cmz_jTMP.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-BQqIGfRx.js",
+        "assets/css-BYA7z23t.js",
+        "assets/css-BpDzfuC8.css",
+        "assets/css-CJgVDStF.js",
+        "assets/css-CiUvAR8P.css",
+        "assets/css-CvO7mB41.css",
+        "assets/css-CyReMpbV.js",
+        "assets/css-CzNtyWdF.css",
+        "assets/css-D_fmW1Hm.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-VJpID-9r.css",
+        "assets/css-Wv38huFO.css",
+        "assets/css-YdQkbZbA.js",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/ui-BVO6Wtgn.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 24,
+          "raw": 583796,
+          "gzip": 208924,
+          "brotli": 184655
+        },
+        "css": {
+          "files": 13,
+          "raw": 111522,
+          "gzip": 20297,
+          "brotli": 17058
+        },
+        "all": {
+          "files": 37,
+          "raw": 695318,
+          "gzip": 229221,
+          "brotli": 201713
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AdminModal-CWuZcnYP.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/KbDrawer-4p2NeA9E.js",
+          "assets/KbDrawer-BmQQuU66.css",
+          "assets/LifecycleActionDialog-B_0u1Kee.js",
+          "assets/Note-Dd0KF6tM.js",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/UsersPage-BVlseeWR.js",
+          "assets/WriteNotice-Cmz_jTMP.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-BQqIGfRx.js",
+          "assets/css-BYA7z23t.js",
+          "assets/css-BpDzfuC8.css",
+          "assets/css-CiUvAR8P.css",
+          "assets/css-CvO7mB41.css",
+          "assets/css-CyReMpbV.js",
+          "assets/css-CzNtyWdF.css",
+          "assets/css-D_fmW1Hm.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-VJpID-9r.css",
+          "assets/css-Wv38huFO.css",
+          "assets/css-YdQkbZbA.js",
+          "assets/focus-trap-CdXQ1uxb.js",
+          "assets/ui-BVO6Wtgn.js"
+        ],
+        "total": {
+          "js": {
+            "files": 18,
+            "raw": 260537,
+            "gzip": 91014,
+            "brotli": 81358
+          },
+          "css": {
+            "files": 10,
+            "raw": 57762,
+            "gzip": 11301,
+            "brotli": 9445
+          },
+          "all": {
+            "files": 28,
+            "raw": 318299,
+            "gzip": 102315,
+            "brotli": 90803
+          }
+        }
+      }
+    },
+    "departments": {
+      "files": [
+        "assets/AdminModal-CWuZcnYP.js",
+        "assets/DepartmentsPage-Byzh7m4Y.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/Note-Dd0KF6tM.js",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/WriteNotice-Cmz_jTMP.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-BQqIGfRx.js",
+        "assets/css-BYA7z23t.js",
+        "assets/css-BpDzfuC8.css",
+        "assets/css-CJgVDStF.js",
+        "assets/css-CiUvAR8P.css",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-VJpID-9r.css",
+        "assets/css-Wv38huFO.css",
+        "assets/css-YdQkbZbA.js",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/ui-BVO6Wtgn.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 20,
+          "raw": 458371,
+          "gzip": 167314,
+          "brotli": 147619
+        },
+        "css": {
+          "files": 10,
+          "raw": 81595,
+          "gzip": 15155,
+          "brotli": 12649
+        },
+        "all": {
+          "files": 30,
+          "raw": 539966,
+          "gzip": 182469,
+          "brotli": 160268
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AdminModal-CWuZcnYP.js",
+          "assets/DepartmentsPage-Byzh7m4Y.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/Note-Dd0KF6tM.js",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/WriteNotice-Cmz_jTMP.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-BQqIGfRx.js",
+          "assets/css-BYA7z23t.js",
+          "assets/css-BpDzfuC8.css",
+          "assets/css-CiUvAR8P.css",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-VJpID-9r.css",
+          "assets/css-Wv38huFO.css",
+          "assets/css-YdQkbZbA.js",
+          "assets/focus-trap-CdXQ1uxb.js",
+          "assets/ui-BVO6Wtgn.js"
+        ],
+        "total": {
+          "js": {
+            "files": 14,
+            "raw": 135112,
+            "gzip": 49404,
+            "brotli": 44322
+          },
+          "css": {
+            "files": 7,
+            "raw": 27835,
+            "gzip": 6159,
+            "brotli": 5036
+          },
+          "all": {
+            "files": 21,
+            "raw": 162947,
+            "gzip": 55563,
+            "brotli": 49358
+          }
+        }
+      }
+    },
+    "roles": {
+      "files": [
+        "assets/AdminModal-CWuZcnYP.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/Note-Dd0KF6tM.js",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/RolesPage-DyRWPzHi.js",
+        "assets/WriteNotice-Cmz_jTMP.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-CzNtyWdF.css",
+        "assets/css-D_fmW1Hm.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-Wv38huFO.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/ui-BVO6Wtgn.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 17,
+          "raw": 378556,
+          "gzip": 140097,
+          "brotli": 122867
+        },
+        "css": {
+          "files": 7,
+          "raw": 65134,
+          "gzip": 11778,
+          "brotli": 9907
+        },
+        "all": {
+          "files": 24,
+          "raw": 443690,
+          "gzip": 151875,
+          "brotli": 132774
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AdminModal-CWuZcnYP.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/Note-Dd0KF6tM.js",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/RolesPage-DyRWPzHi.js",
+          "assets/WriteNotice-Cmz_jTMP.js",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-CzNtyWdF.css",
+          "assets/css-D_fmW1Hm.js",
+          "assets/css-Wv38huFO.css",
+          "assets/focus-trap-CdXQ1uxb.js",
+          "assets/ui-BVO6Wtgn.js"
+        ],
+        "total": {
+          "js": {
+            "files": 11,
+            "raw": 55297,
+            "gzip": 22187,
+            "brotli": 19570
+          },
+          "css": {
+            "files": 4,
+            "raw": 11374,
+            "gzip": 2782,
+            "brotli": 2294
+          },
+          "all": {
+            "files": 15,
+            "raw": 66671,
+            "gzip": 24969,
+            "brotli": 21864
+          }
+        }
+      }
+    },
+    "spaces": {
+      "files": [
+        "assets/AdminModal-CWuZcnYP.js",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/ResourceStatus-DlrpOzFO.js",
+        "assets/SpacesPage-PR_RVXZR.js",
+        "assets/TextField-WTbHJkta.js",
+        "assets/WriteNotice-Cmz_jTMP.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-Wv38huFO.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/spaceUi-DkiL_kT5.js",
+        "assets/ui-BVO6Wtgn.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 18,
+          "raw": 359427,
+          "gzip": 133885,
+          "brotli": 117460
+        },
+        "css": {
+          "files": 6,
+          "raw": 63488,
+          "gzip": 11046,
+          "brotli": 9280
+        },
+        "all": {
+          "files": 24,
+          "raw": 422915,
+          "gzip": 144931,
+          "brotli": 126740
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AdminModal-CWuZcnYP.js",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/ResourceStatus-DlrpOzFO.js",
+          "assets/SpacesPage-PR_RVXZR.js",
+          "assets/TextField-WTbHJkta.js",
+          "assets/WriteNotice-Cmz_jTMP.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-Wv38huFO.css",
+          "assets/focus-trap-CdXQ1uxb.js",
+          "assets/spaceUi-DkiL_kT5.js",
+          "assets/ui-BVO6Wtgn.js"
+        ],
+        "total": {
+          "js": {
+            "files": 12,
+            "raw": 36168,
+            "gzip": 15975,
+            "brotli": 14163
+          },
+          "css": {
+            "files": 3,
+            "raw": 9728,
+            "gzip": 2050,
+            "brotli": 1667
+          },
+          "all": {
+            "files": 15,
+            "raw": 45896,
+            "gzip": 18025,
+            "brotli": 15830
+          }
+        }
+      }
+    },
+    "spaceDetail": {
+      "files": [
+        "assets/AclPanel-BdW4Wcjy.js",
+        "assets/AdminModal-CWuZcnYP.js",
+        "assets/CategoryBrowser-CjyT-K1d.js",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/ResourceStatus-DlrpOzFO.js",
+        "assets/SpaceDetailPage-BTeJjEMs.js",
+        "assets/TextField-WTbHJkta.js",
+        "assets/WriteNotice-Cmz_jTMP.js",
+        "assets/api-CXpF---_.js",
+        "assets/api-mVIM_WrL.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-Wv38huFO.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/lifecycle-BIHjys5p.js",
+        "assets/spaceUi-DkiL_kT5.js",
+        "assets/ui-BVO6Wtgn.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 23,
+          "raw": 406824,
+          "gzip": 152403,
+          "brotli": 133115
+        },
+        "css": {
+          "files": 6,
+          "raw": 63488,
+          "gzip": 11046,
+          "brotli": 9280
+        },
+        "all": {
+          "files": 29,
+          "raw": 470312,
+          "gzip": 163449,
+          "brotli": 142395
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AclPanel-BdW4Wcjy.js",
+          "assets/AdminModal-CWuZcnYP.js",
+          "assets/CategoryBrowser-CjyT-K1d.js",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/ResourceStatus-DlrpOzFO.js",
+          "assets/SpaceDetailPage-BTeJjEMs.js",
+          "assets/TextField-WTbHJkta.js",
+          "assets/WriteNotice-Cmz_jTMP.js",
+          "assets/api-CXpF---_.js",
+          "assets/api-mVIM_WrL.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-Wv38huFO.css",
+          "assets/focus-trap-CdXQ1uxb.js",
+          "assets/lifecycle-BIHjys5p.js",
+          "assets/spaceUi-DkiL_kT5.js",
+          "assets/ui-BVO6Wtgn.js"
+        ],
+        "total": {
+          "js": {
+            "files": 17,
+            "raw": 83565,
+            "gzip": 34493,
+            "brotli": 29818
+          },
+          "css": {
+            "files": 3,
+            "raw": 9728,
+            "gzip": 2050,
+            "brotli": 1667
+          },
+          "all": {
+            "files": 20,
+            "raw": 93293,
+            "gzip": 36543,
+            "brotli": 31485
+          }
+        }
+      }
+    },
+    "adminDocuments": {
+      "files": [
+        "assets/DocumentsIndexPage-CM9fPsVP.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/spaceUi-DkiL_kT5.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 8,
+          "raw": 325334,
+          "gzip": 119309,
+          "brotli": 104453
+        },
+        "css": {
+          "files": 3,
+          "raw": 53760,
+          "gzip": 8996,
+          "brotli": 7613
+        },
+        "all": {
+          "files": 11,
+          "raw": 379094,
+          "gzip": 128305,
+          "brotli": 112066
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/DocumentsIndexPage-CM9fPsVP.js",
+          "assets/spaceUi-DkiL_kT5.js"
+        ],
+        "total": {
+          "js": {
+            "files": 2,
+            "raw": 2075,
+            "gzip": 1399,
+            "brotli": 1156
+          },
+          "css": {
+            "files": 0,
+            "raw": 0,
+            "gzip": 0,
+            "brotli": 0
+          },
+          "all": {
+            "files": 2,
+            "raw": 2075,
+            "gzip": 1399,
+            "brotli": 1156
+          }
+        }
+      }
+    },
+    "documentPanel": {
+      "files": [
+        "assets/AclPanel-BdW4Wcjy.js",
+        "assets/AdminModal-CWuZcnYP.js",
+        "assets/CategoryBrowser-CjyT-K1d.js",
+        "assets/DocumentPanelPage-CQCyDOWQ.js",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/ResourceStatus-DlrpOzFO.js",
+        "assets/TextField-WTbHJkta.js",
+        "assets/WriteNotice-Cmz_jTMP.js",
+        "assets/api-mVIM_WrL.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-Wv38huFO.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/lifecycle-BIHjys5p.js",
+        "assets/spaceUi-DkiL_kT5.js",
+        "assets/ui-BVO6Wtgn.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 21,
+          "raw": 399446,
+          "gzip": 149298,
+          "brotli": 130488
+        },
+        "css": {
+          "files": 5,
+          "raw": 57466,
+          "gzip": 10103,
+          "brotli": 8524
+        },
+        "all": {
+          "files": 26,
+          "raw": 456912,
+          "gzip": 159401,
+          "brotli": 139012
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AclPanel-BdW4Wcjy.js",
+          "assets/AdminModal-CWuZcnYP.js",
+          "assets/CategoryBrowser-CjyT-K1d.js",
+          "assets/DocumentPanelPage-CQCyDOWQ.js",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/ResourceStatus-DlrpOzFO.js",
+          "assets/TextField-WTbHJkta.js",
+          "assets/WriteNotice-Cmz_jTMP.js",
+          "assets/api-mVIM_WrL.js",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-Wv38huFO.css",
+          "assets/focus-trap-CdXQ1uxb.js",
+          "assets/lifecycle-BIHjys5p.js",
+          "assets/spaceUi-DkiL_kT5.js",
+          "assets/ui-BVO6Wtgn.js"
+        ],
+        "total": {
+          "js": {
+            "files": 15,
+            "raw": 76187,
+            "gzip": 31388,
+            "brotli": 27191
+          },
+          "css": {
+            "files": 2,
+            "raw": 3706,
+            "gzip": 1107,
+            "brotli": 911
+          },
+          "all": {
+            "files": 17,
+            "raw": 79893,
+            "gzip": 32495,
+            "brotli": 28102
+          }
+        }
+      }
+    },
+    "embedding": {
+      "files": [
+        "assets/AdminModal-CWuZcnYP.js",
+        "assets/EmbeddingPage-DRpk0hrq.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/OperationDialog-BZ9BJs3X.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/WriteNotice-Cmz_jTMP.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-BQqIGfRx.js",
+        "assets/css-BYA7z23t.js",
+        "assets/css-BpDzfuC8.css",
+        "assets/css-CJgVDStF.js",
+        "assets/css-CiUvAR8P.css",
+        "assets/css-CvO7mB41.css",
+        "assets/css-CyReMpbV.js",
+        "assets/css-CzNtyWdF.css",
+        "assets/css-D_fmW1Hm.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-VJpID-9r.css",
+        "assets/css-Wv38huFO.css",
+        "assets/css-YdQkbZbA.js",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 21,
+          "raw": 545850,
+          "gzip": 198894,
+          "brotli": 176009
+        },
+        "css": {
+          "files": 12,
+          "raw": 107444,
+          "gzip": 19239,
+          "brotli": 16170
+        },
+        "all": {
+          "files": 33,
+          "raw": 653294,
+          "gzip": 218133,
+          "brotli": 192179
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AdminModal-CWuZcnYP.js",
+          "assets/EmbeddingPage-DRpk0hrq.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/OperationDialog-BZ9BJs3X.js",
+          "assets/WriteNotice-Cmz_jTMP.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-BQqIGfRx.js",
+          "assets/css-BYA7z23t.js",
+          "assets/css-BpDzfuC8.css",
+          "assets/css-CiUvAR8P.css",
+          "assets/css-CvO7mB41.css",
+          "assets/css-CyReMpbV.js",
+          "assets/css-CzNtyWdF.css",
+          "assets/css-D_fmW1Hm.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-VJpID-9r.css",
+          "assets/css-Wv38huFO.css",
+          "assets/css-YdQkbZbA.js",
+          "assets/focus-trap-CdXQ1uxb.js"
+        ],
+        "total": {
+          "js": {
+            "files": 15,
+            "raw": 222591,
+            "gzip": 80984,
+            "brotli": 72712
+          },
+          "css": {
+            "files": 9,
+            "raw": 53684,
+            "gzip": 10243,
+            "brotli": 8557
+          },
+          "all": {
+            "files": 24,
+            "raw": 276275,
+            "gzip": 91227,
+            "brotli": 81269
+          }
+        }
+      }
+    },
+    "deadLetters": {
+      "files": [
+        "assets/AdminModal-CWuZcnYP.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/KbDrawer-4p2NeA9E.js",
+        "assets/KbDrawer-BmQQuU66.css",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/OperationDialog-BZ9BJs3X.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/ParseDeadLettersPage--emZUDOd.js",
+        "assets/WriteNotice-Cmz_jTMP.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-BQqIGfRx.js",
+        "assets/css-BYA7z23t.js",
+        "assets/css-BpDzfuC8.css",
+        "assets/css-CJgVDStF.js",
+        "assets/css-CiUvAR8P.css",
+        "assets/css-CvO7mB41.css",
+        "assets/css-CyReMpbV.js",
+        "assets/css-CzNtyWdF.css",
+        "assets/css-D_fmW1Hm.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-VJpID-9r.css",
+        "assets/css-Wv38huFO.css",
+        "assets/css-YdQkbZbA.js",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 22,
+          "raw": 550756,
+          "gzip": 200863,
+          "brotli": 177953
+        },
+        "css": {
+          "files": 13,
+          "raw": 111522,
+          "gzip": 20297,
+          "brotli": 17058
+        },
+        "all": {
+          "files": 35,
+          "raw": 662278,
+          "gzip": 221160,
+          "brotli": 195011
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AdminModal-CWuZcnYP.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/KbDrawer-4p2NeA9E.js",
+          "assets/KbDrawer-BmQQuU66.css",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/OperationDialog-BZ9BJs3X.js",
+          "assets/ParseDeadLettersPage--emZUDOd.js",
+          "assets/WriteNotice-Cmz_jTMP.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-BQqIGfRx.js",
+          "assets/css-BYA7z23t.js",
+          "assets/css-BpDzfuC8.css",
+          "assets/css-CiUvAR8P.css",
+          "assets/css-CvO7mB41.css",
+          "assets/css-CyReMpbV.js",
+          "assets/css-CzNtyWdF.css",
+          "assets/css-D_fmW1Hm.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-VJpID-9r.css",
+          "assets/css-Wv38huFO.css",
+          "assets/css-YdQkbZbA.js",
+          "assets/focus-trap-CdXQ1uxb.js"
+        ],
+        "total": {
+          "js": {
+            "files": 16,
+            "raw": 227497,
+            "gzip": 82953,
+            "brotli": 74656
+          },
+          "css": {
+            "files": 10,
+            "raw": 57762,
+            "gzip": 11301,
+            "brotli": 9445
+          },
+          "all": {
+            "files": 26,
+            "raw": 285259,
+            "gzip": 94254,
+            "brotli": 84101
+          }
+        }
+      }
+    },
+    "audits": {
+      "files": [
+        "assets/AuditsPage-DLiFajH9.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDrawer-4p2NeA9E.js",
+        "assets/KbDrawer-BmQQuU66.css",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/auditApi-PyGxvPLF.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-BYA7z23t.js",
+        "assets/css-BpDzfuC8.css",
+        "assets/css-CJgVDStF.js",
+        "assets/css-CvO7mB41.css",
+        "assets/css-CyReMpbV.js",
+        "assets/css-CzNtyWdF.css",
+        "assets/css-D_fmW1Hm.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-VJpID-9r.css",
+        "assets/css-Wv38huFO.css",
+        "assets/css-YdQkbZbA.js",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 17,
+          "raw": 509233,
+          "gzip": 185148,
+          "brotli": 163745
+        },
+        "css": {
+          "files": 11,
+          "raw": 99771,
+          "gzip": 17415,
+          "brotli": 14648
+        },
+        "all": {
+          "files": 28,
+          "raw": 609004,
+          "gzip": 202563,
+          "brotli": 178393
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AuditsPage-DLiFajH9.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDrawer-4p2NeA9E.js",
+          "assets/KbDrawer-BmQQuU66.css",
+          "assets/auditApi-PyGxvPLF.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-BYA7z23t.js",
+          "assets/css-BpDzfuC8.css",
+          "assets/css-CvO7mB41.css",
+          "assets/css-CyReMpbV.js",
+          "assets/css-CzNtyWdF.css",
+          "assets/css-D_fmW1Hm.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-VJpID-9r.css",
+          "assets/css-Wv38huFO.css",
+          "assets/css-YdQkbZbA.js",
+          "assets/focus-trap-CdXQ1uxb.js"
+        ],
+        "total": {
+          "js": {
+            "files": 11,
+            "raw": 185974,
+            "gzip": 67238,
+            "brotli": 60448
+          },
+          "css": {
+            "files": 8,
+            "raw": 46011,
+            "gzip": 8419,
+            "brotli": 7035
+          },
+          "all": {
+            "files": 19,
+            "raw": 231985,
+            "gzip": 75657,
+            "brotli": 67483
+          }
+        }
+      }
+    },
+    "aiUsage": {
+      "files": [
+        "assets/AiPage-cyP0z4kJ.js",
+        "assets/AiUsagePage-wETFaKcC.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDrawer-4p2NeA9E.js",
+        "assets/KbDrawer-BmQQuU66.css",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/auditApi-PyGxvPLF.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-BYA7z23t.js",
+        "assets/css-BpDzfuC8.css",
+        "assets/css-CJgVDStF.js",
+        "assets/css-CvO7mB41.css",
+        "assets/css-CyReMpbV.js",
+        "assets/css-CzNtyWdF.css",
+        "assets/css-D_fmW1Hm.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-VJpID-9r.css",
+        "assets/css-Wv38huFO.css",
+        "assets/css-YdQkbZbA.js",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 18,
+          "raw": 518406,
+          "gzip": 188413,
+          "brotli": 166664
+        },
+        "css": {
+          "files": 11,
+          "raw": 99771,
+          "gzip": 17415,
+          "brotli": 14648
+        },
+        "all": {
+          "files": 29,
+          "raw": 618177,
+          "gzip": 205828,
+          "brotli": 181312
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AiPage-cyP0z4kJ.js",
+          "assets/AiUsagePage-wETFaKcC.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDrawer-4p2NeA9E.js",
+          "assets/KbDrawer-BmQQuU66.css",
+          "assets/auditApi-PyGxvPLF.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-BYA7z23t.js",
+          "assets/css-BpDzfuC8.css",
+          "assets/css-CvO7mB41.css",
+          "assets/css-CyReMpbV.js",
+          "assets/css-CzNtyWdF.css",
+          "assets/css-D_fmW1Hm.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-VJpID-9r.css",
+          "assets/css-Wv38huFO.css",
+          "assets/css-YdQkbZbA.js",
+          "assets/focus-trap-CdXQ1uxb.js"
+        ],
+        "total": {
+          "js": {
+            "files": 12,
+            "raw": 195147,
+            "gzip": 70503,
+            "brotli": 63367
+          },
+          "css": {
+            "files": 8,
+            "raw": 46011,
+            "gzip": 8419,
+            "brotli": 7035
+          },
+          "all": {
+            "files": 20,
+            "raw": 241158,
+            "gzip": 78922,
+            "brotli": 70402
+          }
+        }
+      }
+    },
+    "aiAudits": {
+      "files": [
+        "assets/AiAuditsPage-CiYyapW7.js",
+        "assets/AiPage-cyP0z4kJ.js",
+        "assets/Feedback-CDebW7CQ.js",
+        "assets/Feedback-S7fQQ3B8.css",
+        "assets/KbDrawer-4p2NeA9E.js",
+        "assets/KbDrawer-BmQQuU66.css",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/auditApi-PyGxvPLF.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-BYA7z23t.js",
+        "assets/css-BpDzfuC8.css",
+        "assets/css-CJgVDStF.js",
+        "assets/css-CvO7mB41.css",
+        "assets/css-CyReMpbV.js",
+        "assets/css-CzNtyWdF.css",
+        "assets/css-D_fmW1Hm.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-VJpID-9r.css",
+        "assets/css-Wv38huFO.css",
+        "assets/css-YdQkbZbA.js",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 18,
+          "raw": 518408,
+          "gzip": 188413,
+          "brotli": 166679
+        },
+        "css": {
+          "files": 11,
+          "raw": 99771,
+          "gzip": 17415,
+          "brotli": 14648
+        },
+        "all": {
+          "files": 29,
+          "raw": 618179,
+          "gzip": 205828,
+          "brotli": 181327
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AiAuditsPage-CiYyapW7.js",
+          "assets/AiPage-cyP0z4kJ.js",
+          "assets/Feedback-CDebW7CQ.js",
+          "assets/Feedback-S7fQQ3B8.css",
+          "assets/KbDrawer-4p2NeA9E.js",
+          "assets/KbDrawer-BmQQuU66.css",
+          "assets/auditApi-PyGxvPLF.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-BYA7z23t.js",
+          "assets/css-BpDzfuC8.css",
+          "assets/css-CvO7mB41.css",
+          "assets/css-CyReMpbV.js",
+          "assets/css-CzNtyWdF.css",
+          "assets/css-D_fmW1Hm.js",
+          "assets/css-HQ15WyCq.js",
+          "assets/css-VJpID-9r.css",
+          "assets/css-Wv38huFO.css",
+          "assets/css-YdQkbZbA.js",
+          "assets/focus-trap-CdXQ1uxb.js"
+        ],
+        "total": {
+          "js": {
+            "files": 12,
+            "raw": 195149,
+            "gzip": 70503,
+            "brotli": 63382
+          },
+          "css": {
+            "files": 8,
+            "raw": 46011,
+            "gzip": 8419,
+            "brotli": 7035
+          },
+          "all": {
+            "files": 20,
+            "raw": 241160,
+            "gzip": 78922,
+            "brotli": 70417
+          }
+        }
+      }
+    },
+    "operations": {
+      "files": [
+        "assets/OperationsReportsPage-BfZe5754.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/auditApi-PyGxvPLF.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1VV9QMa7.css",
+        "assets/css-CJgVDStF.js",
+        "assets/css-HQ15WyCq.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 9,
+          "raw": 345016,
+          "gzip": 126785,
+          "brotli": 110992
+        },
+        "css": {
+          "files": 4,
+          "raw": 59782,
+          "gzip": 9939,
+          "brotli": 8369
+        },
+        "all": {
+          "files": 13,
+          "raw": 404798,
+          "gzip": 136724,
+          "brotli": 119361
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/OperationsReportsPage-BfZe5754.js",
+          "assets/auditApi-PyGxvPLF.js",
+          "assets/css-1VV9QMa7.css",
+          "assets/css-HQ15WyCq.js"
+        ],
+        "total": {
+          "js": {
+            "files": 3,
+            "raw": 21757,
+            "gzip": 8875,
+            "brotli": 7695
+          },
+          "css": {
+            "files": 1,
+            "raw": 6022,
+            "gzip": 943,
+            "brotli": 756
+          },
+          "all": {
+            "files": 4,
+            "raw": 27779,
+            "gzip": 9818,
+            "brotli": 8451
+          }
+        }
+      }
+    },
+    "tags": {
+      "files": [
+        "assets/AdminModal-CWuZcnYP.js",
+        "assets/DocumentTagsPage-C15zt6cx.js",
+        "assets/KbDialog-08BSQ41i.js",
+        "assets/KbDialog-DUbGnqO_.css",
+        "assets/OperationContext-DaVy6cwb.js",
+        "assets/PageHeader-BZ02KYyW.css",
+        "assets/PageHeader-D6_q9aTY.js",
+        "assets/ResourceStatus-DlrpOzFO.js",
+        "assets/TextField-WTbHJkta.js",
+        "assets/WriteNotice-Cmz_jTMP.js",
+        "assets/api-mVIM_WrL.js",
+        "assets/browser-BkZzsJ4x.js",
+        "assets/css-1dY0uqB-.js",
+        "assets/css-CJgVDStF.js",
+        "assets/css-Nqb2n_Xn.css",
+        "assets/css-Wv38huFO.css",
+        "assets/dist-CqBTHfyr.js",
+        "assets/focus-trap-CdXQ1uxb.js",
+        "assets/index-U0U15P7d.css",
+        "assets/index.vue-BiTKAvZO.js",
+        "assets/lifecycle-BIHjys5p.js",
+        "assets/spaceUi-DkiL_kT5.js",
+        "assets/ui-BVO6Wtgn.js",
+        "assets/use-aria-CmCD4t9i.js"
+      ],
+      "total": {
+        "js": {
+          "files": 19,
+          "raw": 367017,
+          "gzip": 137359,
+          "brotli": 120336
+        },
+        "css": {
+          "files": 5,
+          "raw": 57466,
+          "gzip": 10103,
+          "brotli": 8524
+        },
+        "all": {
+          "files": 24,
+          "raw": 424483,
+          "gzip": 147462,
+          "brotli": 128860
+        }
+      },
+      "incremental": {
+        "files": [
+          "assets/AdminModal-CWuZcnYP.js",
+          "assets/DocumentTagsPage-C15zt6cx.js",
+          "assets/KbDialog-08BSQ41i.js",
+          "assets/KbDialog-DUbGnqO_.css",
+          "assets/OperationContext-DaVy6cwb.js",
+          "assets/ResourceStatus-DlrpOzFO.js",
+          "assets/TextField-WTbHJkta.js",
+          "assets/WriteNotice-Cmz_jTMP.js",
+          "assets/api-mVIM_WrL.js",
+          "assets/css-1dY0uqB-.js",
+          "assets/css-Wv38huFO.css",
+          "assets/focus-trap-CdXQ1uxb.js",
+          "assets/lifecycle-BIHjys5p.js",
+          "assets/spaceUi-DkiL_kT5.js",
+          "assets/ui-BVO6Wtgn.js"
+        ],
+        "total": {
+          "js": {
+            "files": 13,
+            "raw": 43758,
+            "gzip": 19449,
+            "brotli": 17039
+          },
+          "css": {
+            "files": 2,
+            "raw": 3706,
+            "gzip": 1107,
+            "brotli": 911
+          },
+          "all": {
+            "files": 15,
+            "raw": 47464,
+            "gzip": 20556,
+            "brotli": 17950
+          }
+        }
+      }
+    }
+  },
+  "comparison": {
+    "entry": {
+      "files": {
+        "baseline": 5,
+        "candidate": 9,
+        "delta": 4
+      },
+      "raw": {
+        "baseline": 680030,
+        "candidate": 377019,
+        "delta": -303011
+      },
+      "gzip": {
+        "baseline": 223725,
+        "candidate": 126906,
+        "delta": -96819
+      },
+      "brotli": {
+        "baseline": 193207,
+        "candidate": 110910,
+        "delta": -82297
+      }
+    },
+    "login": {
+      "files": {
+        "baseline": 5,
+        "candidate": 9,
+        "delta": 4
+      },
+      "raw": {
+        "baseline": 680030,
+        "candidate": 377019,
+        "delta": -303011
+      },
+      "gzip": {
+        "baseline": 223725,
+        "candidate": 126906,
+        "delta": -96819
+      },
+      "brotli": {
+        "baseline": 193207,
+        "candidate": 110910,
+        "delta": -82297
+      }
+    },
+    "password": {
+      "files": {
+        "baseline": 5,
+        "candidate": 9,
+        "delta": 4
+      },
+      "raw": {
+        "baseline": 680030,
+        "candidate": 377019,
+        "delta": -303011
+      },
+      "gzip": {
+        "baseline": 223725,
+        "candidate": 126906,
+        "delta": -96819
+      },
+      "brotli": {
+        "baseline": 193207,
+        "candidate": 110910,
+        "delta": -82297
+      }
+    },
+    "sso": {
+      "files": {
+        "baseline": 5,
+        "candidate": 9,
+        "delta": 4
+      },
+      "raw": {
+        "baseline": 680030,
+        "candidate": 377019,
+        "delta": -303011
+      },
+      "gzip": {
+        "baseline": 223725,
+        "candidate": 126906,
+        "delta": -96819
+      },
+      "brotli": {
+        "baseline": 193207,
+        "candidate": 110910,
+        "delta": -82297
+      }
+    },
+    "documents": {
+      "files": {
+        "baseline": 18,
+        "candidate": 37,
+        "delta": 19
+      },
+      "raw": {
+        "baseline": 1079004,
+        "candidate": 689129,
+        "delta": -389875
+      },
+      "gzip": {
+        "baseline": 354973,
+        "candidate": 232483,
+        "delta": -122490
+      },
+      "brotli": {
+        "baseline": 307476,
+        "candidate": 204459,
+        "delta": -103017
+      }
+    },
+    "detail": {
+      "files": {
+        "baseline": 24,
+        "candidate": 44,
+        "delta": 20
+      },
+      "raw": {
+        "baseline": 1155497,
+        "candidate": 748273,
+        "delta": -407224
+      },
+      "gzip": {
+        "baseline": 384051,
+        "candidate": 256940,
+        "delta": -127111
+      },
+      "brotli": {
+        "baseline": 332752,
+        "candidate": 225525,
+        "delta": -107227
+      }
+    },
+    "account": {
+      "files": {
+        "baseline": 9,
+        "candidate": 17,
+        "delta": 8
+      },
+      "raw": {
+        "baseline": 721338,
+        "candidate": 412551,
+        "delta": -308787
+      },
+      "gzip": {
+        "baseline": 238835,
+        "candidate": 140114,
+        "delta": -98721
+      },
+      "brotli": {
+        "baseline": 206673,
+        "candidate": 122436,
+        "delta": -84237
+      }
+    },
+    "search": {
+      "files": {
+        "baseline": 15,
+        "candidate": 29,
+        "delta": 14
+      },
+      "raw": {
+        "baseline": 774509,
+        "candidate": 474989,
+        "delta": -299520
+      },
+      "gzip": {
+        "baseline": 260090,
+        "candidate": 166947,
+        "delta": -93143
+      },
+      "brotli": {
+        "baseline": 225137,
+        "candidate": 145600,
+        "delta": -79537
+      }
+    },
+    "favorites": {
+      "files": {
+        "baseline": 12,
+        "candidate": 23,
+        "delta": 11
+      },
+      "raw": {
+        "baseline": 1011413,
+        "candidate": 575980,
+        "delta": -435433
+      },
+      "gzip": {
+        "baseline": 329242,
+        "candidate": 190912,
+        "delta": -138330
+      },
+      "brotli": {
+        "baseline": 285014,
+        "candidate": 168132,
+        "delta": -116882
+      }
+    },
+    "reviews": {
+      "files": {
+        "baseline": 16,
+        "candidate": 27,
+        "delta": 11
+      },
+      "raw": {
+        "baseline": 765391,
+        "candidate": 459769,
+        "delta": -305622
+      },
+      "gzip": {
+        "baseline": 257174,
+        "candidate": 159493,
+        "delta": -97681
+      },
+      "brotli": {
+        "baseline": 222503,
+        "candidate": 139226,
+        "delta": -83277
+      }
+    },
+    "notifications": {
+      "files": {
+        "baseline": 17,
+        "candidate": 29,
+        "delta": 12
+      },
+      "raw": {
+        "baseline": 789937,
+        "candidate": 488924,
+        "delta": -301013
+      },
+      "gzip": {
+        "baseline": 266123,
+        "candidate": 170635,
+        "delta": -95488
+      },
+      "brotli": {
+        "baseline": 230132,
+        "candidate": 148697,
+        "delta": -81435
+      }
+    },
+    "assistant": {
+      "files": {
+        "baseline": 12,
+        "candidate": 24,
+        "delta": 12
+      },
+      "raw": {
+        "baseline": 755992,
+        "candidate": 456048,
+        "delta": -299944
+      },
+      "gzip": {
+        "baseline": 252656,
+        "candidate": 157644,
+        "delta": -95012
+      },
+      "brotli": {
+        "baseline": 218704,
+        "candidate": 137516,
+        "delta": -81188
+      }
+    },
+    "lifecycle": {
+      "files": {
+        "baseline": null,
+        "candidate": 36,
+        "delta": null
+      },
+      "raw": {
+        "baseline": null,
+        "candidate": 670594,
+        "delta": null
+      },
+      "gzip": {
+        "baseline": null,
+        "candidate": 223866,
+        "delta": null
+      },
+      "brotli": {
+        "baseline": null,
+        "candidate": 197284,
+        "delta": null
+      }
+    },
+    "users": {
+      "files": {
+        "baseline": 17,
+        "candidate": 37,
+        "delta": 20
+      },
+      "raw": {
+        "baseline": 1102656,
+        "candidate": 695318,
+        "delta": -407338
+      },
+      "gzip": {
+        "baseline": 361019,
+        "candidate": 229221,
+        "delta": -131798
+      },
+      "brotli": {
+        "baseline": 313018,
+        "candidate": 201713,
+        "delta": -111305
+      }
+    },
+    "departments": {
+      "files": {
+        "baseline": 13,
+        "candidate": 30,
+        "delta": 17
+      },
+      "raw": {
+        "baseline": 822323,
+        "candidate": 539966,
+        "delta": -282357
+      },
+      "gzip": {
+        "baseline": 273388,
+        "candidate": 182469,
+        "delta": -90919
+      },
+      "brotli": {
+        "baseline": 237662,
+        "candidate": 160268,
+        "delta": -77394
+      }
+    },
+    "roles": {
+      "files": {
+        "baseline": 12,
+        "candidate": 24,
+        "delta": 12
+      },
+      "raw": {
+        "baseline": 742104,
+        "candidate": 443690,
+        "delta": -298414
+      },
+      "gzip": {
+        "baseline": 247030,
+        "candidate": 151875,
+        "delta": -95155
+      },
+      "brotli": {
+        "baseline": 213870,
+        "candidate": 132774,
+        "delta": -81096
+      }
+    },
+    "spaces": {
+      "files": {
+        "baseline": 12,
+        "candidate": 24,
+        "delta": 12
+      },
+      "raw": {
+        "baseline": 730458,
+        "candidate": 422915,
+        "delta": -307543
+      },
+      "gzip": {
+        "baseline": 242733,
+        "candidate": 144931,
+        "delta": -97802
+      },
+      "brotli": {
+        "baseline": 210172,
+        "candidate": 126740,
+        "delta": -83432
+      }
+    },
+    "spaceDetail": {
+      "files": {
+        "baseline": 17,
+        "candidate": 29,
+        "delta": 12
+      },
+      "raw": {
+        "baseline": 775774,
+        "candidate": 470312,
+        "delta": -305462
+      },
+      "gzip": {
+        "baseline": 260326,
+        "candidate": 163449,
+        "delta": -96877
+      },
+      "brotli": {
+        "baseline": 224936,
+        "candidate": 142395,
+        "delta": -82541
+      }
+    },
+    "adminDocuments": {
+      "files": {
+        "baseline": 12,
+        "candidate": 11,
+        "delta": -1
+      },
+      "raw": {
+        "baseline": 730230,
+        "candidate": 379094,
+        "delta": -351136
+      },
+      "gzip": {
+        "baseline": 242777,
+        "candidate": 128305,
+        "delta": -114472
+      },
+      "brotli": {
+        "baseline": 210135,
+        "candidate": 112066,
+        "delta": -98069
+      }
+    },
+    "documentPanel": {
+      "files": {
+        "baseline": 15,
+        "candidate": 26,
+        "delta": 11
+      },
+      "raw": {
+        "baseline": 767746,
+        "candidate": 456912,
+        "delta": -310834
+      },
+      "gzip": {
+        "baseline": 256692,
+        "candidate": 159401,
+        "delta": -97291
+      },
+      "brotli": {
+        "baseline": 221991,
+        "candidate": 139012,
+        "delta": -82979
+      }
+    },
+    "embedding": {
+      "files": {
+        "baseline": 16,
+        "candidate": 33,
+        "delta": 17
+      },
+      "raw": {
+        "baseline": 1068023,
+        "candidate": 653294,
+        "delta": -414729
+      },
+      "gzip": {
+        "baseline": 350040,
+        "candidate": 218133,
+        "delta": -131907
+      },
+      "brotli": {
+        "baseline": 303487,
+        "candidate": 192179,
+        "delta": -111308
+      }
+    },
+    "deadLetters": {
+      "files": {
+        "baseline": 17,
+        "candidate": 35,
+        "delta": 18
+      },
+      "raw": {
+        "baseline": 1081829,
+        "candidate": 662278,
+        "delta": -419551
+      },
+      "gzip": {
+        "baseline": 355070,
+        "candidate": 221160,
+        "delta": -133910
+      },
+      "brotli": {
+        "baseline": 308111,
+        "candidate": 195011,
+        "delta": -113100
+      }
+    },
+    "audits": {
+      "files": {
+        "baseline": 14,
+        "candidate": 28,
+        "delta": 14
+      },
+      "raw": {
+        "baseline": 1051259,
+        "candidate": 609004,
+        "delta": -442255
+      },
+      "gzip": {
+        "baseline": 343670,
+        "candidate": 202563,
+        "delta": -141107
+      },
+      "brotli": {
+        "baseline": 297946,
+        "candidate": 178393,
+        "delta": -119553
+      }
+    },
+    "aiUsage": {
+      "files": {
+        "baseline": 14,
+        "candidate": 29,
+        "delta": 15
+      },
+      "raw": {
+        "baseline": 1060051,
+        "candidate": 618177,
+        "delta": -441874
+      },
+      "gzip": {
+        "baseline": 346609,
+        "candidate": 205828,
+        "delta": -140781
+      },
+      "brotli": {
+        "baseline": 300569,
+        "candidate": 181312,
+        "delta": -119257
+      }
+    },
+    "aiAudits": {
+      "files": {
+        "baseline": 14,
+        "candidate": 29,
+        "delta": 15
+      },
+      "raw": {
+        "baseline": 1060051,
+        "candidate": 618179,
+        "delta": -441872
+      },
+      "gzip": {
+        "baseline": 346609,
+        "candidate": 205828,
+        "delta": -140781
+      },
+      "brotli": {
+        "baseline": 300569,
+        "candidate": 181327,
+        "delta": -119242
+      }
+    },
+    "operations": {
+      "files": {
+        "baseline": 7,
+        "candidate": 13,
+        "delta": 6
+      },
+      "raw": {
+        "baseline": 699518,
+        "candidate": 404798,
+        "delta": -294720
+      },
+      "gzip": {
+        "baseline": 231305,
+        "candidate": 136724,
+        "delta": -94581
+      },
+      "brotli": {
+        "baseline": 199749,
+        "candidate": 119361,
+        "delta": -80388
+      }
+    },
+    "tags": {
+      "files": {
+        "baseline": 14,
+        "candidate": 24,
+        "delta": 10
+      },
+      "raw": {
+        "baseline": 750896,
+        "candidate": 424483,
+        "delta": -326413
+      },
+      "gzip": {
+        "baseline": 250687,
+        "candidate": 147462,
+        "delta": -103225
+      },
+      "brotli": {
+        "baseline": 216912,
+        "candidate": 128860,
+        "delta": -88052
+      }
+    }
+  },
+  "comparisonConditions": {
+    "requireReduction": false,
+    "allowLockChange": true,
+    "checkGrowth": true,
+    "newScenarios": [
+      "lifecycle"
+    ],
+    "baselineLockSha256": "e6b0d74be700b7463a06ddaf958021699900560f682637e0d73021f7c5791861",
+    "candidateLockSha256": "1785fc8ce57c185712883f5488cab0c9591a8b17287419340bdf7f1f2040c279"
+  }
+}

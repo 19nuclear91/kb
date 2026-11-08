@@ -36,6 +36,16 @@ LOGIN 返回令牌后只保存既有标签页会话凭据，随后核对 me；�
 
 前端不包含企业应用密钥或供应商 SDK。部署前端和既有后端接口后配置相同 Origin 与固定结果页；回退时先停用企业连接并处理有界事务，再回退静态产物，保留本地登录、绑定与审计。这里只提供配置与回退说明，不执行部署。
 
+## 当前前端回归
+
+Vue 版本在 `kb-web` 按明确文件名单执行，组件测试统一为 `.test.ts`：
+
+```powershell
+npm exec -- vitest run src/sso/api.test.ts src/session.test.ts src/sso/flow.test.ts src/sso/result.test.ts src/sso/route.test.ts src/sso/provider.test.ts src/sso/enterprise-login.test.ts src/sso/login.test.ts src/sso/bindings.test.ts
+npm run typecheck
+npm run build
+```
+
 ## 本次离线验证记录
 
 2026-10-22，Windows PowerShell，在 `kb-web` 按明确文件名单执行：

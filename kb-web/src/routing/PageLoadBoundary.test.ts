@@ -1,0 +1,47 @@
+import { beforeEach, expect, it, vi } from 'vitest';
+import { defineComponent, h } from 'vue';
+import { flushPromises } from '@vue/test-utils';
+import { fireEvent, screen } from '@testing-library/vue';
+import { deferred } from '../test/fixtures';
+import { renderWith } from '../test/render';
+import PageLoadBoundary from './PageLoadBoundary.vue';
+import { lazyPage, type PageModule } from './lazyPage';
+import { reloadPage } from './reloadPage';
+vi.mock('../SessionProvider', () => ({ useSession: () => ({ state: { epoch: 1 } }) }));
+vi.mock('./reloadPage', () => ({ reloadPage: vi.fn() }));
+beforeEach(() => { vi.mocked(reloadPage).mockClear(); vi.spyOn(console, 'error').mockImplementation(() => {}); });
+const show = (Page: ReturnType<typeof lazyPage>) => renderWith(defineComponent({ setup: () => () => h(PageLoadBoundary, null, () => h(Page)) }));
+it('等待资源时显示可访问状态，成功后只挂载一次', async () => {
+  const pending = deferred<PageModule>();
+  const loader = vi.fn(() => pending.promise), page = vi.fn(() => h('h1', '业务页面')), Page = lazyPage(loader);
+  await show(Page);
+  expect(screen.getByRole('status').textContent).toContain('正在加载页面'); expect(page).not.toHaveBeenCalled();
+  pending.resolve({ default: page }); await flushPromises();
+  expect(screen.getByRole('heading', { name: '业务页面' })).toBeTruthy(); expect(loader).toHaveBeenCalledTimes(1);
+  expect(reloadPage).not.toHaveBeenCalled();
+  expect(console.error).not.toHaveBeenCalled();
+});
+it('拒绝只显示固定文案，无自动刷新或加载重试，主动刷新提示丢失输入', async () => {
+  const pending = deferred<PageModule>(), loader = vi.fn(() => pending.promise), Page = lazyPage(loader);
+  const view = await show(Page);
+  pending.reject(new Error('https://secret.invalid/chunk?token=secret')); await flushPromises();
+  expect(screen.getByRole('alert').textContent).toContain('页面资源加载失败');
+  expect(view.container.textContent).not.toContain('secret');
+  expect(console.error).toHaveBeenCalledExactlyOnceWith('PAGE_MODULE_LOAD_FAILED');
+  expect(screen.getByText(/刷新页面会丢失尚未保存的输入/)).toBeTruthy();
+  expect(reloadPage).not.toHaveBeenCalled(); expect(loader).toHaveBeenCalledTimes(1);
+  await fireEvent.click(screen.getByRole('button', { name: '刷新页面' })); expect(reloadPage).toHaveBeenCalledTimes(1);
+  expect(loader).toHaveBeenCalledTimes(1);
+});
+it.each(['error', 'object', 'string'])('渲染异常 %s 的页面和诊断都不输出原始内容', async kind => {
+  const sensitive = 'https://secret.invalid/resource?token=private-business-content';
+  const error = new Error(sensitive, { cause: { body: sensitive } });
+  error.stack = `Error: ${sensitive}\n    at PrivateComponent (${sensitive})`;
+  const failure = kind === 'error' ? error : kind === 'object' ? { message: sensitive, stack: sensitive, body: sensitive } : sensitive;
+  const Page = lazyPage(async () => ({ default: () => { throw failure; } }));
+  const view = await show(Page);
+  expect(await screen.findByRole('heading', { name: '页面显示异常' })).toBeTruthy();
+  expect(view.container.textContent).not.toContain(sensitive); expect(screen.queryByText('页面资源加载失败')).toBeNull();
+  expect(console.error).toHaveBeenCalledExactlyOnceWith('PAGE_RENDER_FAILED');
+  expect(reloadPage).not.toHaveBeenCalled();
+});

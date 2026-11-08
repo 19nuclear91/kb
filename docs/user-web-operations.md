@@ -60,7 +60,7 @@ AI error 的可选白名单 code `SEARCH_UNAVAILABLE` 显示固定“检索暂�
 default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self'; frame-src blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 ```
 
-Ant Design 运行时样式需要上述样式许可；脚本没有 `unsafe-inline`。PDF 使用临时 Blob iframe，文本按纯文本显示。正文没有可执行 HTML、远程图片或自动外链加载。设置 `Referrer-Policy: no-referrer` 与 `X-Content-Type-Options: nosniff`。根据组织要求补充 HTTPS/HSTS。
+Element Plus 的组件 CSS 按需打包，弹窗与下拉定位等运行时内联样式沿用上述样式许可；脚本没有 `unsafe-inline`。PDF 使用临时 Blob iframe，文本通过 Vue 插值显示，禁止 `v-html`。正文没有可执行 HTML、远程图片或自动外链加载。设置 `Referrer-Policy: no-referrer` 与 `X-Content-Type-Options: nosniff`。根据组织要求补充 HTTPS/HSTS。
 
 令牌仅保存在当前标签页 sessionStorage，仍可被同源脚本读取。不得注入不可信同源脚本或将前端静态目录作为用户上传文件目录。访问日志及代理诊断禁止记录 satoken、Authorization、请求体、搜索词、问题、答案、引用或密码；关闭这类请求的 body tracing。前端不写正文或凭据遥测。文件取得后无法撤回用户已经保存的副本。
 
