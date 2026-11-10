@@ -12,7 +12,9 @@ import java.util.UUID;
  * {@code (operation_scope, request_id)} 命名空间，撞上既有行时这次尝试会被
  * 当成重试、静默返回旧事件——在最需要留痕的路径上留下审计空洞。
  *
- * <p>摘要只记尝试的用户名：失败事件里唯一有价值的检索维度就是它，
+ * <p>摘要记尝试的用户名；失败事件在来源已知时另记规范化后的 {@code sourceIp}，
+ * 供运维按来源与用户名聚合。全局审计查询摘要不投影 {@code sourceIp}；旧的按目标审计接口
+ * 原样返回 {@code after_state}，持有 {@code identity:audit:read} 者可见已知用户失败记录的来源。
  * 密码、令牌、哈希一律不进审计。
  */
 @Service
@@ -35,18 +37,30 @@ public class LoginAuditService {
     /**
      * 登录失败。{@code resolvedUserId} 仅在用户名已解析到用户时给出；
      * 未知用户传 {@code null}，不因审计而多做一次用户查询。
+     *
+     * @param sourceIp 已规范化的登录来源；来源未知时为 null，摘要中不出现该字段
      */
-    public void failure(String attemptedUsername, Long resolvedUserId, String reason) {
+    public void failure(String attemptedUsername, Long resolvedUserId, String reason, String sourceIp) {
         audit.failure(AuditScope.AUTH_LOGIN_FAILURE, UUID.randomUUID().toString(),
-                null, resolvedUserId, "login", reason, "{}", summary(attemptedUsername));
+                null, resolvedUserId, "login", reason, "{}", failureSummary(attemptedUsername, sourceIp));
+    }
+
+    private static String summary(String username) {
+        return "{\"username\":\"" + escape(username) + "\"}";
+    }
+
+    private static String failureSummary(String username, String sourceIp) {
+        if (sourceIp == null) {
+            return summary(username);
+        }
+        return "{\"username\":\"" + escape(username) + "\",\"sourceIp\":\"" + escape(sourceIp) + "\"}";
     }
 
     /**
-     * 用户名进入 jsonb 列前必须转义：含引号或反斜杠的用户名会让
+     * 值进入 jsonb 列前必须转义：含引号或反斜杠的用户名会让
      * {@code CAST(? AS jsonb)} 直接失败，登录审计反而变成登录故障。
      */
-    private static String summary(String username) {
-        String safe = username == null ? "" : username.replace("\\", "\\\\").replace("\"", "\\\"");
-        return "{\"username\":\"" + safe + "\"}";
+    private static String escape(String value) {
+        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

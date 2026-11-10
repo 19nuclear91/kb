@@ -42,6 +42,70 @@ AI error 的可选白名单 code `SEARCH_UNAVAILABLE` 显示固定“检索暂�
 
 `index.html` 建议禁止缓存或要求重新验证；带内容指纹的公开静态资源可长期缓存。所有认证/文档/收藏/搜索/会话/引用/文件响应禁止共享缓存；反向代理不能覆写后端 `Cache-Control: no-store`。收藏成功、失败及网关提前拒绝响应都需要保留该响应头。前端不注册 service worker，不提供受保护内容的离线缓存。
 
+## 登录来源与 X-Real-IP
+
+kb-app 的 `POST /api/auth/login` 只把入口 Nginx 写入的 `X-Real-IP` 当作登录来源，用于来源节流和失败审计；不读取 `X-Forwarded-For`、`Forwarded`，也不使用连接地址（连接地址是网关地址）。kb-gateway 原样透传这个头，不做可信代理处理。头缺失、出现多次、带端口或不是单个 IP 字面量时，来源按未知处理，此时只执行账户节流，行为与引入来源节流之前相同。
+
+### Nginx 配置
+
+在代理 `/api/` 的 location 中，用 Nginx 观察到的对端地址覆盖客户端自带的同名头：
+
+```nginx
+location /api/ {
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_pass http://kb-gateway;
+}
+```
+
+`proxy_set_header` 只有在当前 location 一条都没写时才会继承上一层的配置。SSE 等为 `/api/` 子路径单独写过 `proxy_set_header`（例如 `Connection`）的 location，必须再写一遍 `X-Real-IP` 这一行；否则这些路径会把客户端自带的值原样转发下去。
+
+### 访问前提
+
+- Nginx 是唯一入口：网关端口只允许 Nginx 访问，kb-app 端口只允许网关访问。能绕过 Nginx 直接访问网关或 app 的人可以伪造 `X-Real-IP`，既能绕过来源节流，也能冒用他人地址让对方被节流。
+- 如果将来在 Nginx 前面再加负载均衡或 CDN，必须同时配置 Nginx 的 realip 模块（`set_real_ip_from` 填可信的上游地址，`real_ip_header` 填上游写入的头）。否则 `$remote_addr` 会变成负载均衡的地址，全体用户共用一个来源计数，会被集体节流。
+
+### 发布、回退与上线核对
+
+1. 先修改 Nginx，再发布 kb-app。旧 kb-app 会忽略这个头；如果顺序反过来，在 Nginx 改好之前，客户端自带的 `X-Real-IP` 会被原样转发并被采信。
+2. 回退时先回退 kb-app，再视情况回退 Nginx。没有数据库迁移；Redis 中的来源计数键（`kb:auth:login:source-fail:*`）随 TTL 过期，不需要清理。
+3. 上线后，从外部带一个伪造的 `X-Real-IP` 发起一次密码错误的登录，确认最新一条失败审计中的 `sourceIp` 是真实客户端地址，而不是伪造值或网关地址：
+
+```sql
+SELECT created_at, after_state ->> 'username' AS username, after_state ->> 'sourceIp' AS source_ip
+FROM sys_identity_audit
+WHERE operation_scope = 'AUTH_LOGIN_FAILURE'
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+```
+
+### 阈值与排障
+
+| 配置 | 默认值 | 说明 |
+| --- | ---: | --- |
+| `KB_LOGIN_SOURCE_MAX_FAILURES` | 20 | 同一来源在窗口内的凭据失败次数，达到后拒绝该来源的所有登录尝试；最小为 1，非法值阻止启动 |
+| `KB_LOGIN_LOCK_DURATION` | 15m | 与账户节流共用的窗口和锁定时长，到期自动解除 |
+| `KB_LOGIN_MAX_FAILURES` | 5 | 账户节流阈值，不变 |
+
+来源阈值要明显高于账户阈值：同一 NAT 或 VPN 出口下，一个人反复输错可能让共用这个出口的其他人暂时无法登录。登录成功不会清除来源计数，只能等它过期。被来源节流拒绝时，用户看到的仍是"用户名或密码错误"，与凭据失败相同。用户反映"密码正确却登录不了"时，可以先按来源聚合失败审计，判断是不是共用出口被节流，再决定调高阈值还是等待过期。
+
+来源节流和账户节流拒绝的请求都不写审计，只有进入凭据校验的失败会留下记录。下面的只读示例 SQL 按来源和用户名聚合最近 24 小时的登录失败，本次没有实际执行，使用前请在测试库核对：
+
+```sql
+SELECT after_state ->> 'sourceIp' AS source_ip,
+       after_state ->> 'username' AS username,
+       count(*) AS failures,
+       max(created_at) AS last_failure
+FROM sys_identity_audit
+WHERE operation_scope = 'AUTH_LOGIN_FAILURE'
+  AND created_at >= now() - interval '24 hours'
+  AND after_state ? 'sourceIp'
+GROUP BY 1, 2
+ORDER BY failures DESC
+LIMIT 50;
+```
+
+全局审计查询接口（`/api/admin/audits`）和审计页面不返回 `sourceIp`，现有的 `loginUsername` 筛选也不变。旧的按目标审计接口 `GET /api/admin/identity/audits` 会原样返回 `after_state`：持有 `identity:audit:read` 的人用 `targetType=auth` 和用户 ID 查询时，能看到该用户登录失败记录里的 `sourceIp`，见[管理查询 API](admin-query-api.md)。来源 IP 属于个人信息，和现有审计存放在同一张表、按同一套保留策略处理；保留期限需由运维和合规另行确定，本次没有新增清理机制。
+
 ## 企业 SSO 固定结果页
 
 前端页面、网关和回调使用同一公开 Origin。`KB_SSO_PUBLIC_ORIGIN` 不带页面路径，`KB_SSO_RESULT_PAGE_URI` 为该 Origin 加 `/auth/sso/result`，三家 callback 继续指向各自 `/api/auth/sso/{connectionId}/callback`。生产使用 HTTPS；开发同源代理保留浏览器 Origin，与后端显式开发配置匹配。

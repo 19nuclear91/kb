@@ -8,7 +8,7 @@
 
 | 范围 | 当前实现 | 说明 |
 | --- | --- | --- |
-| 登录与身份 | 本地登录、强制改密、认证代次、账号与部门管理、角色与功能权限、外部身份绑定 | 钉钉、企业微信、飞书浏览器 SSO 默认关闭，只登录已有绑定账号，不自动建号。见[身份管理](docs/admin-identity-web.md)、[企业 SSO](docs/enterprise-sso-configuration.md)、[认证撤销](docs/authentication-epoch.md) |
+| 登录与身份 | 本地登录、按账户与来源 IP 的失败节流、强制改密、认证代次、账号与部门管理、角色与功能权限、外部身份绑定 | 钉钉、企业微信、飞书浏览器 SSO 默认关闭，只登录已有绑定账号，不自动建号。来源 IP 取自入口 Nginx 写入的 `X-Real-IP`，见[登录节流与来源](#登录节流与来源)。另见[身份管理](docs/admin-identity-web.md)、[企业 SSO](docs/enterprise-sso-configuration.md)、[认证撤销](docs/authentication-epoch.md) |
 | 员工生命周期 | 钉钉 Stream 离职事件、独立员工纳管、持久停权、人工复职及本地应急保障 | 默认关闭且独立于 SSO；本地员工账号也可显式纳管，普通启用不能替代复职。见[生命周期运维](docs/lifecycle-operations.md)、[协调发布](docs/lifecycle-rollout.md) |
 | 页面加载与恢复 | 按身份和路由加载业务及管理页面，拆分文档列表/详情与登录/账户依赖 | 加载状态和异常局限于页面区域，导航与退出保持可用；失败后可主动刷新，不自动重放写入。见[前端路由加载](kb-web/README.md#路由加载与恢复) |
 | 空间与授权 | 空间创建、归档、授权、批量授予与撤销，文档例外授权 | 空间为授权主单位；主体支持用户、角色和部门树。见[空间与文档管理](docs/admin-space-document-web.md) |
@@ -219,6 +219,18 @@ npm run dev
 
 网关基础配置与 `application-dev.yml` 均将 `/api/conversations/**` 转发到 app，将 `/api/ai/**` 转发到 AI，并保持 `/internal/**` 不对浏览器转发。路由存在不代表会话已启用，仍需完成上述开关与服务配置。外层反向代理还需关闭 SSE 缓冲，并允许足够的连接空闲时间。
 
+### 登录节流与来源
+
+| 配置 | 默认值 | 作用 |
+| --- | ---: | --- |
+| `KB_LOGIN_MAX_FAILURES` | 5 | 同一账户在窗口内的凭据失败次数，达到后拒绝该账户的登录 |
+| `KB_LOGIN_SOURCE_MAX_FAILURES` | 20 | 同一来源 IP 在窗口内的凭据失败次数，达到后拒绝该来源的所有登录尝试；最小为 1，非法值阻止启动 |
+| `KB_LOGIN_LOCK_DURATION` | 15m | 两类计数共用的窗口和锁定时长，到期自动解除 |
+
+来源只取入口 Nginx 写入的 `X-Real-IP`，不读取 `X-Forwarded-For`、`Forwarded` 或连接地址。头缺失、出现多次或不是单个 IP 地址时，来源按未知处理，只做账户节流。来源检查在查库和 bcrypt 之前执行；登录成功只清除账户计数，来源计数只能等它过期。被来源节流拒绝时，响应与密码错误相同，都是 401 和"用户名或密码错误"。多人共用 NAT 或 VPN 出口时可能互相影响，来源阈值要明显高于账户阈值。
+
+来源已知时，登录失败审计会记录 `sourceIp`。全局审计接口和审计页面不展示它；旧的按目标审计接口 `GET /api/admin/identity/audits` 原样返回审计内容，持有 `identity:audit:read` 的人可以看到。Nginx 配置、访问前提、发布顺序和按来源聚合的 SQL 见[登录来源与 X-Real-IP](docs/user-web-operations.md#登录来源与-x-real-ip)。
+
 ### 钉钉员工离职与认证撤销
 
 生命周期订阅使用独立的 `kb.identity.lifecycle.dingtalk` 配置，默认 `enabled=false`，只接收一个配置企业内部应用的 Stream 事件。成员核验、受管关系、持久限制和恢复任务不随接收开关关闭；SSO 绑定不等于纳管，平台故障也不代表所有员工离职。
@@ -333,6 +345,12 @@ try {
 
 [db/verify_paradedb.sql](db/verify_paradedb.sql)、[db/verify_permission.sql](db/verify_permission.sql)、[db/verify_identity_department.sql](db/verify_identity_department.sql) 提供数据库检查脚本，部分依赖开发种子或创建测试数据，使用前阅读脚本并选择测试库。真实迁移、索引行为、权限隔离、并发发布、SSE 转发和供应商兼容性需要在目标环境另行验证；各专项文档保留其具体离线验证范围。
 
+### 登录来源节流核验
+
+`add-login-source-ip-throttle` 已于 2026-11-09 同步 `user-authentication` 主规格并归档，新增 1 条、修改 2 条需求，共 16 个场景；任务 **12/12** 完成，其中 1 项为核验后的文档修正。首轮独立核验为 **0 CRITICAL / 1 WARNING / 2 SUGGESTION**：旧的按目标审计接口会原样返回 `sourceIp`，与文档说法不符。修正文档后复核为 **0 CRITICAL / 0 WARNING**，剩余 1 项 SUGGESTION 已在归档前处理。行为契约见[认证主规格](openspec/specs/user-authentication/spec.md)，设计与任务见[归档目录](openspec/changes/archive/2026-11-09-add-login-source-ip-throttle/design.md)。
+
+后端显式离线白名单 **12 类 / 90 项**通过，kb-app 与 kb-gateway 打包通过；同步后主规格普通校验 **60/60** 通过。测试使用 Mock 和内存替身，没有验证真实 Nginx 是否覆盖 `X-Real-IP`、网络访问限制、Redis TTL 到期和数据库 jsonb 写入，运维文档中的示例 SQL 也没有执行。
+
 ### 批量文件导入核验
 
 `batch-document-import` 已于 2026-11-08 同步 3 份主规格并归档，新增 27 条、修改 3 条需求，任务 **38/38** 完成，独立核验为 **0 CRITICAL / 0 WARNING / 0 SUGGESTION**。行为契约见[导入主规格](openspec/specs/document-imports/spec.md)，30 条需求与 80 个场景映射及撤权竞争复核见[归档核验报告](openspec/changes/archive/2026-11-08-batch-document-import/verification-review.md)。
@@ -439,6 +457,7 @@ java -jar .\kb-eval\target\kb-eval-0.1.0-SNAPSHOT.jar --help
 - **引导首个管理员。** 新的正式库通过 `KB_BOOTSTRAP_ADMIN_USERNAME`、`KB_BOOTSTRAP_ADMIN_PASSWORD` 创建管理员，可配置显示名、字典内密级与部门，首次登录强制改密。存在有效管理员时引导跳过，不重置既有密码或恢复已撤销权限；默认引导密级为 0，管理资格不授予文档阅读权。
 - **隔离管理网络。** 四个业务服务配置独立的 `KB_MANAGEMENT_PORT` 与明确的 `KB_MANAGEMENT_ADDRESS`；管理端点没有应用内认证，需由网络层限制访问。健康探针和指标抓取改用管理端口，不为容器访问便利放宽为通配绑定，见[遥测运维](docs/telemetry-operations.md)。通知适配器使用独立的 `KB_NOTIFIER_*` 端口与地址配置。
 - **部署前端静态产物。** `npm run build` 生成 `kb-web/dist`；先上传新哈希资产，再原子切换 HTML，并为已打开的标签页保留旧资产，回退时也保留被回退版本的资产。HTML 禁止缓存或要求重新验证，哈希资产可长期缓存；页面路由回退到 `index.html`，缺失 JS/CSS 返回真实 404，`/api/**` 保留后端真实状态和 SSE 流。详见[前端运维](docs/user-web-operations.md)。
+- **入口 Nginx 写入登录来源。** 本地登录按 `X-Real-IP` 做来源节流（`KB_LOGIN_SOURCE_MAX_FAILURES`，默认 20）并在失败审计中记录来源。Nginx 的 `/api/` 及所有单独写过 `proxy_set_header` 的子 location 都要设置 `proxy_set_header X-Real-IP $remote_addr;`；网关端口只允许 Nginx 访问，app 端口只允许网关访问。先改 Nginx 再发布 kb-app，见[登录来源与 X-Real-IP](docs/user-web-operations.md#登录来源与-x-real-ip)。
 - **按顺序启用告警。** 先升级提供新指标契约的应用，再部署独立监控并启用规则；回退旧应用前停用依赖新契约的规则，保留通用存活监控，不能把缺失指标当作零或恢复。监控阈值、网络、凭据和持久数据按[监控部署说明](docs/monitoring-deployment-operations.md)管理。
 
 ## 目录导航

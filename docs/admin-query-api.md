@@ -109,7 +109,13 @@ operation 为 `batch-revoke`。一批只写一条成功事件，相同标识与�
 
 - 覆盖用户生命周期、部门、角色权限、外部身份绑定、空间/文档管理与 ACL、管理端文档删除、文档密级、登录和解析死信等已记录事件。
 - 不包含 Redis AI 审计、独立 Embedding 操作表，也不拼接不同来源的保留期或排序。
-- 不补录生产者未留下记录的请求，包括登录节流期间未记录的尝试。没有查到记录不能证明操作从未发生。
+- 不补录生产者未留下记录的请求，包括登录节流期间未记录的尝试。账户节流和来源节流拒绝的请求都不写审计。没有查到记录不能证明操作从未发生。
+- 本地登录失败事件在来源已知时会在 `after_state` 中保存 `sourceIp`，但本接口的列表与详情不返回它，返回字段和 `loginUsername` 等筛选条件不变。按来源聚合的方法见[登录来源与 X-Real-IP](user-web-operations.md#登录来源与-x-real-ip)。
 
 新 `audit:read` 独立于旧 `identity:audit:read`；空间管理、文档密级、外部身份或 Embedding
 管理资格均不隐含全局审计读取。旧按目标审计接口的路径、资格和返回结构不变。
+
+旧接口 `GET /api/admin/identity/audits` 原样返回 `before_state` 和 `after_state`，不经过上述摘要白名单。用
+`targetType=auth&targetId=<用户 ID>` 查询时，用户名能对应到已有用户的本地登录失败事件会带出 `sourceIp`；
+用户名不存在的失败没有目标用户，查不到。持有 `identity:audit:read` 即可看到这些来源 IP，分配该资格时应当
+知道这一点。

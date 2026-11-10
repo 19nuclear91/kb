@@ -130,6 +130,19 @@ class AuditSummaryProjectorTest {
     }
 
     @Test
+    void loginFailureSourceStaysInStoredSummaryOnly() throws Exception {
+        var projector = new AuditSummaryProjector();
+        var row = row("AUTH_LOGIN_FAILURE", "{}", "{\"username\":\"alice\",\"sourceIp\":\"10.0.0.1\"}");
+
+        assertThat(projector.metadata(row).attemptedUsername()).isEqualTo("alice");
+        var detail = projector.detail(row);
+        assertThat(detail.summaryAvailable()).isTrue();
+        assertThat(detail.changes()).extracting(Change::field).doesNotContain("sourceIp");
+        assertThat(new ObjectMapper().findAndRegisterModules().writeValueAsString(detail))
+                .doesNotContain("sourceIp", "10.0.0.1");
+    }
+
+    @Test
     void batchGrantProjectsCountsWithoutPrincipalsAndKeepsSingleGrantRules() {
         var projector = new AuditSummaryProjector();
         String after = """

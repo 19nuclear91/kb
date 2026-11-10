@@ -43,6 +43,25 @@ class InboundHeaderSanitizeFilterTest {
     }
 
     @Test
+    void realIpWrittenByIngressProxyPassesThroughUntouched() {
+        // kb-app 以 X-Real-IP 作为登录来源；网关不处理也不剥离它，由入口 Nginx 负责覆盖。
+        MockServerHttpRequest request = MockServerHttpRequest.post("/api/auth/login")
+                .header("X-Real-IP", "203.0.113.7")
+                .header("X-User-Id", "99")
+                .build();
+        AtomicReference<ServerHttpRequest> forwarded = new AtomicReference<>();
+        GatewayFilterChain chain = next -> {
+            forwarded.set(next.getRequest());
+            return Mono.empty();
+        };
+
+        new InboundHeaderSanitizeFilter().filter(MockServerWebExchange.from(request), chain).block();
+
+        assertThat(forwarded.get().getHeaders()).doesNotContainKey("X-User-Id");
+        assertThat(forwarded.get().getHeaders().get("X-Real-IP")).containsExactly("203.0.113.7");
+    }
+
+    @Test
     void controlledGatewayLogContainsPathButNeverQueryString() {
         String canary = "QUERY_CANARY_938";
         MockServerHttpRequest request = MockServerHttpRequest.post("/api/search?q=" + canary)

@@ -10,6 +10,7 @@ import com.zhishiku.kb.app.config.GlobalExceptionHandler;
 import com.zhishiku.kb.common.security.AuthHeaders;
 import com.zhishiku.kb.common.security.IdentityException;
 import com.zhishiku.kb.common.security.IdentitySummary;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
@@ -26,7 +27,9 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -42,6 +45,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * login/logout/me 可用、dev-login 不可用"。
  */
 class AuthControllerTest {
+
+    private static final String LOGIN_BODY = """
+            {"username":"alice","password":"secret"}
+            """;
 
     private LocalAuthService localAuthService;
     private MockMvc mvc;
@@ -59,7 +66,7 @@ class AuthControllerTest {
 
     @Test
     void loginReturnsExtendedLoginResult() throws Exception {
-        when(localAuthService.login("alice", "secret")).thenReturn(LoginResult.builder()
+        when(localAuthService.login("alice", "secret", null)).thenReturn(LoginResult.builder()
                 .tokenName(AuthHeaders.SA_TOKEN)
                 .tokenValue("token-abc")
                 .loginId(7L)
@@ -82,7 +89,7 @@ class AuthControllerTest {
 
     @Test
     void credentialFailureMapsTo401WithUniformMessage() throws Exception {
-        when(localAuthService.login("alice", "bad"))
+        when(localAuthService.login("alice", "bad", null))
                 .thenThrow(IdentityException.unauthorized("用户名或密码错误"));
 
         mvc.perform(post("/api/auth/login")
@@ -92,6 +99,40 @@ class AuthControllerTest {
                                 """))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("用户名或密码错误"));
+    }
+
+    @Test
+    void loginPassesSingleRealIpAsNormalizedSource() throws Exception {
+        mvc.perform(post("/api/auth/login")
+                        .header("X-Real-IP", "10.0.0.1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(LOGIN_BODY))
+                .andExpect(status().isOk());
+
+        verify(localAuthService).login("alice", "secret", "10.0.0.1");
+    }
+
+    @Test
+    void repeatedMissingOrOnlyForwardedHeadersYieldUnknownSource() throws Exception {
+        mvc.perform(post("/api/auth/login")
+                        .header("X-Real-IP", "10.0.0.1", "10.0.0.2")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(LOGIN_BODY))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/auth/login")
+                        .header("X-Forwarded-For", "10.0.0.3")
+                        .header("Forwarded", "for=10.0.0.4")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(LOGIN_BODY))
+                .andExpect(status().isOk());
+        // MockMvc 的连接地址为 127.0.0.1；来源仍为 null，说明不回退到连接地址
+        mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(LOGIN_BODY))
+                .andExpect(status().isOk());
+
+        verify(localAuthService, times(3)).login("alice", "secret", null);
+        verifyNoMoreInteractions(localAuthService);
     }
 
     @Test
@@ -165,7 +206,7 @@ class AuthControllerTest {
                 .singleElement()
                 .satisfies(m -> assertThat(m.getName()).isEqualTo("devLogin"));
 
-        assertThat(AuthController.class.getDeclaredMethod("login", LoginRequest.class)
+        assertThat(AuthController.class.getDeclaredMethod("login", LoginRequest.class, HttpServletRequest.class)
                 .getAnnotation(PostMapping.class).value()).containsExactly("/login");
         assertThat(AuthController.class.getDeclaredMethod("logout")
                 .getAnnotation(PostMapping.class).value()).containsExactly("/logout");

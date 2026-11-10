@@ -13,6 +13,10 @@ import com.zhishiku.kb.common.security.IdentitySummary;
 import com.zhishiku.kb.common.security.ResolvedPrincipal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.InOrder;
 import org.mockito.MockedStatic;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
@@ -20,22 +24,28 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * 登录服务的五个分支，外加 2.4 约定的"被节流拒绝不写审计"。
+ * 登录服务的五个分支，外加 2.4 约定的"被节流拒绝不写审计"；每个分支分别在
+ * 来源未知（null）与来源已知时执行，另覆盖来源节流的拒绝顺序。
  *
  * <p>密码编码器用真实 BCrypt（强度 4 加速）：假哈希比对是防枚举的关键路径，
  * mock 掉它就测不到"未知用户与密码错耗时相当"的实现了。
  */
 class LocalAuthServiceTest {
+
+    private static final String SOURCE = "10.0.0.1";
 
     private IdentityDepartmentMapper mapper;
     private IdentityService identityService;
@@ -69,8 +79,18 @@ class LocalAuthServiceTest {
         return new ResolvedPrincipal(7L, 42L, (short) 1, List.of(), List.of());
     }
 
-    @Test
-    void successfulLoginEstablishesSessionAndReturnsExtendedResult() {
+    private void verifySourceFailure(String source) {
+        if (source == null) {
+            verify(throttle, never()).recordSourceFailure(any());
+        } else {
+            verify(throttle).recordSourceFailure(source);
+        }
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = SOURCE)
+    void successfulLoginEstablishesSessionAndReturnsExtendedResult(String source) {
         String hash = encoder.encode("correct-horse");
         when(mapper.findIdentityByUsername("alice"))
                 .thenReturn(credential(hash, true));
@@ -81,7 +101,7 @@ class LocalAuthServiceTest {
         try (MockedStatic<StpUtil> stp = mockStatic(StpUtil.class)) {
             when(sessions.issue(7L, EpochSessionService.Method.LOCAL)).thenReturn("token-abc");
 
-            LoginResult result = service.login("alice", "correct-horse");
+            LoginResult result = service.login("alice", "correct-horse", source);
 
             verify(sessions).issue(7L, EpochSessionService.Method.LOCAL);
             stp.verifyNoInteractions();
@@ -91,67 +111,80 @@ class LocalAuthServiceTest {
             assertThat(result.isMustChangePassword()).isTrue();
             assertThat(result.getUser().username()).isEqualTo("alice");
         }
+        // 成功只清账户计数；来源计数没有清除入口，也不应被再计一次失败
         verify(throttle).clear("alice");
         verify(audit).success(7L, "alice");
         verify(throttle, never()).recordFailure(anyString());
+        verify(throttle, never()).recordSourceFailure(any());
     }
 
-    @Test
-    void wrongPasswordIsRejectedWithUniformUnauthorized() {
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = SOURCE)
+    void wrongPasswordIsRejectedWithUniformUnauthorized(String source) {
         String hash = encoder.encode("correct-horse");
         when(mapper.findIdentityByUsername("alice"))
                 .thenReturn(credential(hash, false));
 
         IdentityException error = catchThrowableOfType(
-                () -> service.login("alice", "wrong"), IdentityException.class);
+                () -> service.login("alice", "wrong", source), IdentityException.class);
 
         assertThat(error.errorCode()).isEqualTo(IdentityErrorCode.UNAUTHORIZED);
         assertThat(error.httpStatus()).isEqualTo(401);
         assertThat(error.getMessage()).isEqualTo(LocalAuthService.CREDENTIAL_FAILURE_MESSAGE);
         verify(throttle).recordFailure("alice");
-        verify(audit).failure("alice", 7L, "凭据校验失败");
+        verifySourceFailure(source);
+        verify(audit).failure("alice", 7L, "凭据校验失败", source);
         verifyNoInteractions(identityService);
     }
 
-    @Test
-    void unknownUserIsIndistinguishableFromWrongPassword() {
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = SOURCE)
+    void unknownUserIsIndistinguishableFromWrongPassword(String source) {
         when(mapper.findIdentityByUsername("ghost")).thenReturn(null);
 
         IdentityException unknown = catchThrowableOfType(
-                () -> service.login("ghost", "whatever"), IdentityException.class);
+                () -> service.login("ghost", "whatever", source), IdentityException.class);
 
         verify(encoder).matches("whatever", PasswordEncoderConfig.DUMMY_PASSWORD_HASH);
         verify(throttle).recordFailure("ghost");
-        verify(audit).failure("ghost", null, "凭据校验失败");
+        verifySourceFailure(source);
+        verify(audit).failure("ghost", null, "凭据校验失败", source);
         verifyNoInteractions(identityService);
 
         String hash = encoder.encode("correct-horse");
         when(mapper.findIdentityByUsername("alice"))
                 .thenReturn(credential(hash, false));
         IdentityException wrong = catchThrowableOfType(
-                () -> service.login("alice", "wrong"), IdentityException.class);
+                () -> service.login("alice", "wrong", source), IdentityException.class);
 
         assertThat(unknown.errorCode()).isEqualTo(wrong.errorCode());
         assertThat(unknown.httpStatus()).isEqualTo(wrong.httpStatus());
         assertThat(unknown.getMessage()).isEqualTo(wrong.getMessage());
     }
 
-    @Test
-    void accountWithoutLocalPasswordIsRejectedLikeUnknownUser() {
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = SOURCE)
+    void accountWithoutLocalPasswordIsRejectedLikeUnknownUser(String source) {
         when(mapper.findIdentityByUsername("alice")).thenReturn(credential(null, false));
 
         IdentityException error = catchThrowableOfType(
-                () -> service.login("alice", "whatever"), IdentityException.class);
+                () -> service.login("alice", "whatever", source), IdentityException.class);
 
         assertThat(error.errorCode()).isEqualTo(IdentityErrorCode.UNAUTHORIZED);
         verify(encoder).matches("whatever", PasswordEncoderConfig.DUMMY_PASSWORD_HASH);
         verify(throttle).recordFailure("alice");
-        verify(audit).failure("alice", 7L, "凭据校验失败");
+        verifySourceFailure(source);
+        verify(audit).failure("alice", 7L, "凭据校验失败", source);
         verifyNoInteractions(identityService);
     }
 
-    @Test
-    void disabledUserAfterCorrectPasswordGets403Disabled() {
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = SOURCE)
+    void disabledUserAfterCorrectPasswordGets403Disabled(String source) {
         String hash = encoder.encode("correct-horse");
         when(mapper.findIdentityByUsername("alice"))
                 .thenReturn(credential(hash, false));
@@ -159,26 +192,71 @@ class LocalAuthServiceTest {
                 .thenThrow(IdentityException.disabled("用户已停用"));
 
         IdentityException error = catchThrowableOfType(
-                () -> service.login("alice", "correct-horse"), IdentityException.class);
+                () -> service.login("alice", "correct-horse", source), IdentityException.class);
 
         assertThat(error.errorCode()).isEqualTo(IdentityErrorCode.DISABLED);
         assertThat(error.httpStatus()).isEqualTo(403);
-        verify(audit).failure("alice", 7L, "登录被拒绝：DISABLED");
+        verify(audit).failure("alice", 7L, "登录被拒绝：DISABLED", source);
         verify(throttle, never()).recordFailure(anyString());
+        verify(throttle, never()).recordSourceFailure(any());
         verify(throttle, never()).clear(anyString());
     }
 
-    @Test
-    void throttledAttemptIsRejectedWithoutAuditOrDatabaseLookup() {
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = SOURCE)
+    void throttledAttemptIsRejectedWithoutAuditOrDatabaseLookup(String source) {
         when(throttle.isThrottled("alice")).thenReturn(true);
 
         IdentityException error = catchThrowableOfType(
-                () -> service.login("alice", "whatever"), IdentityException.class);
+                () -> service.login("alice", "whatever", source), IdentityException.class);
 
         assertThat(error.errorCode()).isEqualTo(IdentityErrorCode.UNAUTHORIZED);
         assertThat(error.getMessage()).isEqualTo(LocalAuthService.CREDENTIAL_FAILURE_MESSAGE);
         verifyNoInteractions(audit);
         verifyNoInteractions(mapper);
         verify(throttle, never()).recordFailure(anyString());
+        verify(throttle, never()).recordSourceFailure(any());
+    }
+
+    @Test
+    void sourceThrottledAttemptIsRejectedBeforeAccountLookupOrBcrypt() {
+        when(throttle.isSourceThrottled(SOURCE)).thenReturn(true);
+
+        // 凭据是否正确无关紧要：拒绝发生在查账户和 bcrypt 之前
+        IdentityException error = catchThrowableOfType(
+                () -> service.login("alice", "correct-horse", SOURCE), IdentityException.class);
+
+        assertThat(error.errorCode()).isEqualTo(IdentityErrorCode.UNAUTHORIZED);
+        assertThat(error.httpStatus()).isEqualTo(401);
+        assertThat(error.getMessage()).isEqualTo(LocalAuthService.CREDENTIAL_FAILURE_MESSAGE);
+        verify(throttle).isSourceThrottled(SOURCE);
+        verifyNoMoreInteractions(throttle);
+        verifyNoInteractions(mapper, encoder, audit, identityService, sessions);
+    }
+
+    @Test
+    void sourceCheckPrecedesAccountCheckWhichPrecedesCredentialLookup() {
+        when(mapper.findIdentityByUsername("alice")).thenReturn(null);
+
+        catchThrowableOfType(() -> service.login("alice", "whatever", SOURCE), IdentityException.class);
+
+        InOrder order = inOrder(throttle, mapper);
+        order.verify(throttle).isSourceThrottled(SOURCE);
+        order.verify(throttle).isThrottled("alice");
+        order.verify(mapper).findIdentityByUsername("alice");
+    }
+
+    @Test
+    void unknownSourceNeverTouchesSourceCounters() {
+        String hash = encoder.encode("correct-horse");
+        when(mapper.findIdentityByUsername("alice")).thenReturn(credential(hash, false));
+
+        catchThrowableOfType(() -> service.login("alice", "wrong", null), IdentityException.class);
+
+        verify(throttle).isThrottled("alice");
+        verify(throttle).recordFailure("alice");
+        verify(throttle, never()).isSourceThrottled(any());
+        verify(throttle, never()).recordSourceFailure(any());
     }
 }

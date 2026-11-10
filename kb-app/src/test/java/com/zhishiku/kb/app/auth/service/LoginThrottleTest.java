@@ -21,6 +21,7 @@ import static org.mockito.Mockito.when;
 class LoginThrottleTest {
 
     private static final String KEY = "kb:auth:login:fail:alice";
+    private static final String SOURCE_KEY = "kb:auth:login:source-fail:10.0.0.1";
 
     private StringRedisTemplate redis;
     private ValueOperations<String, String> values;
@@ -32,7 +33,7 @@ class LoginThrottleTest {
         redis = mock(StringRedisTemplate.class);
         values = mock(ValueOperations.class);
         when(redis.opsForValue()).thenReturn(values);
-        throttle = new LoginThrottle(redis, 5, Duration.ofMinutes(15));
+        throttle = new LoginThrottle(redis, 5, 20, Duration.ofMinutes(15));
     }
 
     @Test
@@ -99,5 +100,64 @@ class LoginThrottleTest {
         when(values.increment(KEY)).thenThrow(new RedisConnectionFailureException("redis down"));
         assertThatThrownBy(() -> throttle.recordFailure("alice"))
                 .isInstanceOf(RedisConnectionFailureException.class);
+    }
+
+    @Test
+    void sourceKeyFormatAndIndependentThreshold() {
+        when(values.get(SOURCE_KEY)).thenReturn("19");
+        assertThat(throttle.isSourceThrottled("10.0.0.1")).isFalse();
+
+        when(redis.getExpire(SOURCE_KEY)).thenReturn(900L);
+        when(values.get(SOURCE_KEY)).thenReturn("20");
+        assertThat(throttle.isSourceThrottled("10.0.0.1")).isTrue();
+
+        verify(values, times(2)).get(SOURCE_KEY);
+        verify(values, never()).get(KEY);
+    }
+
+    @Test
+    void recordSourceFailureIncrementsAndRefreshesTtl() {
+        throttle.recordSourceFailure("10.0.0.1");
+        throttle.recordSourceFailure("10.0.0.1");
+
+        verify(values, times(2)).increment(SOURCE_KEY);
+        verify(redis, times(2)).expire(SOURCE_KEY, Duration.ofMinutes(15));
+        verify(values, never()).increment(KEY);
+    }
+
+    @Test
+    void blockedSourceCounterWithoutTtlGetsHealed() {
+        when(values.get(SOURCE_KEY)).thenReturn("20");
+        when(redis.getExpire(SOURCE_KEY)).thenReturn(-1L);
+
+        assertThat(throttle.isSourceThrottled("10.0.0.1")).isTrue();
+
+        verify(redis).expire(SOURCE_KEY, Duration.ofMinutes(15));
+    }
+
+    @Test
+    void clearingAccountCounterLeavesSourceCounterIntact() {
+        throttle.clear("alice");
+
+        verify(redis).delete(KEY);
+        verify(redis, never()).delete(SOURCE_KEY);
+    }
+
+    @Test
+    void redisFailureRefusesSourceCheckAndRecord() {
+        when(values.get(SOURCE_KEY)).thenThrow(new RedisConnectionFailureException("redis down"));
+        assertThatThrownBy(() -> throttle.isSourceThrottled("10.0.0.1"))
+                .isInstanceOf(RedisConnectionFailureException.class);
+
+        when(values.increment(SOURCE_KEY)).thenThrow(new RedisConnectionFailureException("redis down"));
+        assertThatThrownBy(() -> throttle.recordSourceFailure("10.0.0.1"))
+                .isInstanceOf(RedisConnectionFailureException.class);
+    }
+
+    @Test
+    void nonPositiveSourceThresholdFailsConstruction() {
+        assertThatThrownBy(() -> new LoginThrottle(redis, 5, 0, Duration.ofMinutes(15)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("source-max-failures");
     }
 }

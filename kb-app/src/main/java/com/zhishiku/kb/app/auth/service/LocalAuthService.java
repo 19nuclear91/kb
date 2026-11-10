@@ -18,9 +18,10 @@ import java.util.UUID;
 /**
  * 本地凭据：用户名密码登录与自助改密（设计 D3/D4/D5）。
  *
- * <p>检查顺序是安全属性的一部分：先查节流（被拒尝试不落审计、不查库），
- * 再取凭据；未知用户与空哈希都先做一次假哈希比对再拒绝，让"用户不存在"
- * 与"密码错误"耗时相当；停用状态只在凭据验证通过后才区分，不构成枚举面。
+ * <p>检查顺序是安全属性的一部分：先查来源节流，再查账户节流（被拒尝试都不落审计、
+ * 不查库、不跑 bcrypt），再取凭据；未知用户与空哈希都先做一次假哈希比对再拒绝，
+ * 让"用户不存在"与"密码错误"耗时相当；停用状态只在凭据验证通过后才区分，不构成枚举面。
+ * 凭据失败同时计入账户与来源；登录成功只清除账户计数，来源计数仅随 TTL 过期。
  * 会话建立复用 {@link IdentityService#resolvePrincipal}，与将来的钉钉回调
  * 走同一入口。
  */
@@ -61,12 +62,17 @@ public class LocalAuthService {
     /**
      * 校验凭据并建立 Sa-Token 会话。
      *
+     * @param source 已规范化的登录来源；来源未知时为 null，只按账户节流
      * @return 扩展后的登录结果：会话令牌、强制改密标记与用户摘要
      */
-    public LoginResult login(String username, String rawPassword) {
+    public LoginResult login(String username, String rawPassword, String source) {
         String normalizedUsername = username == null ? "" : username;
         String password = rawPassword == null ? "" : rawPassword;
 
+        if (source != null && throttle.isSourceThrottled(source)) {
+            // 轮换用户名的尝试在查库与 bcrypt 之前被挡住；响应与凭据失败一致，不写审计
+            throw IdentityException.unauthorized(CREDENTIAL_FAILURE_MESSAGE);
+        }
         if (throttle.isThrottled(normalizedUsername)) {
             // 与凭据失败完全一致，不暴露节流状态；被拒尝试不逐条写审计
             throw IdentityException.unauthorized(CREDENTIAL_FAILURE_MESSAGE);
@@ -74,17 +80,17 @@ public class LocalAuthService {
         LocalCredentialRecord credential = mapper.findIdentityByUsername(normalizedUsername);
         if (credential == null || isBlankHash(credential.getPasswordHash())) {
             passwordEncoder.matches(password, PasswordEncoderConfig.DUMMY_PASSWORD_HASH);
-            rejectCredential(normalizedUsername, credential == null ? null : credential.getId());
+            rejectCredential(normalizedUsername, credential == null ? null : credential.getId(), source);
         }
         if (!passwordEncoder.matches(password, credential.getPasswordHash())) {
-            rejectCredential(normalizedUsername, credential.getId());
+            rejectCredential(normalizedUsername, credential.getId(), source);
         }
         try {
             identityService.resolvePrincipal(credential.getId());
         } catch (IdentityException rejected) {
-            // 凭据正确后才区分停用；这不是凭据失败，不计入节流
+            // 凭据正确后才区分停用；这不是凭据失败，不计入账户或来源节流
             audit.failure(normalizedUsername, credential.getId(),
-                    "登录被拒绝：" + rejected.errorCode());
+                    "登录被拒绝：" + rejected.errorCode(), source);
             throw rejected;
         }
         String token = sessions.issue(credential.getId(), EpochSessionService.Method.LOCAL);
@@ -156,9 +162,12 @@ public class LocalAuthService {
                 ? UUID.randomUUID().toString() : requestId.trim();
     }
 
-    private void rejectCredential(String username, Long resolvedUserId) {
+    private void rejectCredential(String username, Long resolvedUserId, String source) {
         throttle.recordFailure(username);
-        audit.failure(username, resolvedUserId, "凭据校验失败");
+        if (source != null) {
+            throttle.recordSourceFailure(source);
+        }
+        audit.failure(username, resolvedUserId, "凭据校验失败", source);
         throw IdentityException.unauthorized(CREDENTIAL_FAILURE_MESSAGE);
     }
 

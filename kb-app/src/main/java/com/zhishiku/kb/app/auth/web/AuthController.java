@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -47,8 +48,10 @@ public class AuthController {
             @ApiResponse(responseCode = "401", description = "用户名或密码错误"),
             @ApiResponse(responseCode = "403", description = "账户或主部门已停用")
     })
-    public R<LoginResult> login(@Valid @RequestBody LoginRequest request) {
-        return R.ok(localAuthService.login(request.username(), request.password()));
+    public R<LoginResult> login(@Valid @RequestBody LoginRequest request, HttpServletRequest servletRequest) {
+        // 来源只取入口 Nginx 写入的 X-Real-IP；不采信 X-Forwarded-For、Forwarded 或连接地址
+        String source = LoginSourceAddress.resolve(servletRequest.getHeaders(LoginSourceAddress.HEADER));
+        return R.ok(localAuthService.login(request.username(), request.password(), source));
     }
 
     @PostMapping("/logout")

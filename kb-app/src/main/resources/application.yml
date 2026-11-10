@@ -149,6 +149,10 @@ kb:
     login:
       # 同一账户连续失败达到该次数即节流；TTL 到期自动解锁，无需人工干预。
       max-failures: ${KB_LOGIN_MAX_FAILURES:5}
+      # 同一来源（入口 Nginx 写入的 X-Real-IP）凭据失败达到该次数，即拒绝该来源的所有登录尝试；
+      # 窗口与 lock-duration 相同，登录成功不清零。多人共用 NAT/VPN 出口时会互相影响，
+      # 应高于 max-failures；最小为 1，非法值阻止启动。
+      source-max-failures: ${KB_LOGIN_SOURCE_MAX_FAILURES:20}
       # 失败计数存活时长，也是最长锁定时长。
       lock-duration: ${KB_LOGIN_LOCK_DURATION:15m}
     password:

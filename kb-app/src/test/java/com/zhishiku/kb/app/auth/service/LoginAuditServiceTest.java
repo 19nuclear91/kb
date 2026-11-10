@@ -29,8 +29,8 @@ class LoginAuditServiceTest {
 
     @Test
     void failureWritesExactlyOneEventWithAttemptedUsernameOnly() {
-        audit.failure("alice", null, "凭据校验失败");
-        audit.failure("bob", 9L, "用户或部门已停用");
+        audit.failure("alice", null, "凭据校验失败", null);
+        audit.failure("bob", 9L, "用户或部门已停用", null);
 
         assertThat(store.events()).hasSize(2);
         IdentityAuditRecord unknown = store.events().get(0);
@@ -53,7 +53,7 @@ class LoginAuditServiceTest {
     @Test
     void requestIdsAreFreshPerEvent() {
         audit.success(7L, "alice");
-        audit.failure("alice", 7L, "凭据校验失败");
+        audit.failure("alice", 7L, "凭据校验失败", "10.0.0.1");
 
         assertThat(store.events())
                 .hasSize(2)
@@ -63,9 +63,35 @@ class LoginAuditServiceTest {
 
     @Test
     void usernameIsEscapedBeforeEnteringTheJsonbSummary() {
-        audit.failure("bad\"name\\suffix", null, "凭据校验失败");
+        audit.failure("bad\"name\\suffix", null, "凭据校验失败", null);
+        audit.failure("bad\"name\\suffix", null, "凭据校验失败", "10.0.0.1");
 
         assertThat(store.events().get(0).getAfterState())
                 .isEqualTo("{\"username\":\"bad\\\"name\\\\suffix\"}");
+        assertThat(store.events().get(1).getAfterState())
+                .isEqualTo("{\"username\":\"bad\\\"name\\\\suffix\",\"sourceIp\":\"10.0.0.1\"}");
+    }
+
+    @Test
+    void failureRecordsSourceOnlyWhenKnown() {
+        audit.failure("alice", 7L, "凭据校验失败", "2001:db8:0:0:0:0:0:1");
+        audit.failure("alice", 7L, "凭据校验失败", null);
+
+        assertThat(store.events().get(0).getAfterState())
+                .isEqualTo("{\"username\":\"alice\",\"sourceIp\":\"2001:db8:0:0:0:0:0:1\"}");
+        assertThat(store.events().get(1).getAfterState())
+                .isEqualTo("{\"username\":\"alice\"}")
+                .doesNotContain("sourceIp");
+        for (IdentityAuditRecord event : store.events()) {
+            assertThat(event.getAfterState() + event.getBeforeState() + event.getReason())
+                    .doesNotContain("password", "token", "secret", "hash");
+        }
+    }
+
+    @Test
+    void successSummaryCarriesNoSource() {
+        audit.success(7L, "alice");
+
+        assertThat(store.events().get(0).getAfterState()).isEqualTo("{\"username\":\"alice\"}");
     }
 }
