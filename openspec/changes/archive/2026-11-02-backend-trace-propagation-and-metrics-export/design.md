@@ -28,7 +28,7 @@
 - 浏览器可见 traceId、SSE error 携带 traceId、`kb_parse_task` / `kb_ai_call` 的 trace 列。
 - Prometheus、Grafana、Tempo 或 Collector 的部署、看板、告警规则与 compose profile。
 - Java agent 方案；JDBC、Redis、对象存储的自动跨度（本次不开启，避免 SQL/键名进入属性与噪声）。
-- 跨请求权限缓存、答案缓存及任何检索算法变化。
+- 跨请求权限缓存及任何检索算法变化。
 - 集成、端到端测试，启动服务、数据库、Redis、MinIO、容器、真实 Prometheus/Tempo 或第三方服务。
 - 针对 README、运维文档或配置文本的测试；文档以交付对应章节为完成依据。
 
