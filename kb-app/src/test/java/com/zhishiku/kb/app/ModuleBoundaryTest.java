@@ -62,8 +62,8 @@ class ModuleBoundaryTest {
     @Test
     @DisplayName("模块之间只能通过 service 层交互，不得直接访问其他模块的 mapper")
     void modulesMustNotReachIntoOtherModulesMappers() {
-        for (String module : List.of("document", "space", "collaboration", "conversation", "search", "notification", "comment")) {
-            for (String target : List.of("document", "space", "collaboration", "notification", "comment")) {
+        for (String module : List.of("document", "space", "collaboration", "conversation", "search", "notification", "comment", "knowledgegap")) {
+            for (String target : List.of("document", "space", "collaboration", "notification", "comment", "knowledgegap")) {
                 if (!module.equals(target)) {
                     noClasses().that().resideInAPackage("..app." + module + "..")
                             .should().dependOnClassesThat().resideInAPackage("..app." + target + ".mapper..")
@@ -103,8 +103,28 @@ class ModuleBoundaryTest {
                 .check(classes);
         noClasses().that().resideInAPackage("..app.notification..")
                 .should().dependOnClassesThat().resideInAnyPackage("..app.document..", "..app.collaboration..",
-                        "..app.space..", "..app.conversation..", "..app.comment..")
-                .because("派生失败不得改变源审核或评论；通知只读取协作事实并按当前授权过滤")
+                        "..app.space..", "..app.conversation..", "..app.comment..", "..app.knowledgegap..")
+                .because("派生失败不得改变源审核、评论或问题；通知只读取无正文事实并按当前授权过滤")
+                .check(classes);
+    }
+
+    @Test
+    @DisplayName("知识问题单只经 auth/document 服务取得资格，不读取其他模块 Mapper 或私人来源")
+    void knowledgeGapsRespectIdentityAndSourceBoundaries() {
+        noClasses().that().resideInAPackage("..app.knowledgegap..")
+                .should().dependOnClassesThat(DescribedPredicate.describe("其他模块的 mapper",
+                        (JavaClass type) -> type.getPackageName().contains(".mapper")
+                                && type.getPackageName().startsWith("com.zhishiku.kb.app.")
+                                && !type.getPackageName().startsWith("com.zhishiku.kb.app.knowledgegap.")))
+                .check(classes);
+        noClasses().that().resideInAPackage("..app.knowledgegap..")
+                .should().dependOnClassesThat().resideInAnyPackage("..app.notification..", "..app.conversation..",
+                        "..app.search..", "..app.embedding..", "..app.aiusage..", "..app.parse..", "..app.storage..")
+                .because("问题只保存主动分享的业务描述，不读取私人聊天或模型来源，也不等待通知派生")
+                .check(classes);
+        noClasses().that().resideInAPackage("..app.auth..")
+                .should().dependOnClassesThat().resideInAPackage("..app.knowledgegap..")
+                .because("最小身份投影是 auth 服务契约，不反向依赖问题业务或其持久化层")
                 .check(classes);
     }
 

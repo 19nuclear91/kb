@@ -109,6 +109,45 @@ class ProductionSettingsTest {
                 .hasMessageContaining("logging.level.com.zhishiku.kb.app.search.mapper.SearchMapper");
     }
 
+    @ParameterizedTest
+    @CsvSource({"com.zhishiku.kb.app.knowledgegap,DEBUG", "com.zhishiku.kb.app.knowledgegap.mapper,TRACE",
+            "com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper,ALL",
+            "com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper.insertEntry,DEBUG"})
+    void knowledgeGapSqlAndParentLevelsAreSensitive(String logger, String level) {
+        var settings = safeApp();
+        String key = "logging.level." + logger;
+        settings.put(key, level);
+        assertThatThrownBy(() -> ProductionSettings.validate("kb-app", Set.of("prod"), settings))
+                .hasMessage("生产禁止敏感数据调试日志：" + key).hasNoCause()
+                .hasMessageNotContaining("external-secret");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"logging.group.gapSql", "logging.group.gapSql[0]"})
+    void knowledgeGapSqlGroupsCannotBypassSafeLoggerOverrides(String groupKey) {
+        var settings = safeApp();
+        settings.put("logging.level.com.zhishiku.kb.app.knowledgegap.mapper", "OFF");
+        settings.put("logging.level.gapSql", "DEBUG");
+        for (String member : List.of("com.zhishiku.kb.app.knowledgegap",
+                "com.zhishiku.kb.app.knowledgegap.mapper",
+                "com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper")) {
+            settings.put(groupKey, member);
+            assertThatThrownBy(() -> ProductionSettings.validate("kb-app", Set.of("prod"), settings))
+                    .hasMessage("生产禁止敏感数据调试日志：logging.level.gapSql").hasNoCause();
+        }
+    }
+
+    @Test
+    void explicitSafeKnowledgeGapMapperAllowsParentDiagnosticsButNotChildSql() {
+        var settings = safeApp();
+        settings.put("logging.level.com.zhishiku.kb.app.knowledgegap", "DEBUG");
+        settings.put("logging.level.com.zhishiku.kb.app.knowledgegap.mapper", "OFF");
+        ProductionSettings.validate("kb-app", Set.of("prod"), settings);
+        settings.put("logging.level.com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper", "TRACE");
+        assertThatThrownBy(() -> ProductionSettings.validate("kb-app", Set.of("prod"), settings))
+                .hasMessageContaining("logging.level.com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper");
+    }
+
     @Test
     void workerMapperLoggingIsAlsoProtected() {
         var settings = safeApp();

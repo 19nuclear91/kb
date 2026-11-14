@@ -2,7 +2,7 @@
 
 向量重建与解析死信页面的入口、权限、维护影响和结果核对规则见 [运维管理页面说明](embedding-parse-operations-web.md)。
 
-本文提供部署约定，不执行部署、服务启动或外部链路测试。用户操作与安装见 [kb-web/README.md](../kb-web/README.md)，新增只读接口见 [资源操作能力查询](user-resource-capabilities-api.md)，收藏接口及 V20 迁移见 [个人文档收藏](document-favorites.md)。
+本文提供部署约定，不执行部署、服务启动或外部链路测试。用户操作与安装见 [kb-web/README.md](../kb-web/README.md)，新增只读接口见 [资源操作能力查询](user-resource-capabilities-api.md)，收藏接口及 V20 迁移见 [个人文档收藏](document-favorites.md)。知识问题闭环首期已同步主规格并归档，未部署；V37/V38、网关与前端的协调顺序见 [问题协调发布清单](knowledge-gap-rollout.md)。
 
 ## 构建与公开配置
 
@@ -36,11 +36,13 @@ AI error 的可选白名单 code `SEARCH_UNAVAILABLE` 显示固定“检索暂�
 
 `/favorites` 为受保护的 SPA 页面，直接访问与刷新需要页面回退；登录及必要改密完成后可返回此路径。收藏入口不依赖会话功能开关或管理员资格。四个 `/api/documents/**` 收藏端点沿用现有网关路由及 PUT/DELETE CORS 配置，保留 JSON 正文和真实状态码。
 
-`/notifications` 同样是受保护的 SPA 页面，需要页面回退。三个 `/api/notifications/**` 端点由网关 prod/dev 的 kb-app 业务路由转发（PUT 已在现有 CORS 方法内），成功与提前拒绝均为 `no-store`；静态托管不得缓存或改写这些响应。详见 [站内通知](in-app-notifications.md)。
+`/notifications` 同样是受保护的 SPA 页面，需要页面回退。三个 `/api/notifications/**` 端点由网关 prod/dev 的 kb-app 业务路由转发（PUT 已在现有 CORS 方法内），成功与提前拒绝均为 `no-store`；静态托管不得缓存或改写这些响应。新版列表和未读数均保留单值 `X-Kb-Notification-Contract: KNOWLEDGE_GAPS_V1`，不能剥离、重复追加或在失败后去头降级。详见 [站内通知](in-app-notifications.md)。
+
+`/knowledge-gaps`、`/knowledge-gaps/new`、`/knowledge-gaps/:gapId`、`/admin/knowledge-gaps` 和 `/admin/knowledge-gaps/:gapId` 为受保护的 SPA 页面，需要直接访问和刷新的页面回退；受理页面另需当前 `knowledge:gap:read`。普通问题 API 根及子路径、管理问题 API 必须转发至 app，不到 AI，不回退 HTML。保留修改请求的 `X-Request-Id` 及真实 400/401/403/404/409/413/503，成功、故障和提前拒绝均不得覆盖 `no-store`。正文和候选名称只经有界 POST 正文传输，不进入页面地址、代理日志或追踪。
 
 保留 `satoken` 认证头和 `X-Conversation-Id`、`X-Turn-Id` 响应头，文件请求同样经 `/api` 转发。SSE 路由关闭代理缓冲和结果缓存，允许增量传输；连接中断需及时传递到上游，避免退出或离开页面后仍持有生成订阅。超时与请求体限制应与现有服务对齐，不以延长连接掩盖依赖失败。
 
-`index.html` 建议禁止缓存或要求重新验证；带内容指纹的公开静态资源可长期缓存。所有认证/文档/收藏/搜索/会话/引用/文件响应禁止共享缓存；反向代理不能覆写后端 `Cache-Control: no-store`。收藏成功、失败及网关提前拒绝响应都需要保留该响应头。前端不注册 service worker，不提供受保护内容的离线缓存。
+`index.html` 建议禁止缓存或要求重新验证；带内容指纹的公开静态资源可长期缓存。所有认证/文档/收藏/通知/问题/搜索/会话/引用/文件响应禁止共享缓存；反向代理不能覆写后端 `Cache-Control: no-store`。收藏、通知和问题的成功、失败及网关提前拒绝响应都需要保留该响应头。前端不注册 service worker，不提供受保护内容的离线缓存。
 
 ## 登录来源与 X-Real-IP
 
@@ -145,6 +147,13 @@ Element Plus 的组件 CSS 按需打包，弹窗与下拉定位等运行时内�
 2. 再发布前端静态产物与同源代理配置；会话功能按 app/AI 的配置对齐。保留前一版静态产物用于回退。
 3. 只回退前端时恢复旧静态产物或撤下入口，新增只读后端可保留。若需同时回退后端，应先撤下依赖新增接口的前端。
 4. 回退不删除文档、会话、用户或凭据，不自动重放上传、重试解析和生成请求。
+
+### 知识问题闭环发布与回退
+
+1. 首期实现及离线证据已于 2026-11-14 [归档](../openspec/changes/archive/2026-11-14-knowledge-gap-feedback-loop/)，不是已执行的部署记录。按 app→gateway→web 顺序：先排空不认识新权限及双来源收件箱的旧 app，由新版 app 执行 V37/V38，再升级网关及静态前端；旧 app 不能混部。
+2. 新前端通知列表/计数同用能力头及契约游标；旧前端缺省仍只读取旧四类通知。问题目标仅含 kind/gapId，点击重核当前问题，不自动标记已读或确认解决。
+3. 止损可先撤下入口或恢复保留的旧静态资产；这不会删除已分享记录，也不会停止后台问题写入。需要停止修改时须另设受控入口策略，通知派生开关不替代问题写入门禁。
+4. 后端只能回退到仍认识新权限、表及双来源收件箱的兼容版本，不反迁移、不删数据或权限绑定。详细边界见 [协调发布清单](knowledge-gap-rollout.md)，当前发布动作均未执行。
 
 ### 文档删除发布与结果核对
 

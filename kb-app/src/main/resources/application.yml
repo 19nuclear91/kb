@@ -65,6 +65,7 @@ logging:
     com.zhishiku.kb: INFO
     com.zhishiku.kb.app.search.mapper: "OFF"
     com.zhishiku.kb.app.conversation.mapper: "OFF"
+    com.zhishiku.kb.app.knowledgegap.mapper: "OFF"
     com.zhishiku.kb.app.auth.mapper.IdentityQueryMapper: "OFF"
     com.zhishiku.kb.app.auth.mapper.AuditQueryMapper: "OFF"
     com.zhishiku.kb.app.document.mapper.DocumentAdminQueryMapper: "OFF"

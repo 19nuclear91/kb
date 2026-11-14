@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/vue';
 import { deferred } from '../test/fixtures';
 import { pollInterval, useUnreadCount } from './unread';
 import UnreadBadge from './UnreadBadge.vue';
+import { notificationHeaders } from './api';
 
 const h = reactive({ value: { session: {} as unknown, state: { phase: 'ready', epoch: 1 } as { phase: string; epoch: number } } });
 vi.mock('../SessionProvider', () => ({ useSession: () => ({ get session() { return h.value.session; }, get state() { return h.value.state; } }) }));
@@ -24,6 +25,7 @@ it('同一标签页共享单个在途请求，默认 60 秒低频轮询', async 
   render({ setup: () => () => [render$(UnreadBadge), render$(UnreadBadge), render$(Refresh)] });
   await advance(0);
   expect(calls(s)).toBe(1);
+  expect(s.json.mock.calls[0][1].headers).toEqual(notificationHeaders);
   await fireEvent.click(screen.getByRole('button', { name: '刷新计数' })); await fireEvent.click(screen.getByRole('button', { name: '刷新计数' }));
   expect(calls(s)).toBe(1);
   first.resolve(count('3')); await advance(0);

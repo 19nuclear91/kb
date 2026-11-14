@@ -3,6 +3,7 @@ package com.zhishiku.kb.app.notification.web;
 import com.zhishiku.kb.app.notification.model.NotificationViews;
 import com.zhishiku.kb.app.notification.service.UserNotificationService;
 import com.zhishiku.kb.common.api.R;
+import com.zhishiku.kb.common.security.NotificationContract;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,7 +31,8 @@ public class NotificationController {
     public R<NotificationViews.Page> list(@RequestParam MultiValueMap<String, String> params,
                                           HttpServletRequest request) throws IOException {
         NotificationInput.noBody(request);
-        return R.ok(service.list(params));
+        var contract = NotificationInput.contract(request);
+        return R.ok(contract == NotificationContract.LEGACY ? service.list(params) : service.list(params, contract));
     }
 
     @GetMapping("/api/notifications/unread-count")
@@ -38,7 +40,8 @@ public class NotificationController {
     public R<NotificationViews.UnreadCount> unreadCount(@RequestParam MultiValueMap<String, String> params,
                                                         HttpServletRequest request) throws IOException {
         NotificationInput.noBody(request);
-        return R.ok(service.unreadCount(params));
+        var contract = NotificationInput.contract(request);
+        return R.ok(contract == NotificationContract.LEGACY ? service.unreadCount(params) : service.unreadCount(params, contract));
     }
 
     @PutMapping("/api/notifications/{notificationId}/read")

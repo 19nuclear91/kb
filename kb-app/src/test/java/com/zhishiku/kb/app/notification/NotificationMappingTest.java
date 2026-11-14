@@ -41,7 +41,7 @@ class NotificationMappingTest {
         configuration.setMapUnderscoreToCamelCase(true);
         configuration.getTypeHandlerRegistry().register(UUID.class, UuidTypeHandler.class);
         for (String resource : List.of("/mapper/DocumentMapper.xml", "/mapper/DocumentReviewEligibilityMapper.xml",
-                "/mapper/DocumentCommentMapper.xml", "/mapper/UserNotificationMapper.xml",
+                "/mapper/DocumentCommentMapper.xml", "/mapper/KnowledgeGapMapper.xml", "/mapper/UserNotificationMapper.xml",
                 "/mapper/NotificationDerivationMapper.xml")) {
             parse(configuration, resource);
         }
@@ -74,6 +74,7 @@ class NotificationMappingTest {
         row.put("comment_id", null);
         row.put("discussable", false);
         row.put("reply_readable", false);
+        emptyGapFacts(row);
         var mapped = MapperRowStub.readOne(configuration, USER + ".list", listParameters(List.of("1:7")), row,
                 NotificationRow.class);
         assertThat(mapped.id()).isEqualTo(9007199254740993L);
@@ -86,6 +87,7 @@ class NotificationMappingTest {
         assertThat(mapped.viewable()).isFalse();
         assertThat(mapped.actionable()).isTrue();
         assertThat(mapped.roundSubmittedBy()).isEqualTo(8L);
+        assertThat(mapped.gap()).isNull();
     }
 
     @Test
@@ -130,7 +132,7 @@ class NotificationMappingTest {
         var probe = new XPathParser("<sql id=\"pendingReviewer\">#{pendingReviewerProbe} = 1</sql>").evalNode("/sql");
         assertThat(probed.getSqlFragments().replace(PENDING_REVIEWER, probe)).as(PENDING_REVIEWER).isNotNull();
         for (String resource : List.of("/mapper/DocumentMapper.xml", "/mapper/DocumentReviewQueryMapper.xml",
-                "/mapper/DocumentCommentMapper.xml", "/mapper/UserNotificationMapper.xml")) {
+                "/mapper/DocumentCommentMapper.xml", "/mapper/KnowledgeGapMapper.xml", "/mapper/UserNotificationMapper.xml")) {
             parse(probed, resource);
         }
         var workbench = probed.getMappedStatement("com.zhishiku.kb.app.document.mapper.DocumentReviewQueryMapper.pending")
@@ -168,6 +170,7 @@ class NotificationMappingTest {
         row.put("comment_id", comment);
         row.put("discussable", true);
         row.put("reply_readable", false);
+        emptyGapFacts(row);
         var mapped = MapperRowStub.readOne(configuration, USER + ".list", listParameters(List.of("1:7")), row,
                 NotificationRow.class);
         assertThat(mapped.commentId()).isEqualTo(comment);
@@ -175,6 +178,7 @@ class NotificationMappingTest {
         assertThat(mapped.roundNo()).isNull();
         assertThat(mapped.discussable()).isTrue();
         assertThat(mapped.replyReadable()).isFalse();
+        assertThat(mapped.gap()).isNull();
     }
 
     @Test
@@ -184,7 +188,7 @@ class NotificationMappingTest {
         probed.setMapUnderscoreToCamelCase(true);
         probed.getTypeHandlerRegistry().register(UUID.class, UuidTypeHandler.class);
         for (String resource : List.of("/mapper/DocumentMapper.xml", "/mapper/DocumentReviewEligibilityMapper.xml",
-                "/mapper/DocumentCommentMapper.xml")) {
+                "/mapper/DocumentCommentMapper.xml", "/mapper/KnowledgeGapMapper.xml")) {
             parse(probed, resource);
         }
         String reply = "com.zhishiku.kb.app.comment.mapper.DocumentCommentMapper.liveReply";
@@ -204,7 +208,9 @@ class NotificationMappingTest {
     @Test
     void notificationSqlIncludesOnlyTheRuleFragmentsSourceModulesPublish() throws Exception {
         // 通知只以 include 复用源模块公开的授权片段；引用其他片段等同于直接读取源模块的表。
-        Set<String> allowed = Set.of("facts", "visible",
+        Set<String> allowed = Set.of("facts", "visible", "documentFacts", "gapFacts",
+                "com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper.visible",
+                "com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper.notificationWorkCurrent",
                 "com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate",
                 "com.zhishiku.kb.app.document.mapper.DocumentMapper.versionInteractivePredicate",
                 "com.zhishiku.kb.app.document.mapper.DocumentMapper.currentViewGrant",
@@ -258,6 +264,16 @@ class NotificationMappingTest {
             for (var map : configuration.getMappedStatement(id).getResultMaps()) {
                 assertThat(map.getMappedColumns().stream().map(String::toLowerCase)).as(id).noneMatch(forbidden::contains);
             }
+        }
+    }
+
+    /** 实际 UNION 在旧来源上为全部问题事实列投影 SQL NULL，不能用缺失列替代。 */
+    private static void emptyGapFacts(Map<String, Object> row) {
+        for (String column : List.of("gap_id", "gap_event_id", "gap_event_kind", "gap_state", "gap_version",
+                "gap_reporter_user_id", "gap_assignee_user_id", "gap_assignment_epoch", "gap_event_assignment_epoch",
+                "gap_queue_event_id", "gap_pending_solution_id", "gap_event_solution_id", "gap_event_result_version",
+                "gap_visible", "gap_work_current")) {
+            row.put(column, null);
         }
     }
 

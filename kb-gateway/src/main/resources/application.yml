@@ -60,7 +60,7 @@ spring:
             # /api/admin/** 覆盖身份、部门、空间、embedding 与授权管理接口。
             # 网关只做转发，鉴权仍在 kb-app：这些接口逐一校验全局管理员
             # 或目标空间的 manage 资格，把规则复制到网关会变成两份真相。
-            - Path=/api/documents/**,/api/files/**,/api/auth/**,/api/admin/**,/api/conversations/**,/api/reviews/**,/api/notifications/**,/api/office-preview/**
+            - Path=/api/documents/**,/api/files/**,/api/auth/**,/api/admin/**,/api/conversations/**,/api/reviews/**,/api/notifications/**,/api/knowledge-gaps,/api/knowledge-gaps/**,/api/office-preview/**
           metadata:
             response-timeout: 10000
             connect-timeout: 2000

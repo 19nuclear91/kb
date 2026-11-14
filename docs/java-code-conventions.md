@@ -10,9 +10,9 @@
 
 ## 自动检查
 
-不使用单元测试约束 README、运维文档的措辞、章节编号或 Javadoc 排版，也不用单元测试检查 Java 源文件的写法（导入方式、全限定类名、Javadoc、大括号等）。上述约定以及 `AGENTS.md` 中的 Java 代码风格由代码审查保证。
+不使用单元测试约束 README、运维文档的措辞、章节编号或 Javadoc 排版。常规 Java 代码风格由代码审查保证；已归档的 [`knowledge-gap-feedback-loop` 任务](../openspec/changes/archive/2026-11-14-knowledge-gap-feedback-loop/tasks.md)另要求运行代码规范检查，范围见下段。
 
-2026-10-27 删除了原 `JavaSourceConventionTest`（用编译器语法树扫描全部源文件），项目不再保留源文件格式类检查。下文历史记录中出现的该测试名仅描述当时的执行情况；以 `-Dtest=` 白名单引用它的旧命令在 `-Dsurefire.failIfNoSpecifiedTests=false` 下会忽略这一项。
+2026-10-27 删除了原 `JavaSourceConventionTest`（用编译器语法树扫描全部源文件，包含 Javadoc/Schema 文档断言）。2026-11-14 为知识问题单任务新增同名、不同范围的纯代码检查：仅解析本变更相关主代码的显式 import、大括号和多行体，不检查注释、全限定类名、Javadoc、Schema 或任何说明文档。它不代表全库旧规范检查已恢复或全部源文件已通过；下文旧记录保留其历史含义。
 
 保留的检查都针对运行时行为或契约，而不是源文件文本：`RecordOpenApiSchemaTest` 通过真实 Swagger 转换器验证密级和 Embedding
 接口模型（含嵌套引用），并比较核心配置与视图 DTO 的 JSON，防止字段契约漂移；`ModuleBoundaryTest` 用 ArchUnit 检查编译后类之间的模块依赖。

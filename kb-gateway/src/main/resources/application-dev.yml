@@ -22,7 +22,7 @@ spring:
         - id: kb-app
           uri: ${KB_APP_BASE_URL:http://localhost:8081}
           predicates:
-            - Path=/api/documents/**,/api/files/**,/api/auth/**,/api/admin/**,/api/conversations/**,/api/reviews/**,/api/notifications/**,/api/office-preview/**
+            - Path=/api/documents/**,/api/files/**,/api/auth/**,/api/admin/**,/api/conversations/**,/api/reviews/**,/api/notifications/**,/api/knowledge-gaps,/api/knowledge-gaps/**,/api/office-preview/**
           metadata:
             response-timeout: 10000
             connect-timeout: 2000

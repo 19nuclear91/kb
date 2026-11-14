@@ -102,10 +102,17 @@
     </resultMap>
 
     <select id="backlog" resultMap="backlog" useCache="false" timeout="10">
-        SELECT count(*) FILTER (WHERE p.status = 'PENDING') AS pending,
-               count(*) FILTER (WHERE p.status = 'WAITING_SOURCE') AS waiting_source,
-               COALESCE(floor(extract(epoch FROM now() - min(e.occurred_at)))::bigint, 0) AS oldest_age_seconds
-        FROM kb_notification_projection p JOIN kb_collaboration_event e ON e.event_id = p.event_id
-        WHERE p.status &lt;&gt; 'DONE'
+        SELECT count(*) FILTER (WHERE f.status = 'PENDING') AS pending,
+               count(*) FILTER (WHERE f.status = 'WAITING_SOURCE') AS waiting_source,
+               GREATEST(COALESCE(floor(extract(epoch FROM now() - min(f.occurred_at)))::bigint, 0), 0) AS oldest_age_seconds
+        FROM (
+            SELECT COALESCE(p.status, 'PENDING') AS status, e.occurred_at
+            FROM kb_collaboration_event e LEFT JOIN kb_notification_projection p ON e.event_id = p.event_id
+            WHERE p.status IS DISTINCT FROM 'DONE'
+            UNION ALL
+            SELECT COALESCE(p.status, 'PENDING') AS status, e.occurred_at
+            FROM kb_knowledge_gap_event e LEFT JOIN kb_knowledge_gap_notification_projection p ON e.event_id = p.event_id
+            WHERE p.status IS DISTINCT FROM 'DONE'
+        ) f
     </select>
 </mapper>

@@ -20,6 +20,7 @@ export const perm = {
   aiUsageRead: 'ai:usage:read', aiAuditRead: 'ai:audit:read',
   operationsReportsRead: 'operations:reports:read',
   tagRead: 'document:tag:read', tagWrite: 'document:tag:write',
+  gapRead: 'knowledge:gap:read', gapAssign: 'knowledge:gap:assign', gapHandle: 'knowledge:gap:handle', gapClose: 'knowledge:gap:close',
 } as const;
 export const canOpenSpaces = (access: AdminAccess) => (access.spaceStatus === 'ready' && access.spaces.length > 0) || access.has(perm.spaceCreate) || access.has(perm.spaceManageAll);
 /** 文档管理面板入口：知识空间条件之外再加密级调整权限；入口显示不代表任何文档可管理，面板各区块独立判定。 */
@@ -38,4 +39,5 @@ export const adminNavigation = [
   { path: '/admin/reports/operations', label: '运营概览', mark: 'A10', visible: (access: AdminAccess) => access.has(perm.operationsReportsRead) },
   { path: '/admin/document-tags', label: '全局标签', mark: 'A11', visible: (access: AdminAccess) => access.has(perm.tagRead) },
   { path: '/admin/documents', label: '文档管理面板', mark: 'A12', visible: canOpenDocuments },
+  { path: '/admin/knowledge-gaps', label: '知识问题受理', mark: 'A14', visible: (access: AdminAccess) => access.has(perm.gapRead) },
 ] as const;

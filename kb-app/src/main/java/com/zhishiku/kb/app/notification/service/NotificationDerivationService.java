@@ -4,6 +4,7 @@ import com.zhishiku.kb.app.notification.NotificationProperties;
 import com.zhishiku.kb.app.notification.mapper.NotificationDerivationMapper;
 import com.zhishiku.kb.app.notification.model.ClaimedEvent;
 import com.zhishiku.kb.app.notification.model.NotificationType;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -25,7 +26,8 @@ public class NotificationDerivationService {
     private final NotificationMetrics metrics;
     private final String owner = "app-" + UUID.randomUUID();
 
-    public NotificationDerivationService(NotificationDerivationTransaction transactions, NotificationDerivationMapper mapper,
+    public NotificationDerivationService(@Qualifier("notificationDerivationTransaction") NotificationDerivationTransaction transactions,
+                                         @Qualifier("notificationDerivationMapper") NotificationDerivationMapper mapper,
                                          NotificationTargetRegistry registry, NotificationProperties properties,
                                          NotificationMetrics metrics) {
         this.transactions = transactions;
@@ -55,14 +57,18 @@ public class NotificationDerivationService {
             log.warn("通知派生领取暂不可用");
             return 0;
         }
-        for (var claim : claimed) process(claim);
+        for (var claim : claimed) {
+            process(claim);
+        }
         return claimed.size();
     }
 
     public void observe() {
         try {
             var backlog = mapper.backlog();
-            if (backlog == null) throw new IllegalStateException("Notification backlog is unavailable");
+            if (backlog == null) {
+                throw new IllegalStateException("Notification backlog is unavailable");
+            }
             metrics.backlog(backlog);
         } catch (RuntimeException failure) {
             metrics.failure(NotificationMetrics.Stage.BACKLOG);
@@ -70,7 +76,9 @@ public class NotificationDerivationService {
     }
 
     private void process(ClaimedEvent claim) {
-        if (claim.takeover()) metrics.takeover();
+        if (claim.takeover()) {
+            metrics.takeover();
+        }
         try {
             if (NotificationType.ignored(claim.kind())) {
                 transactions.ignore(claim, owner);
@@ -85,7 +93,9 @@ public class NotificationDerivationService {
             long cursor = claim.recipientCursor();
             for (int i = 0; i < properties.getMaxBatchesPerEvent(); i++) {
                 var batch = transactions.batch(claim, owner, type.get(), cursor);
-                if (batch.done()) return;
+                if (batch.done()) {
+                    return;
+                }
                 cursor = batch.cursor();
             }
             transactions.release(claim, owner);

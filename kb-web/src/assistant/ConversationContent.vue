@@ -14,10 +14,15 @@ import KbAlert from '../ui/KbAlert.vue';
 import KbDialog from '../ui/KbDialog.vue';
 import CitationDrawer from '../CitationDrawer.vue';
 import type { Citation, Conversation, Turn, TurnPage } from '../types';
+import { lazyPage } from '../routing/lazyPage';
+import { savedFeedbackQuestion, useGapFeedback } from '../knowledgeGaps/feedback';
+
+const GapFeedbackDialog = lazyPage(() => import('../knowledgeGaps/GapFeedbackDialog.vue'));
 
 const props = defineProps<{ conversationId: string }>();
 const emit = defineEmits<{ deleted: [] }>();
 const auth = useSession();
+const gapFeedback = useGapFeedback(() => props.conversationId);
 const query = useResource(async signal => {
   const id = positiveId(props.conversationId);
   const [meta, history] = await Promise.all([auth.session.json<Conversation>(`/api/conversations/${id}`, { signal }, false),
@@ -39,6 +44,7 @@ function dispose() {
   reconciliation?.abort();
 }
 function quarantine() {
+  gapFeedback.close();
   dispose();
   quarantined.value = true; temporary.value = null; turns.value = []; citation.value = null; question.value = '';
   binding.value = undefined; lock = false; running.value = false;
@@ -152,6 +158,7 @@ async function send(fresh: boolean) {
   }
 }
 function refresh() {
+  gapFeedback.close();
   quarantined.value = false;
   query.reload();
 }
@@ -214,7 +221,10 @@ async function remove() {
     <ElButton :disabled="running" @click="refresh">刷新历史</ElButton><ElButton type="danger" plain :disabled="deleting || !query.data" @click="confirmDelete = true">删除会话</ElButton></div>
   <Feedback :loading="query.loading" :error="query.error" :retry="query.reload" />
   <template v-if="!query.loading && !query.error && !quarantined">
-    <TurnCard v-for="turn in turns" :key="turn.id" :value="turn" @open="citation = $event" />
+    <section v-for="turn in turns" :key="turn.id" aria-label="已保存问答轮次">
+      <TurnCard :value="turn" @open="citation = $event" />
+      <ElButton v-if="savedFeedbackQuestion(turn) !== null" @click="gapFeedback.open(savedFeedbackQuestion(turn)!)">反馈此提问</ElButton>
+    </section>
     <ElButton v-if="cursor != null" :loading="paging" @click="more">更多轮次</ElButton>
     <article v-if="temporary" class="turn"><div class="question"><SafeText :text="temporary.question" /></div><p class="muted">生成中 · 内容尚待保存确认</p>
       <SafeText :text="temporary.text" /><References :citations="temporary.citations" @open="citation = $event" /></article>
@@ -231,4 +241,5 @@ async function remove() {
     <template #footer><ElButton @click="cancelDelete">取消</ElButton><ElButton type="danger" :loading="deleting" @click="remove">删除会话</ElButton></template>
   </KbDialog>
   <CitationDrawer :citation="query.data && !quarantined ? citation : null" @close="citation = null" />
+  <GapFeedbackDialog v-if="gapFeedback.description !== null" source="CONVERSATION" :initial-description="gapFeedback.description" @close="gapFeedback.close" />
 </template>

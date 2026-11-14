@@ -43,5 +43,6 @@ public interface NotificationDerivationMapper {
                  @Param("status") String status, @Param("errorClass") String errorClass,
                  @Param("delaySeconds") long delaySeconds);
 
+    /** 两类完整来源一次聚合，未发现的 projection 视作 PENDING；不返回或读取源正文。 */
     NotificationBacklog backlog();
 }

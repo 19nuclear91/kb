@@ -33,14 +33,18 @@ public class NotificationMetrics {
         takeovers = registry.counter("kb.notification.derivation.takeovers");
         readMismatches = registry.counter("kb.notification.read.mismatch");
         discovery = registry.timer("kb.notification.derivation.discover");
-        for (var stage : Stage.values())
+        for (var stage : Stage.values()) {
             failures.put(stage, registry.counter("kb.notification.derivation.failures", "stage", stage.name().toLowerCase()));
+        }
     }
 
     public void backlog(NotificationBacklog backlog) {
-        pending.set(Math.max(0, backlog.pending()));
-        waitingSource.set(Math.max(0, backlog.waitingSource()));
-        oldestAge.set(Math.max(0, backlog.oldestAgeSeconds()));
+        if (backlog == null || backlog.pending() < 0 || backlog.waitingSource() < 0 || backlog.oldestAgeSeconds() < 0) {
+            throw new IllegalArgumentException("Notification backlog is inconsistent");
+        }
+        pending.set(backlog.pending());
+        waitingSource.set(backlog.waitingSource());
+        oldestAge.set(backlog.oldestAgeSeconds());
     }
 
     public void takeover() {

@@ -30,4 +30,12 @@ class ProductionSettingsCollectorTest {
                 .containsEntry("management.tracing.enabled", "false")
                 .doesNotContainKey("unrelated.secret");
     }
+
+    @Test
+    void preservesKnowledgeGapMapperAndIndexedGroupOverrides() {
+        var values = Map.of("logging.level.com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper", "TRACE",
+                "logging.group.gapSql[0]", "com.zhishiku.kb.app.knowledgegap.mapper",
+                "logging.level.gapSql", "DEBUG");
+        assertThat(ProductionSettingsCollector.collect(values.keySet(), values::get)).containsAllEntriesOf(values);
+    }
 }

@@ -82,11 +82,14 @@ async function more() {
     <ul v-if="items.length" class="notification-list"><li v-for="item in items" :key="item.notificationId"><ElSpace wrap>
       <ElTag :type="item.readAt ? 'info' : 'primary'">{{ item.readAt ? '已读' : '未读' }}</ElTag>
       <span>{{ notificationLabels[item.type] }}</span>
-      <span class="muted">{{ new Date(item.createdAt).toLocaleString('zh-CN') }} · 文档 {{ item.target.documentId }} · 版本 {{ item.target.versionId }}</span>
+      <span class="muted">{{ new Date(item.createdAt).toLocaleString('zh-CN') }}
+        <template v-if="item.target.kind === 'KNOWLEDGE_GAP'"> · 问题 {{ item.target.gapId }}</template>
+        <template v-else> · 文档 {{ item.target.documentId }} · 版本 {{ item.target.versionId }}</template>
+      </span>
       <ElButton @click="opened = item">打开目标</ElButton>
       <ElButton v-if="!item.readAt" :loading="receipts[item.notificationId] === 'sending'" :disabled="receipts[item.notificationId] === 'sending'" @click="read(item.notificationId)">{{ receipts[item.notificationId] === 'uncertain' || receipts[item.notificationId] === 'failed' ? '重试标记已读' : '标记已读' }}</ElButton>
     </ElSpace>
-      <KbAlert v-if="receipts[item.notificationId] === 'uncertain'" type="warning" title="已读结果待核对：可重试同一条标记，或刷新通知确认。这不表示审核已处理。" />
+      <KbAlert v-if="receipts[item.notificationId] === 'uncertain'" type="warning" title="已读结果待核对：可重试同一条标记，或刷新通知确认。这不表示业务已处理或问题已解决。" />
       <KbAlert v-if="receipts[item.notificationId] === 'failed'" type="error" title="标记已读未完成，请稍后重试。" />
     </li></ul>
     <ElEmpty v-else description="暂无可见通知" />

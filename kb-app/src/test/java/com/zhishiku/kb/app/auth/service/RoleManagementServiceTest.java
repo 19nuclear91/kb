@@ -15,6 +15,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -116,6 +117,24 @@ class RoleManagementServiceTest {
         assertThat(result.permissions()).containsExactly("identity:user:read");
         verify(audit).success(eq(AuditScope.ROLE_RENAME), eq("rename"), eq(1L), eq(3L), eq("rename_role"), contains(
                 "读取者"), contains("新名称"));
+    }
+
+    @Test
+    void ordinaryRoleCanBeExplicitlyGrantedGapHandlingWithoutResourceAclWrites() {
+        var codes = new AtomicReference<List<String>>(List.of());
+        when(mapper.lockRole(3L)).thenReturn(new RoleRecord(3L, "READER", "读取者"));
+        when(mapper.findRolePermissions(3L)).thenAnswer(call -> codes.get());
+        when(mapper.grantPermission(3L, "knowledge:gap:handle")).thenAnswer(call -> {
+            codes.set(List.of("knowledge:gap:handle"));
+            return 1;
+        });
+        var result = service.setPermission(3L, "knowledge:gap:handle", true, 1L, "gap-role");
+        assertThat(result.code()).isEqualTo("READER");
+        assertThat(result.permissions()).containsExactly("knowledge:gap:handle");
+        verify(mapper).grantPermission(3L, "knowledge:gap:handle");
+        verify(mapper, never()).grantPermission(3L, "knowledge:gap:read");
+        verify(mapper, never()).renameRole(anyLong(), anyString());
+        verify(identities, never()).updateUserClearance(anyLong(), org.mockito.ArgumentMatchers.anyShort(), anyLong());
     }
 
     @ParameterizedTest

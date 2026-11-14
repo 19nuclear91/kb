@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.auth.mapper.KnowledgeGapAssigneeMapper">
+    <sql id="handlePermission">
+        EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role_permission rp ON rp.role_id = ur.role_id
+            WHERE ur.user_id = u.id AND rp.permission = 'knowledge:gap:handle')
+    </sql>
+    <resultMap id="candidate" type="com.zhishiku.kb.app.auth.model.KnowledgeGapAssigneeViews$Candidate">
+        <constructor>
+            <idArg column="user_id" javaType="_long"/>
+            <arg column="label" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+    <select id="candidates" resultMap="candidate" useCache="false" timeout="3">
+        SELECT u.id AS user_id, u.display_name AS label FROM sys_user u JOIN sys_dept d ON d.id = u.dept_id
+        WHERE u.enabled AND d.enabled AND NOT u.must_change_password AND <include refid="handlePermission"/>
+        <if test="like != null">AND u.display_name ILIKE #{like} ESCAPE E'\\'</if>
+        <if test="afterId != null">AND u.id &gt; #{afterId}</if>
+        ORDER BY u.id ASC LIMIT #{fetch}
+    </select>
+    <resultMap id="qualification" type="com.zhishiku.kb.app.auth.model.KnowledgeGapAssigneeViews$Qualification">
+        <constructor>
+            <idArg column="user_id" javaType="_long"/>
+            <arg column="enabled" javaType="_boolean"/>
+            <arg column="department_enabled" javaType="_boolean"/>
+            <arg column="password_change_required" javaType="_boolean"/>
+            <arg column="handle_permission" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <select id="qualification" resultMap="qualification" useCache="false" timeout="3">
+        SELECT u.id AS user_id, u.enabled, COALESCE(d.enabled, FALSE) AS department_enabled,
+            u.must_change_password AS password_change_required, <include refid="handlePermission"/> AS handle_permission
+        FROM sys_user u LEFT JOIN sys_dept d ON d.id = u.dept_id WHERE u.id = #{userId}
+    </select>
+</mapper>

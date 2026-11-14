@@ -15,9 +15,14 @@ import SearchFilterFields from './FilterFields.vue';
 import { useFavorites } from '../favorites/useFavorites';
 import FavoriteButton from '../favorites/FavoriteButton.vue';
 import type { Citation, Hit } from '../types';
+import { lazyPage } from '../routing/lazyPage';
+import { useGapFeedback } from '../knowledgeGaps/feedback';
+
+const GapFeedbackDialog = lazyPage(() => import('../knowledgeGaps/GapFeedbackDialog.vue'));
 
 const props = defineProps<{ maximum: number }>();
 const auth = useSession(), form = ref<FormInstance>(), values = reactive({ query: '' });
+const gapFeedback = useGapFeedback();
 const hits = shallowRef<Hit[] | null>(null), error = ref(''), loading = ref(false), invalid = ref(false);
 const citation = shallowRef<Citation | null>(null), draft = shallowRef(emptyFilterDraft());
 const submitted = shallowRef<{ query: string; summary: string } | null>(null);
@@ -40,6 +45,7 @@ const rules: FormRules = { query: [{ validator: (_, value: string, callback) => 
   callback(error ? new Error(error) : undefined);
 } }] };
 function clear() {
+  gapFeedback.close();
   request?.abort();
   hits.value = null; error.value = ''; loading.value = false; citation.value = null; submitted.value = null;
 }
@@ -71,6 +77,7 @@ async function search() {
   request = controller;
   const active = () => !controller.signal.aborted && request === controller && session.getSnapshot().epoch === epoch && session.getSnapshot().phase === 'ready';
   loading.value = true; hits.value = null; error.value = ''; citation.value = null;
+  gapFeedback.close();
   submitted.value = { query, summary: filterSummary(draft.value) };
   try {
     const result = await searchApi.search(session, query, filters, controller.signal);
@@ -96,7 +103,9 @@ async function search() {
     <SearchFilterFields :value="draft" @change="draft = $event" />
   </ElForm><div class="muted">搜索词最多 {{ maximum }} 个字符 · 每次最多显示 20 条相关片段 · 搜索内容仅在本页使用</div></section>
   <Feedback :loading="loading" :error="error" />
-  <section v-if="submitted" class="panel" aria-label="已提交条件"><h2>已提交条件</h2><SafeText :text="submitted.query" /><p>{{ submitted.summary }}</p></section>
+  <section v-if="submitted" class="panel" aria-label="已提交条件"><h2>已提交条件</h2><SafeText :text="submitted.query" /><p>{{ submitted.summary }}</p>
+    <ElButton @click="gapFeedback.open(submitted.query)">反馈知识需求</ElButton>
+  </section>
   <section v-if="visible" class="panel">
     <ElEmpty v-if="!visible.length" description="当前条件下未找到可用结果" />
     <template v-else><h2>相关片段 <span class="muted">{{ visible.length }} 条</span></h2>
@@ -108,4 +117,5 @@ async function search() {
     </template>
   </section>
   <CitationDrawer :citation="currentCitation" @close="citation = null" />
+  <GapFeedbackDialog v-if="gapFeedback.description !== null" source="SEARCH" :initial-description="gapFeedback.description" @close="gapFeedback.close" />
 </template>

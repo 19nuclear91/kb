@@ -19,18 +19,38 @@ import java.io.IOException;
 public class NotificationResponseFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !NotificationEndpoints.matches(request.getRequestURI());
+        return !NotificationEndpoints.matches(PrivateApiResponse.path(request));
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        response.setHeader("Cache-Control", "no-store");
+        var protectedResponse = PrivateApiResponse.wrap(response);
         HttpServletRequest input = request;
         if ("PUT".equals(request.getMethod())) {
             // 在表单过滤器消费正文前记录至多一个字节，供控制器判定原正文是否非空。
             input = new ContentCachingRequestWrapper(request, 1);
         }
-        chain.doFilter(input, response);
+        try {
+            chain.doFilter(input, protectedResponse);
+        } finally {
+            response.setHeader("Cache-Control", "no-store");
+        }
+    }
+
+    @Override
+    protected boolean shouldNotFilterErrorDispatch() {
+        return false;
+    }
+
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return false;
+    }
+
+    @Override
+    protected void doFilterNestedErrorDispatch(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+        doFilterInternal(request, response, chain);
     }
 }

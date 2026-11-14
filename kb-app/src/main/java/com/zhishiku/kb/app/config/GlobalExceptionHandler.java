@@ -2,9 +2,11 @@ package com.zhishiku.kb.app.config;
 
 import cn.dev33.satoken.exception.SaTokenException;
 import com.zhishiku.kb.app.search.model.SearchFailure;
+import com.zhishiku.kb.app.knowledgegap.web.KnowledgeGapAdvice;
 import com.zhishiku.kb.common.api.ApiException;
 import com.zhishiku.kb.common.api.R;
 import com.zhishiku.kb.common.security.IdentityException;
+import com.zhishiku.kb.common.security.KnowledgeGapEndpoints;
 import com.zhishiku.kb.common.security.SearchEndpoints;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -40,6 +42,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(SearchFailure.class)
     public ResponseEntity<R<Void>> handleSearch(SearchFailure failure) {
+        if (isKnowledgeGapRequest()) {
+            return KnowledgeGapAdvice.project(failure);
+        }
         log.warn("搜索处理失败 stage=search category={} status={}", failure.kind(), failure.status());
         var response = ResponseEntity.status(failure.status()).header("Cache-Control", "no-store");
         if (failure.retryAfter() > 0) {
@@ -50,6 +55,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IdentityException.class)
     public ResponseEntity<R<Void>> handleIdentity(IdentityException e) {
+        if (isKnowledgeGapRequest()) {
+            return KnowledgeGapAdvice.project(e);
+        }
         if (isSearchRequest()) {
             log.debug("搜索身份校验失败 stage=identity category={} status={}", e.errorCode(), e.httpStatus());
             return response(e.httpStatus()).body(R.fail("搜索访问被拒绝"));
@@ -60,6 +68,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<R<Void>> handleApi(ApiException e) {
+        if (isKnowledgeGapRequest()) {
+            return KnowledgeGapAdvice.project(e);
+        }
         if (isSearchRequest()) {
             log.warn("搜索处理失败 stage=api status={}", e.httpStatus());
             return response(e.httpStatus()).body(R.fail("搜索请求处理失败"));
@@ -77,33 +88,51 @@ public class GlobalExceptionHandler {
             MissingRequestHeaderException.class,
             MissingServletRequestPartException.class})
     public ResponseEntity<R<Void>> handleInvalidRequest(Exception e) {
+        if (isKnowledgeGapRequest()) {
+            return KnowledgeGapAdvice.project(ApiException.badRequest("知识问题单请求无效"));
+        }
         // 不回显校验对象，密码或请求正文可能包含在异常消息里。
         return response(400).body(R.fail("请求参数或请求体无效"));
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<R<Void>> handleUploadTooLarge(Exception e) {
+        if (isKnowledgeGapRequest()) {
+            return KnowledgeGapAdvice.project(new MaxUploadSizeExceededException(0));
+        }
         return response(413).body(R.fail(isSearchRequest() ? "搜索请求过大" : "文件超过上传大小限制"));
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<R<Void>> handleMethodNotAllowed(Exception e) {
+        if (isKnowledgeGapRequest()) {
+            return KnowledgeGapAdvice.project(e);
+        }
         return response(405).body(R.fail("不支持该请求方法"));
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<R<Void>> handleUnsupportedMediaType(Exception e) {
+        if (isKnowledgeGapRequest()) {
+            return KnowledgeGapAdvice.project(e);
+        }
         return response(415).body(R.fail("不支持该媒体类型"));
     }
 
     @ExceptionHandler({NoResourceFoundException.class,
             NoHandlerFoundException.class})
     public ResponseEntity<R<Void>> handleNotFound(Exception e) {
+        if (isKnowledgeGapRequest()) {
+            return KnowledgeGapAdvice.project(e);
+        }
         return response(404).body(R.fail("请求的资源不存在"));
     }
 
     @ExceptionHandler(SaTokenException.class)
     public ResponseEntity<R<Void>> handleAuth(SaTokenException e) {
+        if (isKnowledgeGapRequest()) {
+            return KnowledgeGapAdvice.project(e);
+        }
         if (isSearchRequest()) {
             log.debug("搜索认证失败 stage=auth category=unauthorized status=401");
         } else {
@@ -118,6 +147,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<R<Void>> handleOther(Exception e) {
+        if (isKnowledgeGapRequest()) {
+            return KnowledgeGapAdvice.project(e);
+        }
         if (isSearchRequest()) {
             log.error("搜索处理失败 stage=unhandled category=internal status=500");
         } else {
@@ -136,8 +168,16 @@ public class GlobalExceptionHandler {
         return false;
     }
 
+    private static boolean isKnowledgeGapRequest() {
+        return RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes
+                && KnowledgeGapEndpoints.matches(PrivateApiResponse.path(attributes.getRequest()));
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<R<Void>> handleStatus(ResponseStatusException error) {
+        if (isKnowledgeGapRequest()) {
+            return KnowledgeGapAdvice.project(error);
+        }
         return ResponseEntity.status(error.getStatusCode()).header("Cache-Control", "no-store")
                 .body(R.fail(isSearchRequest() ? "搜索请求未被接受" : "会话请求未被接受"));
     }

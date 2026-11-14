@@ -3,6 +3,7 @@ package com.zhishiku.kb.app.notification;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.zhishiku.kb.app.notification.model.ClaimedEvent;
+import com.zhishiku.kb.app.notification.model.GapNotificationFact;
 import com.zhishiku.kb.app.notification.model.NotificationRow;
 import com.zhishiku.kb.app.notification.model.NotificationTarget;
 import com.zhishiku.kb.app.notification.model.NotificationType;
@@ -28,7 +29,7 @@ class NotificationModelTest {
     void notificationModelsHaveNoContentOrCredentialComponents() {
         for (Class<?> type : List.of(NotificationViews.Item.class, NotificationViews.Page.class,
                 NotificationViews.UnreadCount.class, NotificationViews.ReadReceipt.class, NotificationTarget.class,
-                NotificationRow.class, ClaimedEvent.class)) {
+                NotificationRow.class, ClaimedEvent.class, GapNotificationFact.class)) {
             for (RecordComponent component : type.getRecordComponents()) {
                 String name = component.getName().toLowerCase();
                 // claimToken 是租约代次而非凭据，且只在派生内部使用，不进入 API。
@@ -92,7 +93,7 @@ class NotificationModelTest {
             assertThat(NotificationType.fromSource(kind)).isEmpty();
         }
         assertThat(InMemoryNotificationStore.NOTIFICATION_TYPES)
-                .containsExactlyInAnyOrderElementsOf(Arrays.stream(NotificationType.values()).map(Enum::name).toList());
+                .containsExactlyInAnyOrderElementsOf(Arrays.stream(NotificationType.values()).filter(type -> !type.knowledgeGap()).map(Enum::name).toList());
     }
 
     @Test

@@ -1,7 +1,7 @@
 package com.zhishiku.kb.app.notification;
 
 import com.zhishiku.kb.app.collaboration.mapper.CollaborationEventMapper;
-import com.zhishiku.kb.app.notification.mapper.NotificationDerivationMapper;
+import com.zhishiku.kb.app.notification.mapper.GapNotificationDerivationMapper;
 import com.zhishiku.kb.app.notification.model.ClaimedEvent;
 import com.zhishiku.kb.app.notification.model.NotificationBacklog;
 import com.zhishiku.kb.common.review.CollaborationEvent;
@@ -25,7 +25,7 @@ import java.util.function.Consumer;
  * 派生仓储的内存替身：按迁移脚本与 Mapper XML 约定复刻分支语义，时间由虚拟时钟推进。
  * 只用于验证服务分支，不证明真实提交原子性、行锁、SKIP LOCKED 或多实例互斥。
  */
-final class InMemoryNotificationStore implements NotificationDerivationMapper {
+final class InMemoryNotificationStore implements GapNotificationDerivationMapper {
     static final Set<String> NOTIFICATION_TYPES = Set.of("REVIEW_SUBMITTED", "REVIEW_APPROVED", "REVIEW_REJECTED",
             "COMMENT_REPLIED");
     Instant now = Instant.parse("2026-10-25T00:00:00Z");
@@ -37,6 +37,15 @@ final class InMemoryNotificationStore implements NotificationDerivationMapper {
     private Map<UUID, Projection> projections = new LinkedHashMap<>();
     private Map<String, Delivered> notifications = new LinkedHashMap<>();
     private long nextId = 1;
+    private final Set<String> notificationTypes;
+
+    InMemoryNotificationStore() {
+        this(NOTIFICATION_TYPES);
+    }
+
+    InMemoryNotificationStore(Set<String> notificationTypes) {
+        this.notificationTypes = Set.copyOf(notificationTypes);
+    }
 
     /**
      * 源协作事实，派生过程只读。
@@ -247,7 +256,7 @@ final class InMemoryNotificationStore implements NotificationDerivationMapper {
     public int deliver(UUID eventId, String type, List<Long> users) {
         calls.add("deliver");
         fault.accept("deliver");
-        if (!NOTIFICATION_TYPES.contains(type)) {
+        if (!notificationTypes.contains(type)) {
             throw new IllegalStateException("type check constraint");
         }
         if (!events.get(eventId).kind().equals(type)) {
@@ -318,10 +327,10 @@ final class InMemoryNotificationStore implements NotificationDerivationMapper {
     public NotificationBacklog backlog() {
         calls.add("backlog");
         fault.accept("backlog");
-        long pending = projections.values().stream().filter(p -> "PENDING".equals(p.status)).count();
+        long pending = events.keySet().stream().filter(id -> projections.get(id) == null || "PENDING".equals(projections.get(id).status)).count();
         long waiting = projections.values().stream().filter(p -> "WAITING_SOURCE".equals(p.status)).count();
-        long oldest = projections.entrySet().stream().filter(entry -> !"DONE".equals(entry.getValue().status))
-                .map(entry -> events.get(entry.getKey()).occurredAt()).min(Comparator.naturalOrder())
+        long oldest = events.values().stream().filter(event -> projections.get(event.id()) == null || !"DONE".equals(projections.get(event.id()).status))
+                .map(Event::occurredAt).min(Comparator.naturalOrder())
                 .map(time -> Math.max(0, Duration.between(time, now).toSeconds())).orElse(0L);
         return new NotificationBacklog(pending, waiting, oldest);
     }

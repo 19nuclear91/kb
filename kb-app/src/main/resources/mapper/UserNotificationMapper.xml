@@ -9,7 +9,7 @@
 -->
 <mapper namespace="com.zhishiku.kb.app.notification.mapper.UserNotificationMapper">
     <!-- 每条本人通知的最小事实：只投影固定状态和授权判定，不读标题、文件名、意见或原因。 -->
-    <sql id="facts">
+    <sql id="documentFacts">
         <bind name="aclPermission" value="'view'"/>
         SELECT n.id, n.notification_id, n.recipient_user_id, n.type, n.created_at, n.read_at,
             e.doc_id AS document_id, e.version_id, e.review_id, e.round_no,
@@ -26,7 +26,12 @@
             (<include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
                 AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.currentViewGrant"/>
                 AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.commentTargetEvidence"/>) AS discussable,
-            <include refid="com.zhishiku.kb.app.comment.mapper.DocumentCommentMapper.liveReply"/> AS reply_readable
+            <include refid="com.zhishiku.kb.app.comment.mapper.DocumentCommentMapper.liveReply"/> AS reply_readable,
+            NULL::bigint AS gap_id, NULL::uuid AS gap_event_id, NULL::text AS gap_event_kind, NULL::text AS gap_state,
+            NULL::bigint AS gap_version, NULL::bigint AS gap_reporter_user_id, NULL::bigint AS gap_assignee_user_id,
+            NULL::bigint AS gap_assignment_epoch, NULL::bigint AS gap_event_assignment_epoch,
+            NULL::uuid AS gap_queue_event_id, NULL::uuid AS gap_pending_solution_id, NULL::uuid AS gap_event_solution_id,
+            NULL::bigint AS gap_event_result_version, NULL::boolean AS gap_visible, NULL::boolean AS gap_work_current
         FROM kb_user_notification n
         JOIN kb_collaboration_event e ON e.event_id = n.event_id
         JOIN kb_document d ON d.id = e.doc_id
@@ -44,6 +49,35 @@
         </choose>
     </sql>
 
+    <sql id="gapFacts">
+        <bind name="actor" value="userId"/>
+        SELECT n.id, n.notification_id, n.recipient_user_id, n.type, n.created_at, n.read_at,
+            NULL::bigint AS document_id, NULL::bigint AS version_id, NULL::uuid AS review_id, NULL::integer AS round_no,
+            FALSE AS live, FALSE AS cleared, FALSE AS viewable, FALSE AS actionable,
+            NULL::text AS round_state, NULL::bigint AS round_submitted_by, FALSE AS round_in_space,
+            NULL::bigint AS uploader_user_id, NULL::text AS publication_policy, NULL::text AS publication_evidence,
+            NULL::uuid AS comment_id, FALSE AS discussable, FALSE AS reply_readable,
+            g.id AS gap_id, e.event_id AS gap_event_id, e.kind AS gap_event_kind, g.state AS gap_state,
+            g.version AS gap_version, g.reporter_user_id AS gap_reporter_user_id, g.assignee_user_id AS gap_assignee_user_id,
+            g.assignment_epoch AS gap_assignment_epoch, e.assignment_epoch AS gap_event_assignment_epoch,
+            g.queue_event_id AS gap_queue_event_id, g.pending_solution_id AS gap_pending_solution_id,
+            e.solution_id AS gap_event_solution_id, e.result_version AS gap_event_result_version,
+            (<include refid="com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper.visible"/>) AS gap_visible,
+            COALESCE(<include refid="com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper.notificationWorkCurrent"/>, FALSE) AS gap_work_current
+        FROM kb_user_notification n JOIN kb_knowledge_gap_event e ON e.event_id = n.gap_event_id
+        JOIN kb_knowledge_gap g ON g.id = e.gap_id
+        WHERE n.recipient_user_id = #{userId} AND n.type = e.kind AND
+        <choose>
+            <when test="types != null and types.size() > 0">
+                n.type IN <foreach collection="types" item="t" open="(" separator="," close=")">#{t}</foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+    </sql>
+    <sql id="facts">
+        <include refid="documentFacts"/> UNION ALL <include refid="gapFacts"/>
+    </sql>
+
     <!--
       REVIEW_SUBMITTED：收件人当前可处理该轮次，条件与审核工作台待办相同（pendingReviewer）。
       REVIEW_APPROVED/REJECTED：本人为本轮送审者、轮次结果未变，且当前可交互读取该固定版本。
@@ -51,13 +85,34 @@
       未注册解析器的类型不在 types 中，不可见。
     -->
     <sql id="visible">
-        f.live AND f.cleared AND (
+        (f.gap_id IS NULL AND f.live AND f.cleared AND (
             (f.type = 'REVIEW_SUBMITTED' AND f.actionable)
             OR (f.type IN ('REVIEW_APPROVED', 'REVIEW_REJECTED') AND f.viewable
                 AND f.round_submitted_by = f.recipient_user_id
                 AND ('REVIEW_' || f.round_state) = f.type)
-            OR (f.type = 'COMMENT_REPLIED' AND f.discussable AND f.reply_readable))
+            OR (f.type = 'COMMENT_REPLIED' AND f.discussable AND f.reply_readable)))
+        OR (f.gap_id IS NOT NULL AND f.gap_visible AND f.gap_work_current)
     </sql>
+
+    <resultMap id="gapFact" type="com.zhishiku.kb.app.notification.model.GapNotificationFact">
+        <constructor>
+            <idArg column="gap_id" javaType="java.lang.Long"/>
+            <arg column="gap_event_id" javaType="java.util.UUID" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+            <arg column="gap_event_kind" javaType="java.lang.String"/>
+            <arg column="gap_state" javaType="java.lang.String"/>
+            <arg column="gap_version" javaType="java.lang.Long"/>
+            <arg column="gap_reporter_user_id" javaType="java.lang.Long"/>
+            <arg column="gap_assignee_user_id" javaType="java.lang.Long"/>
+            <arg column="gap_assignment_epoch" javaType="java.lang.Long"/>
+            <arg column="gap_event_assignment_epoch" javaType="java.lang.Long"/>
+            <arg column="gap_queue_event_id" javaType="java.util.UUID" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+            <arg column="gap_pending_solution_id" javaType="java.util.UUID" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+            <arg column="gap_event_solution_id" javaType="java.util.UUID" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+            <arg column="gap_event_result_version" javaType="java.lang.Long"/>
+            <arg column="gap_visible" javaType="java.lang.Boolean"/>
+            <arg column="gap_work_current" javaType="java.lang.Boolean"/>
+        </constructor>
+    </resultMap>
 
     <resultMap id="row" type="com.zhishiku.kb.app.notification.model.NotificationRow">
         <constructor>
@@ -67,8 +122,8 @@
             <arg column="type" javaType="java.lang.String"/>
             <arg column="created_at" javaType="java.time.Instant"/>
             <arg column="read_at" javaType="java.time.Instant"/>
-            <arg column="document_id" javaType="_long"/>
-            <arg column="version_id" javaType="_long"/>
+            <arg column="document_id" javaType="java.lang.Long"/>
+            <arg column="version_id" javaType="java.lang.Long"/>
             <arg column="review_id" javaType="java.util.UUID"/>
             <arg column="round_no" javaType="java.lang.Integer"/>
             <arg column="live" javaType="_boolean"/>
@@ -84,19 +139,20 @@
             <arg column="comment_id" javaType="java.util.UUID"/>
             <arg column="discussable" javaType="_boolean"/>
             <arg column="reply_readable" javaType="_boolean"/>
+            <arg resultMap="gapFact" javaType="com.zhishiku.kb.app.notification.model.GapNotificationFact"/>
         </constructor>
     </resultMap>
 
     <select id="list" resultMap="row" useCache="false" timeout="10">
-        SELECT f.* FROM (<include refid="facts"/>
-            <if test="beforeId != null">AND n.id &lt; #{beforeId}</if>) f
-        WHERE <include refid="visible"/>
+        SELECT f.* FROM (<include refid="facts"/>) f
+        WHERE (<include refid="visible"/>)
+        <if test="beforeId != null">AND f.id &lt; #{beforeId}</if>
         ORDER BY f.id DESC LIMIT #{limit}
     </select>
 
     <select id="countUnread" resultType="long" useCache="false" timeout="10">
-        SELECT count(*) FROM (<include refid="facts"/> AND n.read_at IS NULL) f
-        WHERE <include refid="visible"/>
+        SELECT count(*) FROM (<include refid="facts"/>) f
+        WHERE (<include refid="visible"/>) AND f.read_at IS NULL
     </select>
 
     <resultMap id="receipt" type="com.zhishiku.kb.app.notification.model.NotificationViews$ReadReceipt">

@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { h as vnode, nextTick, reactive } from 'vue';
 import { flushPromises } from '@vue/test-utils';
-import { fireEvent, screen, waitFor } from '@testing-library/vue';
+import { fireEvent, screen, waitFor, within } from '@testing-library/vue';
 import { mountRouter } from '../test/app';
 import { ApiError } from '../api';
 import { deferred } from '../test/fixtures';
@@ -119,6 +119,37 @@ it('回复通知打开固定版本的评论目标，不调用审核面板，也�
   show(); await fireEvent.click(await screen.findByRole('button', { name: '打开目标' }));
   expect(await screen.findByText('评论目标 10/21/' + comment)).toBeTruthy(); expect(h.panels).toHaveLength(0);
   expect(h.comments).toEqual([{ documentId: '10', versionId: '21', commentId: comment }]); expect(puts()).toHaveLength(0);
+});
+
+it('同页混合审核、回复和问题通知时分别匹配目标，显式已读不改变业务', async () => {
+  const comment = 'cccccccc-0000-0000-0000-000000000005', gapId = '9007199254740993';
+  routes(() => page([item(1), {
+    ...item(2, 'COMMENT_REPLIED'),
+    target: { kind: 'DOCUMENT_VERSION_COMMENT', documentId: '10', versionId: '21', reviewId: null, commentId: comment },
+  }, { ...item(3, 'GAP_ASSIGNED'), target: { kind: 'KNOWLEDGE_GAP', gapId } }]),
+  () => ({ notificationId: id(3), readAt: '2026-10-25T01:00:00Z' }));
+  const view = show();
+  await screen.findByText('有知识问题分派给你');
+  expect(screen.getByText('有版本等待你审核')).toBeTruthy();
+  expect(screen.getByText('你的评论有新回复')).toBeTruthy();
+  expect(document.body.textContent).not.toContain('源标题');
+  const rows = screen.getAllByRole('listitem');
+  expect(rows).toHaveLength(3);
+  await fireEvent.click(within(rows[0]).getByRole('button', { name: '打开目标' }));
+  await screen.findByText('固定版本 21 审核面板');
+  await fireEvent.click(within(rows[1]).getByRole('button', { name: '打开目标' }));
+  await screen.findByText('评论目标 10/21/' + comment);
+  expect(h.panels).toHaveLength(1);
+  expect(h.comments).toEqual([{ documentId: '10', versionId: '21', commentId: comment }]);
+  expect(puts()).toHaveLength(0);
+  await fireEvent.click(within(rows[2]).getByRole('button', { name: '标记已读' }));
+  await waitFor(() => expect(within(rows[2]).queryByRole('button', { name: '标记已读' })).toBeNull());
+  expect(puts()).toHaveLength(1);
+  expect(puts()[0][0]).toBe(`/api/notifications/${id(3)}/read`);
+  await fireEvent.click(within(rows[2]).getByRole('button', { name: '打开目标' }));
+  await waitFor(() => expect(view.router.currentRoute.value.path).toBe(`/knowledge-gaps/${gapId}`));
+  expect(puts()).toHaveLength(1);
+  expect(h.json.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
 });
 
 it('账号切换后旧列表迟到不进入新身份，并取消旧请求', async () => {

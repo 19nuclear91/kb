@@ -11,6 +11,9 @@ export const routes = {
   search: ['src/pages/SearchPage.vue'], favorites: ['src/pages/FavoritesPage.vue'],
   reviews: ['src/pages/ReviewsPage.vue'], notifications: ['src/pages/NotificationsPage.vue'],
   imports: ['src/pages/ImportsPage.vue'], importDetail: ['src/pages/ImportDetailPage.vue'],
+  knowledgeGapList: ['src/pages/KnowledgeGapsPage.vue'], knowledgeGapNew: ['src/pages/KnowledgeGapNewPage.vue'],
+  knowledgeGapDetail: ['src/pages/KnowledgeGapDetailPage.vue'], knowledgeGapFeedback: ['src/knowledgeGaps/GapFeedbackDialog.vue'],
+  knowledgeGapQueue: ['src/admin/KnowledgeGapQueuePage.vue'], knowledgeGapReception: ['src/admin/KnowledgeGapReceptionPage.vue'],
   assistant: ['src/pages/AssistantPage.vue'], lifecycle: ['src/admin/lifecycle/LifecyclePage.vue'],
   users: ['src/admin/UsersPage.vue'], departments: ['src/admin/DepartmentsPage.vue'],
   roles: ['src/admin/RolesPage.vue'], spaces: ['src/admin/SpacesPage.vue'],
@@ -103,6 +106,10 @@ export function checkIsolation(report) {
     if (list.has(id)) fail(`列表包含详情专用模块: ${id}`);
   }
   if ([...entry, ...list].some(id => id.startsWith('src/imports/'))) fail('入口或文档列表提前包含导入实现');
+  // 导航可使用极小的地址白名单助手；其余问题 API、表单、正文及反馈实现都必须留在异步业务集合。
+  if ([...entry, ...login, ...list].some(id => id.startsWith('src/knowledgeGaps/') && id !== 'src/knowledgeGaps/routes.ts')) {
+    fail('入口、登录或文档列表提前包含知识问题实现');
+  }
   const adminPages = Object.values(routes).flat().filter(id => id.startsWith('src/admin/'));
   const userPages = Object.values(routes).flat().filter(id => id.startsWith('src/pages/') && !['login', 'password', 'sso'].some(name => routes[name].includes(id)));
   for (const [name, ids] of Object.entries(routes)) {

@@ -17,6 +17,7 @@ import cn.dev33.satoken.strategy.SaStrategy;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhishiku.kb.common.api.R;
+import com.zhishiku.kb.gateway.filter.KnowledgeGapResponsePolicy;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,7 +29,10 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.util.AntPathMatcher;
+import reactor.core.publisher.Mono;
 
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -128,6 +132,28 @@ class SaTokenGatewayConfigTest {
 
     private static boolean matchesAny(List<String> patterns, String path) {
         return patterns.stream().anyMatch(p -> MATCHER.match(p, path));
+    }
+
+    @Test
+    void gapAuthenticationFailuresUseJson401AndNoStoreWithoutRedis() {
+        for (String path : List.of("/api/knowledge-gaps", "/api/knowledge-gaps/1/notes", "/api/admin/knowledge-gaps/1/assign")) {
+            var exchange = MockServerWebExchange.from(MockServerHttpRequest.post(path));
+            new KnowledgeGapResponsePolicy().filter(exchange, current -> {
+                SaReactorSyncHolder.setContext(current);
+                try {
+                    Assertions.assertThatThrownBy(() -> filter.auth.run(null)).isInstanceOf(NotLoginException.class);
+                    Object body = filter.error.run(new NotLoginException(NotLoginException.NOT_TOKEN_MESSAGE, NotLoginException.NOT_TOKEN, null));
+                    return current.getResponse().writeWith(Mono.just(current.getResponse().bufferFactory()
+                            .wrap(String.valueOf(body).getBytes(StandardCharsets.UTF_8))));
+                } finally {
+                    SaReactorSyncHolder.clearContext();
+                }
+            }).block(Duration.ofSeconds(1));
+            assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(exchange.getResponse().getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_JSON);
+            assertThat(exchange.getResponse().getHeaders().getCacheControl()).isEqualTo("no-store");
+            assertThat(exchange.getResponse().getBodyAsString().block()).contains("\"data\":null").doesNotContain("<html");
+        }
     }
 
     @Test

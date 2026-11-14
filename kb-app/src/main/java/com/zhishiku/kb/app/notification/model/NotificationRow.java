@@ -31,9 +31,25 @@ import java.util.UUID;
  * @param replyReadable 源事件是同一固定版本中仍未删除的回复，与评论模块同一 SQL 片段
  */
 public record NotificationRow(long id, UUID notificationId, long recipientUserId, String type, Instant createdAt,
-                              Instant readAt, long documentId, long versionId, UUID reviewId, Integer roundNo,
+                              Instant readAt, Long documentId, Long versionId, UUID reviewId, Integer roundNo,
                               boolean live, boolean cleared, boolean viewable, boolean actionable, String roundState,
                               Long roundSubmittedBy, boolean roundInSpace, Long uploaderUserId,
                               String publicationPolicy, String publicationEvidence, UUID commentId,
-                              boolean discussable, boolean replyReadable) {
+                              boolean discussable, boolean replyReadable, GapNotificationFact gap) {
+    /** 旧来源构造调用保持不变，资料与问题来源从不混合。 */
+    public NotificationRow(long id, UUID notificationId, long recipientUserId, String type, Instant createdAt,
+                           Instant readAt, long documentId, long versionId, UUID reviewId, Integer roundNo,
+                           boolean live, boolean cleared, boolean viewable, boolean actionable, String roundState,
+                           Long roundSubmittedBy, boolean roundInSpace, Long uploaderUserId, String publicationPolicy,
+                           String publicationEvidence, UUID commentId, boolean discussable, boolean replyReadable) {
+        this(id, notificationId, recipientUserId, type, createdAt, readAt, documentId, versionId, reviewId, roundNo,
+                live, cleared, viewable, actionable, roundState, roundSubmittedBy, roundInSpace, uploaderUserId,
+                publicationPolicy, publicationEvidence, commentId, discussable, replyReadable, null);
+    }
+
+    public static NotificationRow knowledgeGap(long id, UUID notificationId, long recipient, String type,
+                                               Instant createdAt, Instant readAt, GapNotificationFact gap) {
+        return new NotificationRow(id, notificationId, recipient, type, createdAt, readAt, null, null, null, null,
+                false, false, false, false, null, null, false, null, null, null, null, false, false, gap);
+    }
 }

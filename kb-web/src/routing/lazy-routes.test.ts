@@ -38,7 +38,7 @@ afterEach(() => { Reflect.deleteProperty(document, 'visibilityState'); });
 /** 对应 React 版的 useEffect 探针：挂载后及依赖变化时记录并读取当前目标。 */
 const Probe = defineComponent({ props: { name: { type: String, required: true } }, setup(props) {
   const auth = useSession(), route = useRoute();
-  const target = () => String(route.params.documentId ?? route.params.spaceId ?? route.params.importId ?? '');
+  const target = () => String(route.params.documentId ?? route.params.spaceId ?? route.params.importId ?? route.params.gapId ?? '');
   const run = () => {
     mounted(props.name, target(), auth.state.epoch, auth.state.me?.user.userId);
     void auth.session.json(`/api/probe/${props.name}/${target()}`).catch(() => {});
@@ -79,7 +79,7 @@ const expectOnly = (name: string) => {
   for (const other of registry.names.filter(value => value !== name)) expect(loaders[other]).not.toHaveBeenCalled();
 };
 
-it.each(['/documents/1', '/admin/users', '/imports', '/imports/9223372036854775807'])('地址 %s 在身份未确认、匿名、改密或故障时不调用加载器', async path => {
+it.each(['/documents/1', '/admin/users', '/imports', '/imports/9223372036854775807', '/knowledge-gaps', '/knowledge-gaps/new', '/knowledge-gaps/123'])('地址 %s 在身份未确认、匿名、改密或故障时不调用加载器', async path => {
   for (const options of [{ saved: false }, { identity: { ...me, mustChangePassword: true } },
     { identity: deferred<Response>().promise }, { identity: new Response(null, { status: 503 }) }]) {
     const h = harness(path, options);
@@ -123,6 +123,7 @@ it.each([['/documents/1', 'DocumentDetailPage', '文档 B'], ['/admin/spaces/1',
 it.each([
   ['/documents/1', 'DocumentDetailPage', 'password'], ['/documents/1', 'DocumentDetailPage', 'unavailable'], ['/documents/1', 'DocumentDetailPage', 'hidden'],
   ['/admin/users', 'UsersPage', 'password'], ['/admin/users', 'UsersPage', 'unavailable'], ['/admin/users', 'UsersPage', 'hidden'],
+  ['/knowledge-gaps/123', 'KnowledgeGapDetailPage', 'password'], ['/knowledge-gaps/123', 'KnowledgeGapDetailPage', 'unavailable'], ['/knowledge-gaps/123', 'KnowledgeGapDetailPage', 'hidden'],
 ])('下载 %s 期间进入 %s/%s 后迟到成功不能挂载旧页面', async (path, name, phase) => {
   const h = harness(path); await waitFor(() => expect(loaders[name]).toHaveBeenCalled());
   if (phase === 'hidden') {
@@ -137,7 +138,7 @@ it.each([
     h.identity({ ...me, user: { ...me.user, userId: '2' } });
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
     document.dispatchEvent(new Event('visibilitychange')); await flushPromises();
-    await screen.findByRole('heading', { name: `${name}:${name === 'DocumentDetailPage' ? '1' : ''}` });
+    await screen.findByRole('heading', { name: `${name}:${name === 'DocumentDetailPage' ? '1' : name === 'KnowledgeGapDetailPage' ? '123' : ''}` });
     expect(mounted.mock.calls.every(([, , , user]) => user === '2')).toBe(true);
   }
 });
@@ -194,4 +195,15 @@ it.each([['/imports', 'ImportsPage'], ['/imports/9223372036854775807', 'ImportDe
   expect(mounted).toHaveBeenCalledTimes(1);
   await fireEvent.click(screen.getByRole('link', { name: /文档中心/ })); await flushPromises();
   expect(unmounted).toHaveBeenCalledWith(name); h.view.unmount();
+});
+
+it.each([['/knowledge-gaps', 'KnowledgeGapsPage'], ['/knowledge-gaps/new', 'KnowledgeGapNewPage'],
+  ['/knowledge-gaps/123', 'KnowledgeGapDetailPage']])('知识需求 %s 仅加载选中页面，不查询空间或其他管理目录', async (path, name) => {
+  const h = harness(path, { permissions: [] });
+  await waitFor(() => expect(loaders[name]).toHaveBeenCalled()); expectOnly(name);
+  expect(h.transport.mock.calls.some(([url]) => url === '/api/admin/spaces')).toBe(false);
+  await finish(name);
+  expect(mounted).toHaveBeenCalledTimes(1);
+  await fireEvent.click(screen.getByRole('link', { name: /文档中心/ })); await flushPromises();
+  expect(unmounted).toHaveBeenCalledWith(name);
 });

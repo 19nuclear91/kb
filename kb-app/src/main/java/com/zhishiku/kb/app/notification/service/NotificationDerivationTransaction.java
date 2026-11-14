@@ -4,6 +4,7 @@ import com.zhishiku.kb.app.notification.NotificationProperties;
 import com.zhishiku.kb.app.notification.mapper.NotificationDerivationMapper;
 import com.zhishiku.kb.app.notification.model.ClaimedEvent;
 import com.zhishiku.kb.app.notification.model.NotificationType;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,7 +19,8 @@ public class NotificationDerivationTransaction {
     private final NotificationDerivationMapper mapper;
     private final NotificationProperties properties;
 
-    public NotificationDerivationTransaction(NotificationDerivationMapper mapper, NotificationProperties properties) {
+    public NotificationDerivationTransaction(@Qualifier("notificationDerivationMapper") NotificationDerivationMapper mapper,
+                                             NotificationProperties properties) {
         this.mapper = mapper;
         this.properties = properties;
     }
@@ -31,8 +33,9 @@ public class NotificationDerivationTransaction {
     @Transactional(timeout = NotificationProperties.BATCH_TIMEOUT_SECONDS)
     public List<ClaimedEvent> claim(String owner) {
         var claimed = mapper.claim(owner, properties.getClaimLimit(), properties.getLeaseSeconds());
-        if (claimed == null || claimed.size() > properties.getClaimLimit())
+        if (claimed == null || claimed.size() > properties.getClaimLimit()) {
             throw new IllegalStateException("Notification claim is unavailable");
+        }
         return claimed;
     }
 
@@ -45,25 +48,41 @@ public class NotificationDerivationTransaction {
      */
     @Transactional(timeout = NotificationProperties.BATCH_TIMEOUT_SECONDS)
     public Batch batch(ClaimedEvent claim, String owner, NotificationType type, long cursor) {
+        return batchWithType(claim, owner, type.name(), cursor);
+    }
+
+    /** 仅供同模块独立来源适配器复用原子批次算法；类型由该来源的固定白名单核验。 */
+    protected Batch batchWithType(ClaimedEvent claim, String owner, String type, long cursor) {
         int size = properties.getRecipientBatchSize();
         var recipients = mapper.recipients(claim.eventId(), cursor, size);
-        if (recipients == null || recipients.size() > size) throw new IllegalStateException("Recipient batch is unavailable");
+        if (recipients == null || recipients.size() > size) {
+            throw new IllegalStateException("Recipient batch is unavailable");
+        }
         if (recipients.isEmpty()) {
-            if (mapper.complete(claim.eventId(), owner, claim.claimToken()) != 1) throw new NotificationLeaseLost();
+            if (mapper.complete(claim.eventId(), owner, claim.claimToken()) != 1) {
+                throw new NotificationLeaseLost();
+            }
             return new Batch(cursor, true);
         }
         long last = cursor;
         for (long id : recipients) {
-            if (id <= last) throw new IllegalStateException("Recipient batch is not ordered");
+            if (id <= last) {
+                throw new IllegalStateException("Recipient batch is not ordered");
+            }
             last = id;
         }
         // 先在 projection 行上取得行锁并校验 token，再写通知；接管者推进 token 后旧执行在此失败。
-        if (mapper.advance(claim.eventId(), owner, claim.claimToken(), last, properties.getLeaseSeconds()) != 1)
+        if (mapper.advance(claim.eventId(), owner, claim.claimToken(), last, properties.getLeaseSeconds()) != 1) {
             throw new NotificationLeaseLost();
-        int written = mapper.deliver(claim.eventId(), type.name(), recipients);
-        if (written < 0 || written > recipients.size()) throw new IllegalStateException("Notification batch was not saved");
+        }
+        int written = mapper.deliver(claim.eventId(), type, recipients);
+        if (written < 0 || written > recipients.size()) {
+            throw new IllegalStateException("Notification batch was not saved");
+        }
         if (recipients.size() < size) {
-            if (mapper.complete(claim.eventId(), owner, claim.claimToken()) != 1) throw new NotificationLeaseLost();
+            if (mapper.complete(claim.eventId(), owner, claim.claimToken()) != 1) {
+                throw new NotificationLeaseLost();
+            }
             return new Batch(last, true);
         }
         return new Batch(last, false);
@@ -72,12 +91,16 @@ public class NotificationDerivationTransaction {
     /** 不产生提醒的源事件直接完成，不生成通知。 */
     @Transactional(timeout = NotificationProperties.BATCH_TIMEOUT_SECONDS)
     public void ignore(ClaimedEvent claim, String owner) {
-        if (mapper.complete(claim.eventId(), owner, claim.claimToken()) != 1) throw new NotificationLeaseLost();
+        if (mapper.complete(claim.eventId(), owner, claim.claimToken()) != 1) {
+            throw new NotificationLeaseLost();
+        }
     }
 
     @Transactional(timeout = NotificationProperties.BATCH_TIMEOUT_SECONDS)
     public void release(ClaimedEvent claim, String owner) {
-        if (mapper.release(claim.eventId(), owner, claim.claimToken()) != 1) throw new NotificationLeaseLost();
+        if (mapper.release(claim.eventId(), owner, claim.claimToken()) != 1) {
+            throw new NotificationLeaseLost();
+        }
     }
 
     /**
@@ -89,7 +112,9 @@ public class NotificationDerivationTransaction {
     public void postpone(ClaimedEvent claim, String owner, boolean waitingSource) {
         long delay = properties.backoffSeconds(claim.attempts());
         if (mapper.postpone(claim.eventId(), owner, claim.claimToken(), waitingSource ? "WAITING_SOURCE" : "PENDING",
-                waitingSource ? "SOURCE_NOT_READY" : "DERIVATION_FAILED", delay) != 1) throw new NotificationLeaseLost();
+                waitingSource ? "SOURCE_NOT_READY" : "DERIVATION_FAILED", delay) != 1) {
+            throw new NotificationLeaseLost();
+        }
     }
 
     /**

@@ -1,5 +1,5 @@
 import type { Session } from '../session';
-import { unreadCount } from './api';
+import { NOTIFICATION_CONTRACT, unreadCount } from './api';
 
 export const DEFAULT_POLL_MS = 60_000;
 export const MIN_POLL_MS = 30_000;
@@ -121,9 +121,11 @@ export class UnreadPoller {
   }
 }
 
-const pollers = new WeakMap<object, UnreadPoller>();
+const pollers = new WeakMap<object, Map<string, UnreadPoller>>();
 export function pollerFor(session: Session): UnreadPoller {
-  let poller = pollers.get(session);
-  if (!poller) { poller = new UnreadPoller(session); pollers.set(session, poller); }
+  let contracts = pollers.get(session);
+  if (!contracts) { contracts = new Map(); pollers.set(session, contracts); }
+  let poller = contracts.get(NOTIFICATION_CONTRACT);
+  if (!poller) { poller = new UnreadPoller(session); contracts.set(NOTIFICATION_CONTRACT, poller); }
   return poller;
 }

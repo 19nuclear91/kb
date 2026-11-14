@@ -18,7 +18,7 @@ const logout = () => { void auth.session.logout(); };
   <Redirect v-if="auth.state.phase === 'anonymous'" to="/login" :state="{ from: safeReturnPath(route.fullPath) }" />
   <Redirect v-else-if="auth.state.phase === 'password'" to="/change-password" />
   <!-- 仅在身份 ready 后挂载本人权限上下文；强制改密阶段已在上方重定向，不预取管理权限或数据。 -->
-  <AdminAccessProvider v-else :load-spaces="route.path !== '/admin/reports/operations'">
+  <AdminAccessProvider v-else :load-spaces="route.path !== '/admin/reports/operations' && !/^\/(?:admin\/)?knowledge-gaps(?:\/|$)/.test(route.path)">
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand"><span class="brand-mark">知</span><div>知序<small>企业知识库</small></div></div>

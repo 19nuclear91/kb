@@ -3,12 +3,12 @@ import { ref } from 'vue';
 import { useSession } from '../SessionProvider';
 import { useResource } from '../useResource';
 import Feedback from '../ui/Feedback.vue';
-import { notificationPage } from './api';
+import { NOTIFICATION_CONTRACT, notificationPage } from './api';
 import { useUnreadCount } from './unread';
 import NotificationList from './NotificationList.vue';
 
 const auth = useSession(), revision = ref(0);
-const query = useResource(signal => notificationPage(auth.session, null, signal), () => `notifications/${revision.value}`);
+const query = useResource(signal => notificationPage(auth.session, null, signal), () => `notifications/${NOTIFICATION_CONTRACT}/${auth.state.epoch}/${revision.value}`);
 const unread = useUnreadCount();
 function reload() {
   revision.value++;

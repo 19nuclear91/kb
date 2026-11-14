@@ -125,3 +125,26 @@ test('CLI 缺少分析文件时非零退出，不输出成功报告', () => {
   assert.match(result.stderr, /包体分析失败/);
   assert.doesNotMatch(result.stdout, /报告已保存/);
 });
+test('知识需求路由和反馈单独统计，入口只允许最小地址助手而非业务模块', () => {
+  const input = fixture({
+    'entry.js': { modules: ['src/main.ts', 'src/knowledgeGaps/routes.ts'], dynamicImports: ['list.js', 'gap.js', 'feedback.js'] },
+    'list.js': { modules: ['src/pages/DocumentsPage.vue'] },
+    'gap.js': { modules: ['src/pages/KnowledgeGapDetailPage.vue', 'src/knowledgeGaps/GapDetailWorkspace.vue'] },
+    'feedback.js': { modules: ['src/knowledgeGaps/GapFeedbackDialog.vue', 'src/knowledgeGaps/GapCreateForm.vue'] },
+  });
+  input.routeModules = { documents: ['src/pages/DocumentsPage.vue'], knowledgeGapDetail: ['src/pages/KnowledgeGapDetailPage.vue'],
+    knowledgeGapFeedback: ['src/knowledgeGaps/GapFeedbackDialog.vue'] };
+  const report = bundleReport(input); report.scenarios.login = report.scenarios.entry;
+  checkIsolation(report);
+  assert.deepEqual(report.scenarios.knowledgeGapDetail.incremental.files, ['gap.js']);
+  assert.deepEqual(report.scenarios.knowledgeGapFeedback.incremental.files, ['feedback.js']);
+  for (const id of ['src/knowledgeGaps/api.ts', 'src/knowledgeGaps/GapCreateForm.vue', 'src/knowledgeGaps/GapDetailWorkspace.vue',
+    'src-vue/knowledgeGaps/GapFeedbackDialog.vue?vue&type=script&setup=true&lang.ts']) {
+    for (const location of ['entry.js', 'list.js']) {
+      const changed = structuredClone(report); changed.files[location].modules.push(id);
+      const message = location === 'entry.js' && id.includes('GapFeedbackDialog.vue')
+        ? /入口包含受保护页面实现/ : /提前包含知识问题/;
+      assert.throws(() => checkIsolation(changed), message);
+    }
+  }
+});

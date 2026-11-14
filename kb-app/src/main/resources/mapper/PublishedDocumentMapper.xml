@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.document.mapper.PublishedDocumentMapper">
+    <resultMap id="reference" type="com.zhishiku.kb.app.document.model.PublishedDocumentReference">
+        <constructor>
+            <idArg column="document_id" javaType="_long"/>
+            <arg column="version_id" javaType="_long"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="publication_evidence" javaType="com.zhishiku.kb.common.review.PublicationEvidence"/>
+        </constructor>
+    </resultMap>
+    <sql id="authorizedPublishedVersion">
+        d.status NOT IN ('deleted', 'archived') AND d.security_level &lt;= #{clearance}
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.versionInteractivePredicate"/>
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.commentTargetEvidence"/>
+    </sql>
+    <select id="find" resultMap="reference" useCache="false" timeout="3">
+        <bind name="aclPermission" value="'view'"/>
+        SELECT d.id AS document_id, v.id AS version_id, d.title, v.publication_evidence
+        FROM kb_document d JOIN kb_document_version v ON v.doc_id = d.id
+        WHERE d.id = #{documentId} AND v.id = #{versionId} AND <include refid="authorizedPublishedVersion"/>
+    </select>
+    <select id="candidates" resultMap="reference" useCache="false" timeout="3">
+        <bind name="aclPermission" value="'view'"/>
+        SELECT d.id AS document_id, v.id AS version_id, d.title, v.publication_evidence
+        FROM kb_document d JOIN kb_document_version v ON v.doc_id = d.id AND v.id = d.current_version_id
+        WHERE <include refid="authorizedPublishedVersion"/>
+        <if test="like != null">AND d.title ILIKE #{like} ESCAPE E'\\'</if>
+        <if test="afterId != null">AND d.id &gt; #{afterId}</if>
+        ORDER BY d.id ASC LIMIT #{fetch}
+    </select>
+</mapper>

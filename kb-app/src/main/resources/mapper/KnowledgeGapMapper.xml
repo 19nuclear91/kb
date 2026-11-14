@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper">
+    <!-- 供本模块和通知使用的同源规则；g 为问题行，actor 仅来自服务端身份。 -->
+    <sql id="validActor">
+        EXISTS (SELECT 1 FROM sys_user ga_u JOIN sys_dept ga_d ON ga_d.id = ga_u.dept_id
+            WHERE ga_u.id = #{actor} AND ga_u.enabled AND ga_d.enabled AND NOT ga_u.must_change_password)
+    </sql>
+    <sql id="readPermission">
+        EXISTS (SELECT 1 FROM sys_user_role ga_ur JOIN sys_role_permission ga_rp ON ga_rp.role_id = ga_ur.role_id
+            WHERE ga_ur.user_id = #{actor} AND ga_rp.permission = 'knowledge:gap:read')
+    </sql>
+    <sql id="handlePermission">
+        EXISTS (SELECT 1 FROM sys_user_role ga_ur JOIN sys_role_permission ga_rp ON ga_rp.role_id = ga_ur.role_id
+            WHERE ga_ur.user_id = #{actor} AND ga_rp.permission = 'knowledge:gap:handle')
+    </sql>
+    <sql id="visible">
+        <include refid="com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper.validActor"/> AND (g.reporter_user_id = #{actor}
+            OR (g.assignee_user_id = #{actor} AND <include refid="com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper.handlePermission"/>)
+            OR <include refid="com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper.readPermission"/>)
+    </sql>
+    <!-- g 为当前问题，e 为同单不可变事件；普通说明版本增长不改变工作身份。 -->
+    <sql id="notificationWorkCurrent">
+        ((e.kind IN ('GAP_CREATED', 'GAP_RETURNED') AND g.state = 'SUBMITTED' AND g.queue_event_id = e.event_id)
+        OR (e.kind IN ('GAP_ASSIGNED', 'GAP_SOLUTION_REJECTED') AND g.state = 'IN_PROGRESS'
+            AND g.assignee_user_id = #{actor} AND g.assignment_epoch = e.assignment_epoch)
+        OR (e.kind = 'GAP_SOLUTION_SUBMITTED' AND g.state = 'AWAITING_CONFIRMATION'
+            AND g.reporter_user_id = #{actor} AND g.pending_solution_id = e.solution_id)
+        OR (e.kind = 'GAP_RESOLVED' AND g.state = 'RESOLVED' AND g.version = e.result_version)
+        OR (e.kind = 'GAP_WITHDRAWN' AND g.state = 'WITHDRAWN' AND g.version = e.result_version)
+        OR (e.kind = 'GAP_CLOSED' AND g.state = 'CLOSED' AND g.version = e.result_version))
+    </sql>
+    <sql id="gapColumns">
+        g.id, g.reporter_user_id, g.category, g.source, g.description, g.consent_version, g.state,
+        g.version, g.assignee_user_id, g.assignment_epoch, g.pending_solution_id, g.queue_event_id,
+        g.created_at, g.updated_at
+    </sql>
+    <resultMap id="gap" type="com.zhishiku.kb.app.knowledgegap.model.KnowledgeGapRows$Gap">
+        <constructor>
+            <idArg column="id" javaType="_long"/>
+            <arg column="reporter_user_id" javaType="_long"/>
+            <arg column="category" javaType="com.zhishiku.kb.app.knowledgegap.model.KnowledgeGapCategory"/>
+            <arg column="source" javaType="com.zhishiku.kb.app.knowledgegap.model.KnowledgeGapSource"/>
+            <arg column="description" javaType="java.lang.String"/>
+            <arg column="consent_version" javaType="java.lang.String"/>
+            <arg column="state" javaType="com.zhishiku.kb.app.knowledgegap.model.KnowledgeGapState"/>
+            <arg column="version" javaType="_long"/>
+            <arg column="assignee_user_id" javaType="java.lang.Long"/>
+            <arg column="assignment_epoch" javaType="_long"/>
+            <arg column="pending_solution_id" javaType="java.util.UUID" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+            <arg column="queue_event_id" javaType="java.util.UUID" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+    <select id="findVisible" resultMap="gap" useCache="false" timeout="3">
+        SELECT <include refid="gapColumns"/> FROM kb_knowledge_gap g
+        WHERE g.id = #{gapId} AND <include refid="visible"/>
+    </select>
+    <select id="lock" resultMap="gap" useCache="false" timeout="3">
+        SELECT <include refid="gapColumns"/> FROM kb_knowledge_gap g
+        WHERE g.id = #{gapId} AND <include refid="visible"/> FOR UPDATE OF g
+    </select>
+    <select id="list" resultMap="gap" useCache="false" timeout="3">
+        SELECT <include refid="gapColumns"/> FROM kb_knowledge_gap g
+        WHERE <include refid="visible"/> AND
+        <choose>
+            <when test="view == 'mine'">g.reporter_user_id = #{actor}</when>
+            <when test="view == 'assigned'">g.assignee_user_id = #{actor} AND <include refid="handlePermission"/></when>
+            <when test="view == 'queue'"><include refid="readPermission"/></when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+        <if test="status != null">AND g.state = #{status}</if>
+        <if test="beforeId != null">AND g.id &lt; #{beforeId}</if>
+        ORDER BY g.id DESC LIMIT #{limit}
+    </select>
+    <resultMap id="event" type="com.zhishiku.kb.app.knowledgegap.model.KnowledgeGapRows$Event">
+        <constructor>
+            <idArg column="event_id" javaType="java.util.UUID" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+            <arg column="gap_id" javaType="_long"/>
+            <arg column="kind" javaType="java.lang.String"/>
+            <arg column="result_version" javaType="_long"/>
+            <arg column="actor_user_id" javaType="_long"/>
+            <arg column="assignee_user_id" javaType="java.lang.Long"/>
+            <arg column="assignment_epoch" javaType="_long"/>
+            <arg column="entry_id" javaType="java.util.UUID" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+            <arg column="solution_id" javaType="java.util.UUID" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+            <arg column="occurred_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+    <select id="history" resultMap="event" useCache="false" timeout="3">
+        SELECT e.event_id, e.gap_id, e.kind, e.result_version, e.actor_user_id, e.assignee_user_id,
+            e.assignment_epoch, e.entry_id, e.solution_id, e.occurred_at
+        FROM kb_knowledge_gap_event e JOIN kb_knowledge_gap g ON g.id = e.gap_id
+        WHERE g.id = #{gapId} AND <include refid="visible"/>
+        <if test="afterVersion != null">AND e.result_version &gt; #{afterVersion}</if>
+        ORDER BY e.result_version ASC LIMIT #{limit}
+    </select>
+    <resultMap id="entry" type="com.zhishiku.kb.app.knowledgegap.model.KnowledgeGapRows$Entry">
+        <constructor>
+            <idArg column="entry_id" javaType="java.util.UUID" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+            <arg column="gap_id" javaType="_long"/>
+            <arg column="position" javaType="_long"/>
+            <arg column="kind" javaType="java.lang.String"/>
+            <arg column="author_user_id" javaType="_long"/>
+            <arg column="body" javaType="java.lang.String"/>
+            <arg column="document_id" javaType="java.lang.Long"/>
+            <arg column="version_id" javaType="java.lang.Long"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+    <select id="entry" resultMap="entry" useCache="false" timeout="3">
+        SELECT e.entry_id, e.gap_id, e.position, e.kind, e.author_user_id, e.body, e.document_id,
+            e.version_id, e.created_at FROM kb_knowledge_gap_entry e JOIN kb_knowledge_gap g ON g.id = e.gap_id
+        WHERE g.id = #{gapId} AND e.entry_id = #{entryId} AND <include refid="visible"/>
+    </select>
+    <select id="configureLockTimeout" resultType="string" useCache="false" timeout="3">
+        SELECT set_config('lock_timeout', '1s', true)
+    </select>
+    <insert id="claim" timeout="3">
+        INSERT INTO kb_knowledge_gap_command (request_id, actor_user_id, operation, gap_id, expected_version, input_digest)
+        VALUES (#{binding.requestId}, #{binding.actorUserId}, #{binding.operation}, #{binding.gapId,jdbcType=BIGINT},
+            #{binding.expectedVersion,jdbcType=BIGINT}, #{binding.inputDigest})
+        ON CONFLICT (request_id) DO NOTHING
+    </insert>
+    <resultMap id="command" type="com.zhishiku.kb.app.knowledgegap.model.KnowledgeGapRows$Command">
+        <constructor>
+            <idArg column="request_id" javaType="java.lang.String"/>
+            <arg column="actor_user_id" javaType="_long"/>
+            <arg column="operation" javaType="com.zhishiku.kb.app.knowledgegap.model.KnowledgeGapAction"/>
+            <arg column="gap_id" javaType="java.lang.Long"/>
+            <arg column="expected_version" javaType="java.lang.Long"/>
+            <arg column="input_digest" javaType="java.lang.String"/>
+            <arg column="result_gap_id" javaType="java.lang.Long"/>
+            <arg column="result_version" javaType="java.lang.Long"/>
+            <arg column="result_state" javaType="com.zhishiku.kb.app.knowledgegap.model.KnowledgeGapState"/>
+            <arg column="result_event_id" javaType="java.util.UUID" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+            <arg column="result_solution_id" javaType="java.util.UUID" typeHandler="com.zhishiku.kb.app.config.UuidTypeHandler"/>
+        </constructor>
+    </resultMap>
+    <select id="command" resultMap="command" useCache="false" timeout="3">
+        SELECT request_id, actor_user_id, operation, gap_id, expected_version, input_digest,
+            result_gap_id, result_version, result_state, result_event_id, result_solution_id
+        FROM kb_knowledge_gap_command WHERE request_id = #{requestId}
+    </select>
+    <update id="complete" timeout="3">
+        UPDATE kb_knowledge_gap_command SET result_gap_id = #{receipt.gapId}, result_version = #{receipt.resultVersion},
+            result_state = #{receipt.state}, result_event_id = #{receipt.eventId},
+            result_solution_id = #{receipt.solutionId,jdbcType=OTHER}
+        WHERE request_id = #{requestId} AND result_event_id IS NULL
+    </update>
+    <insert id="ensureActorGuard" timeout="3">
+        INSERT INTO kb_knowledge_gap_actor_guard (reporter_user_id) VALUES (#{actor})
+        ON CONFLICT (reporter_user_id) DO NOTHING
+    </insert>
+    <select id="lockActorGuard" resultType="long" useCache="false" timeout="3">
+        SELECT reporter_user_id FROM kb_knowledge_gap_actor_guard WHERE reporter_user_id = #{actor} FOR UPDATE
+    </select>
+    <select id="countOpen" resultType="long" useCache="false" timeout="3">
+        SELECT count(*) FROM kb_knowledge_gap WHERE reporter_user_id = #{actor}
+            AND state IN ('SUBMITTED', 'IN_PROGRESS', 'AWAITING_CONFIRMATION')
+    </select>
+    <select id="create" resultMap="gap" affectData="true" flushCache="true" useCache="false" timeout="3">
+        INSERT INTO kb_knowledge_gap AS g (reporter_user_id, category, source, description, consent_version,
+            state, version, assignment_epoch, queue_event_id)
+        VALUES (#{actor}, #{input.category}, #{input.source}, #{input.description}, #{consentVersion},
+            'SUBMITTED', 0, 0, #{eventId}) RETURNING <include refid="gapColumns"/>
+    </select>
+    <update id="advance" timeout="3">
+        UPDATE kb_knowledge_gap g SET state = #{workflow.state}, version = #{workflow.version},
+            assignee_user_id = #{workflow.assigneeUserId,jdbcType=BIGINT}, assignment_epoch = #{workflow.assignmentEpoch},
+            pending_solution_id = #{workflow.pendingSolutionId,jdbcType=OTHER},
+            queue_event_id = #{workflow.queueEventId,jdbcType=OTHER}, updated_at = now()
+        WHERE g.id = #{gapId} AND g.version = #{expectedVersion} AND <include refid="visible"/>
+    </update>
+    <insert id="insertEntry" timeout="3">
+        INSERT INTO kb_knowledge_gap_entry (entry_id, gap_id, position, kind, author_user_id, body, document_id, version_id)
+        VALUES (#{entry.entryId}, #{entry.gapId}, #{entry.position}, #{entry.kind}, #{entry.authorUserId}, #{entry.body},
+            #{entry.documentId,jdbcType=BIGINT}, #{entry.versionId,jdbcType=BIGINT})
+    </insert>
+    <insert id="insertEvent" timeout="3">
+        INSERT INTO kb_knowledge_gap_event (event_id, gap_id, kind, result_version, actor_user_id, assignee_user_id,
+            assignment_epoch, entry_id, solution_id)
+        VALUES (#{event.eventId}, #{event.gapId}, #{event.kind}, #{event.resultVersion}, #{event.actorUserId},
+            #{event.assigneeUserId,jdbcType=BIGINT}, #{event.assignmentEpoch}, #{event.entryId,jdbcType=OTHER},
+            #{event.solutionId,jdbcType=OTHER})
+    </insert>
+    <sql id="eligibleRecipient">
+        u.enabled AND d.enabled AND NOT u.must_change_password AND u.id &lt;&gt; e.actor_user_id
+    </sql>
+    <insert id="insertReceptionRecipients" timeout="3">
+        INSERT INTO kb_knowledge_gap_event_recipient (event_id, user_id)
+        SELECT e.event_id, u.id FROM kb_knowledge_gap_event e CROSS JOIN sys_user u
+            JOIN sys_dept d ON d.id = u.dept_id
+        WHERE e.event_id = #{eventId} AND e.kind IN ('GAP_CREATED', 'GAP_RETURNED')
+            AND <include refid="eligibleRecipient"/>
+            AND EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role_permission rp ON rp.role_id = ur.role_id
+                WHERE ur.user_id = u.id AND rp.permission = 'knowledge:gap:read')
+        ON CONFLICT (event_id, user_id) DO NOTHING
+    </insert>
+    <insert id="insertRecipients" timeout="3">
+        INSERT INTO kb_knowledge_gap_event_recipient (event_id, user_id)
+        SELECT e.event_id, u.id FROM kb_knowledge_gap_event e CROSS JOIN sys_user u JOIN sys_dept d ON d.id = u.dept_id
+        WHERE e.event_id = #{eventId} AND <include refid="eligibleRecipient"/> AND
+        <choose>
+            <when test="userIds != null and userIds.size() > 0 and userIds.size() &lt;= 2">
+                u.id IN <foreach collection="userIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+        ON CONFLICT (event_id, user_id) DO NOTHING
+    </insert>
+</mapper>

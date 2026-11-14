@@ -181,6 +181,10 @@ class AdminBootstrapRunnerTest {
         verify(rolePermissions).grantPermission(11L, "operations:reports:read");
         verify(rolePermissions).grantPermission(11L, "document:tag:read");
         verify(rolePermissions).grantPermission(11L, "document:tag:write");
+        verify(rolePermissions).grantPermission(11L, "knowledge:gap:read");
+        verify(rolePermissions).grantPermission(11L, "knowledge:gap:assign");
+        verify(rolePermissions).grantPermission(11L, "knowledge:gap:handle");
+        verify(rolePermissions).grantPermission(11L, "knowledge:gap:close");
 
         ArgumentCaptor<String> requestIds = ArgumentCaptor.forClass(String.class);
         verify(audit, times(Permission.codes().size() + 4)).success(any(), requestIds.capture(), isNull(), any(),
@@ -225,7 +229,7 @@ class AdminBootstrapRunnerTest {
         });
 
         runner.run(null);
-        clearInvocations(mapper, audit);
+        clearInvocations(mapper, audit, rolePermissions);
         runner.run(null);
 
         verify(mapper).findEnabledManagementPermissions();
@@ -236,6 +240,7 @@ class AdminBootstrapRunnerTest {
         verify(mapper, never()).insertUserRole(anyLong(), anyLong());
         verify(audit, never()).success(any(), anyString(), any(), any(), anyString(),
                 anyString(), anyString());
+        verifyNoInteractions(rolePermissions);
     }
 
     @Test
@@ -278,7 +283,8 @@ class AdminBootstrapRunnerTest {
                                 && !code.startsWith("embedding:") && !code.equals("audit:read")
                                 && !code.equals("identity:external:read") && !code.startsWith("ai:")
                                 && !code.startsWith("identity:lifecycle:") && !code.startsWith("identity:emergency:")
-                                && !code.equals("operations:reports:read") && !code.startsWith("document:tag:")).toList());
+                                && !code.equals("operations:reports:read") && !code.startsWith("document:tag:")
+                                && !code.startsWith("knowledge:gap:")).toList());
         when(mapper.findIdentityByUsername(USERNAME)).thenReturn(credential(31L));
         when(mapper.findIdentity(31L)).thenReturn(new IdentityRecord(31L, USERNAME, "系统管理员",
                 21L, (short) 1, true, 0L, null, null));
@@ -304,7 +310,11 @@ class AdminBootstrapRunnerTest {
                 && event.getFormattedMessage().contains("identity:lifecycle:read")
                 && event.getFormattedMessage().contains("identity:lifecycle:manage")
                 && event.getFormattedMessage().contains("identity:lifecycle:restore")
-                && event.getFormattedMessage().contains("identity:emergency:manage"));
+                && event.getFormattedMessage().contains("identity:emergency:manage")
+                && event.getFormattedMessage().contains("knowledge:gap:read")
+                && event.getFormattedMessage().contains("knowledge:gap:assign")
+                && event.getFormattedMessage().contains("knowledge:gap:handle")
+                && event.getFormattedMessage().contains("knowledge:gap:close"));
     }
 
     private static List<UserRolePermission> qualifiedUser() {
