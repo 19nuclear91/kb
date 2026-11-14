@@ -43,7 +43,7 @@
 
 ### Requirement: 管理菜单与页面必须按独立读取资格开放
 
-用户端 MUST 以 `/api/auth/permissions` 的当前有效权限控制身份管理入口；账号、部门、角色页面分别要求 `identity:user:read`、`identity:dept:read`、`identity:role:read`。知识空间入口 SHALL 在当前空间目录存在可管理空间，或持有 `space:create`、`space:manage-all` 时显示；文档管理面板入口 SHALL 在上述任一条件成立或持有 `document:security-level:write` 时显示；空间详情与文档管理面板按各自规格的资源级读取结果开放。向量重建、解析死信和审计页面分别要求 `embedding:read`、`parse:deadletter:read`、`audit:read`，对应写权限及旧 `identity:audit:read` 不代替相应读取资格。角色名称、角色 ID、权限前缀及任意写权限 MUST 不代替读取资格，知识空间入口与文档管理面板入口的显示 MUST 不被解释为任一具体空间或文档的管理资格。直接访问无读取资格的页面 SHALL 显示无访问资格且不加载该实体数据。
+用户端 MUST 按 `/api/auth/permissions` 的当前有效权限开放管理入口：账号、部门、角色分别要求 `identity:user:read`、`identity:dept:read`、`identity:role:read`；向量重建、解析死信、审计分别要求 `embedding:read`、`parse:deadletter:read`、`audit:read`。知识空间入口 SHALL 在当前目录有可管理空间或持有 `space:create`／`space:manage-all` 时显示；文档管理面板入口 SHALL 在上述任一条件成立或持有 `document:security-level:write` 时显示。空间详情和文档管理面板 SHALL 按各自规格核验资源级读取，MUST NOT 将菜单可见视为具体空间或文档的管理资格。角色名称、角色 ID、权限前缀、任意写权限及旧 `identity:audit:read` MUST NOT 代替对应读取资格。直接访问无资格页面 SHALL 提示无访问资格且不加载实体数据。
 
 #### Scenario: 只有账号读取资格
 - **WHEN** 当前用户只有 `identity:user:read`
