@@ -5,6 +5,7 @@ import AdminAccessProvider from '../admin/AdminAccessProvider.vue';
 import AdminNavigation from '../admin/AdminNavigation.vue';
 import { safeReturnPath } from '../navigation';
 import UnreadBadge from '../notifications/UnreadBadge.vue';
+import CountBadge from '../stewardship/CountBadge.vue';
 import { useSession } from '../SessionProvider';
 import Navigation from './Navigation.vue';
 import Redirect from './Redirect.vue';
@@ -22,7 +23,7 @@ const logout = () => { void auth.session.logout(); };
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand"><span class="brand-mark">知</span><div>知序<small>企业知识库</small></div></div>
-        <Navigation><template #extra="{ path }"><UnreadBadge v-if="path === '/notifications'" /></template></Navigation>
+        <Navigation><template #extra="{ path }"><UnreadBadge v-if="path === '/notifications'" /><CountBadge v-if="path === '/stewardship'" /></template></Navigation>
         <AdminNavigation />
         <div style="margin-top: 48px"><p class="muted">{{ auth.state.me?.user.displayName }}</p><ElButton @click="logout">退出登录</ElButton></div>
       </aside>

@@ -16,6 +16,7 @@
 | 批量文件导入 | 本地多选／拖拽、固定清单、逐项幂等受理、本人持久任务、跨登录人工恢复 | `/imports` 与 `/imports/:importId`；同名同内容不同项允许新建，响应未知先核对，未完成文件需重选匹配。见[导入 API](docs/document-import-api.md)、[导入运维](docs/document-import-operations.md) |
 | 文档资料 | 标题、人工摘要、空间分类树、全局标签，以及文档列表组合筛选 | 分类属于空间，标签可跨空间使用；资料修改作用于整份文档。见[资料与目录](docs/document-metadata-web.md) |
 | 审核与协作 | 空间发布策略、固定版本送审/通过/驳回/撤回、个人收藏、版本评论与回复、站内通知 | 解析完成、审核通过和发布是不同状态；评论和审核分别需要对应资格。见[版本审核](docs/document-review.md)、[收藏](docs/document-favorites.md)、[评论](docs/version-comments.md)、[通知](docs/in-app-notifications.md) |
+| 知识适用期与复审 | 固定版本日期声明与更正历史、文档责任人和周期、本人及空间清单、导航数量、责任人确认 | F-02 首期已实现，九份主规格已同步、[变更已归档](openspec/changes/archive/2026-11-15-knowledge-validity-and-review/)，未部署；适用期届满与复审逾期分别表达，不改变发布、召回或 AI 协议。见[接口与运维](docs/knowledge-validity-review.md)、[最新离线核验与未验证边界](openspec/changes/archive/2026-11-15-knowledge-validity-and-review/verify-report-2.md) |
 | 知识问题闭环 | 主动分享需求、本人/被分派问题、统一受理、人工分派、说明/固定资料方案、本人确认及站内提醒 | 只分享用户确认的描述，不复制回答/会话；四项资格独立，撤回不删除，关闭不等于解决。首期实现及离线验证完成，主规格已同步、[变更已归档](openspec/changes/archive/2026-11-14-knowledge-gap-feedback-loop/)，未部署，不代表真实环境验收通过。见[问题 API](docs/knowledge-gap-api.md)、[受理运维](docs/knowledge-gap-operations.md)、[协调发布](docs/knowledge-gap-rollout.md) |
 | 文件阅读 | PDF、UTF-8 TXT/Markdown 预览，以及独立授权的原件下载 | 下载拒绝不等于阅读拒绝，重核保持原版本且不自动打开文件；docx/xlsx/pptx 原生只读预览通过可选 ONLYOFFICE 服务提供，默认关闭；doc/xls/ppt 不进入该预览流程。见[Office 预览](docs/office-preview.md) |
 | 混合检索 | BM25、向量召回、SQL 内 RRF 融合、rerank、top-k，支持空间/分类/标签/类型/时间组合筛选 | 权限、密级与发布状态在召回时过滤；支持超时、并发与响应大小限制及降级。见[搜索筛选](docs/search-filtering-api.md)、[检索韧性](docs/search-resilience.md) |
@@ -94,7 +95,7 @@ mvn -pl kb-app spring-boot:run '-Dspring-boot.run.profiles=dev'
 
 第一条命令安装模块间依赖并打包，跳过测试；成功后再运行第二条。等待 `kb-app` 完成 Flyway 迁移和 Embedding profile 登记，再启动 Worker。
 
-正式迁移位于 [db/migration](kb-app/src/main/resources/db/migration)，当前最高版本为 **V38**，包含 V18.1；V29–V35 引入人工启用状态、认证代次、生命周期登记/事件/权限、轮次代次及输出停止证据，V36 新增批量导入任务、文件项和上传尝试账本，V37/V38 新增知识问题及独立问题通知来源、共享收件箱扩展（本轮未执行迁移）。V3/V6 位于 [db/dev](kb-app/src/main/resources/db/dev)，仅 `dev` profile 加载。不要在已有生产库上切换到 `dev` 来补种子，也不要用 Flyway repair 跳过迁移问题；存量系统升级须遵守[生命周期协调发布](docs/lifecycle-rollout.md)、[导入升级与回退](docs/document-import-operations.md#对账升级与回退)及[问题协调发布](docs/knowledge-gap-rollout.md)。
+正式迁移位于 [db/migration](kb-app/src/main/resources/db/migration)，当前最高版本为 **V39**，包含 V18.1；V29–V35 引入人工启用状态、认证代次、生命周期登记/事件/权限、轮次代次及输出停止证据，V36 新增批量导入任务、文件项和上传尝试账本，V37/V38 新增知识问题及独立问题通知来源、共享收件箱扩展，V39 新增版本适用期、修改历史、文档复审和命令回执四张表（本轮未执行迁移）。V3/V6 位于 [db/dev](kb-app/src/main/resources/db/dev)，仅 `dev` profile 加载。不要在已有生产库上切换到 `dev` 来补种子，也不要用 Flyway repair 跳过迁移问题；存量系统升级须遵守[生命周期协调发布](docs/lifecycle-rollout.md)、[导入升级与回退](docs/document-import-operations.md#对账升级与回退)、[问题协调发布](docs/knowledge-gap-rollout.md)及[适用期与复审上线说明](docs/knowledge-validity-review.md#上线与回退)。
 
 ### 3. 分别启动其他服务
 
@@ -171,6 +172,20 @@ F-01 首期已于 2026-11-14 同步七份主规格并归档。业务合同见 [�
 受理入口 `/admin/knowledge-gaps` 只需独立 read；assign、handle、close 分别控制人工分派、当前负责人处理与带原因关闭，不自动授权。方案等待原提问者明确确认才解决，待确认、已关闭和已撤回都不等于已解决；三类终态不可重开，已分享记录保留，撤回停止处理而非删除。资料使用原固定已发布版本并逐次独立鉴权。
 
 新通知列表/计数统一声明 KNOWLEDGE_GAPS_V1，旧前端缺省继续旧四类/旧游标；点击只重新读取同一问题，不自动已读或确认。必须 app→gateway→web 协调发布且旧 app 不混部；止损不删数据/权限或反迁移。详见 [用户端说明](kb-web/README.md#知识需求与问题处理) 和 [协调发布清单](docs/knowledge-gap-rollout.md)。
+
+### 知识适用期与责任人复审
+
+F-02 首期已实现，2026-11-15 已同步九份主规格并归档，任务 **37/37** 完成，未部署。行为契约见[版本适用期](openspec/specs/document-applicability/spec.md)、[文档复审](openspec/specs/document-stewardship/spec.md)和[本人负责资料界面](openspec/specs/user-web-document-stewardship/spec.md)，同步明细见[归档记录](openspec/changes/archive/2026-11-15-knowledge-validity-and-review/archive-record.md)。
+
+适用期跟随固定版本，候选审核期间冻结，已对读者可见版本附原因立即更正；原因对可读该版本的用户可见，历史不含操作者。详情、审核、搜索和实时/历史引用显示标识，不自动切换版本或改变召回。模型不感知适用期，回答正文未据此调整。
+
+复审跟随整份文档，空间管理员指定至多一名合格责任人及 3、6、12、24 个月周期，只有当前合格责任人可以确认仍然准确。`/stewardship` 提供本人需要处理/全部清单，管理面板和空间详情提供责任人与复审概况；不发送站内通知或 IM。存量为未声明、未指定，需要逐步设置。
+
+业务日期统一由数据库时钟换算，`KB_VALIDITY_BUSINESS_TIME_ZONE` 默认 `Asia/Shanghai`，只接受地区 ID，**上线后不得修改**。导航数量 `VITE_STEWARDSHIP_POLL_MS` 默认 300000、最短 60000 毫秒，后台暂停，身份变化清除旧数。先升级全部 app 并应用 V39，再发布 web；网关路由配置不变，回退先 web 后 app，保留新表。
+
+适用期与管理复审写入结果未确认时，重读旧值、新值或失败、关闭后继续核对都保留原请求标识与精确载荷，不解除删除互斥；仅确认回执、明确拒绝或显式放弃后才允许新意图。确认与改派竞争先按当前资格鉴权，再比较版本：失去责任人资格为 403，目标不可访问为 404，仍合格但版本陈旧为 409，不用旧回执延续资格。
+
+第二轮独立复跑：后端离线白名单 **25 类/218 项**、前端全量 **122 文件/1343 项**通过，类型检查、全模块测试编译、生产构建、包体工具 **11 项**和隔离检查通过；核验为 **0 CRITICAL / 0 WARNING / 0 SUGGESTION**。完整命令与未验证范围见[第二轮报告](openspec/changes/archive/2026-11-15-knowledge-validity-and-review/verify-report-2.md)，110 个场景的直接/组合/仅交付证据见[追踪映射](openspec/changes/archive/2026-11-15-knowledge-validity-and-review/traceability.md)。真实迁移、约束、锁、SQL 等价性、完整动态场景、浏览器与部署仍未验证；同步和归档不代表上线验收。详见[接口与上线核对](docs/knowledge-validity-review.md)。
 
 ### 批量文件导入
 
@@ -316,6 +331,7 @@ app / Worker / AI / gateway 管理端口
 | 文档中心、知识搜索、收藏 | `/documents`、`/search`、`/favorites` |
 | 批量文件导入、本人任务详情 | `/imports`、`/imports/:importId` |
 | 版本审核、站内通知、个人账户 | `/reviews`、`/notifications`、`/account` |
+| 我负责的资料与复审确认 | `/stewardship` |
 | AI 助手 | `/assistant` |
 | 用户、部门、角色 | `/admin/users`、`/admin/departments`、`/admin/roles` |
 | 员工生命周期、事件处置与应急保障 | `/admin/identity/lifecycle`（账号详情另有独立权限面板） |
@@ -473,7 +489,7 @@ java -jar .\kb-eval\target\kb-eval-0.1.0-SNAPSHOT.jar --help
 
 ## 开发路线图
 
-[开发路线图与候选功能](docs/development-roadmap.md) 保留 11 项工程完善任务和 14 项产品方向的原编号，区分明确缺口、条件性缺口、真实验收待补与候选增强，并记录最新状态。F-01 知识缺口闭环首期已实现、完成离线验证并归档，未部署；其余产品方向仍为候选。真实解析链路及独立验收工程继续按各自范围评估，后续产品方向包括有效期复审和版本差异。
+[开发路线图与候选功能](docs/development-roadmap.md) 保留 11 项工程完善任务和 14 项产品方向的原编号，区分明确缺口、条件性缺口、真实验收待补与候选增强，并记录最新状态。F-01 知识缺口闭环与 F-02 知识有效期及复审首期均已实现、完成离线核对、同步主规格并归档，未部署；F-03～F-14 仍为候选。真实解析链路及独立验收工程继续按各自范围评估，后续优先评估版本差异与变更摘要。
 
 路线图的候选条目不是实施授权、排期或工期承诺；已交付条目以各自范围和证据为准，不以归档代替真实环境验收，也不替代当前功能说明及 OpenSpec 正式规格。
 

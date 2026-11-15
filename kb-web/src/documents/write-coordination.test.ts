@@ -7,6 +7,7 @@ import type { Session } from '../session';
 import { deferred } from '../test/fixtures';
 import { renderHook } from '../test/render';
 import type { DocumentOperations } from './operations';
+import { DocumentOperations as RealOperations } from './operations';
 
 const f = vi.hoisted(() => {
   const state = { pending: 0, exclusive: false, uncertain: 0, uncertaintyRevision: 0 };
@@ -69,4 +70,17 @@ it('收藏写入登记与独占门禁覆盖实际发送，页面销毁不伪报�
   expect(f.settle).not.toHaveBeenCalled();
   pending.reject(new DOMException('aborted', 'AbortError')); await submitted;
   expect(f.settle).toHaveBeenCalledExactlyOnceWith('uncertain'); expect(store.getSnapshot()).toEqual({}); expect(store.source).toBeUndefined();
+});
+
+it('适用期在途和未确认均阻止删除，显式放弃后才释放', () => {
+  const operations = new RealOperations();
+  const writing = operations.beginWrite('1|applicability:1/2')!; operations.beginDelete();
+  expect(operations.canSubmitDelete()).toBe(false); writing.settle('uncertain'); expect(operations.canSubmitDelete()).toBe(false);
+  operations.abandonValidityUncertainties(); expect(operations.canSubmitDelete()).toBe(true);
+});
+it('切换版本后旧适用期写入结果不会成为新版本成功结果', async () => {
+  const pending = deferred<unknown>(), execute = vi.fn(() => pending.promise);
+  const hook = renderHook(() => useAdminWrite('applicability:1/2', execute as typeof adminWrite));
+  const submitted = hook.result.current.submit(intent); hook.unmount();
+  pending.resolve({}); expect(await submitted).toEqual({ status: 'ignored' }); expect(f.settle).toHaveBeenCalledWith('confirmed');
 });

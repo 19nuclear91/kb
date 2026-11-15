@@ -3,11 +3,12 @@ import { computed } from 'vue';
 import { ElSpace, ElTag } from 'element-plus';
 import { usageLabel, visibleTurn } from '../logic';
 import type { Citation, Turn } from '../types';
+import type { Badge } from '../validity/api';
 import KbAlert from './KbAlert.vue';
 import References from './References.vue';
 import SafeText from './SafeText.vue';
 
-const props = defineProps<{ value: Turn }>();
+const props = defineProps<{ value: Turn; validity?: ReadonlyMap<string, Badge> }>();
 const emit = defineEmits<{ open: [value: Citation] }>();
 const statusNames: Record<string, string> = { RUNNING: '处理中', COMPLETED: '已完成', FAILED: '失败 · 未完成', CANCELLED: '已停止 · 未完成', INTERRUPTED: '已中断 · 未完成' };
 const turn = computed(() => visibleTurn(props.value));
@@ -25,7 +26,7 @@ const settling = computed(() => turn.value.status === 'COMPLETED' && turn.value.
       <KbAlert v-if="turn.visibility === 'BLOCKED'" type="info" title="当前无法查看这条回答。" />
       <template v-else>
         <SafeText :text="turn.answer ?? ''" />
-        <References :citations="turn.citations ?? []" @open="emit('open', $event)" />
+        <References :citations="turn.citations ?? []" :validity="validity" @open="emit('open', $event)" />
       </template>
       <div class="muted" style="margin-top: 14px">{{ usageLabel(turn) }}</div>
     </div>

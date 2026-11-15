@@ -108,7 +108,8 @@ public final class ProductionSettings {
                 "org.springframework.jdbc.core"));
         if (module.equals("kb-app")) {
             for (String feature : List.of("aiusage", "auth", "collaboration", "comment", "conversation",
-                    "document", "document.metadata", "embedding", "knowledgegap", "notification", "parse", "reporting",
+                    "document", "document.applicability", "document.metadata", "document.stewardship",
+                    "embedding", "knowledgegap", "notification", "parse", "reporting",
                     "search", "space", "storage")) {
                 sensitiveLoggers.add("com.zhishiku.kb.app." + feature + ".mapper");
             }

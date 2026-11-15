@@ -15,6 +15,7 @@ import com.zhishiku.kb.app.auth.sso.SsoAudit;
 import com.zhishiku.kb.app.auth.sso.SsoSettings;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -56,7 +57,8 @@ public class AuditSummaryProjector {
                     if (permission == null) throw new IllegalArgumentException();
                     boolean grant = scope == AuditScope.ROLE_PERMISSION_GRANT;
                     changes.add(new Change("permission", grant ? null : permission, grant ? permission : null));
-                } else if (old != null || value != null || (rule.getValue() == Kind.NULLABLE_ID
+                } else if (old != null || value != null || ((rule.getValue() == Kind.NULLABLE_ID
+                        || rule.getValue() == Kind.DATE || rule.getValue() == Kind.CYCLE)
                         && (before.has(rule.getKey()) || after.has(rule.getKey())))) {
                     // 保留 roleId 等不变的定位字段，防止解除绑定时丢失被解除主体。
                     changes.add(new Change(rule.getKey(), old, value));
@@ -136,6 +138,12 @@ public class AuditSummaryProjector {
             case DOCUMENT_ADMIN_DELETE -> fields("spaceId", Kind.ID, "spaceArchived", Kind.BOOL);
             case DOCUMENT_METADATA_UPDATE -> fields("categoryId", Kind.NULLABLE_ID, "tagIds", Kind.IDS,
                     "metadataVersion", Kind.COUNT, "changedFields", Kind.CHANGED_FIELDS);
+            case DOCUMENT_APPLICABILITY_UPDATE -> fields("documentId", Kind.ID, "versionId", Kind.ID,
+                    "effectiveFrom", Kind.DATE, "untilKind", Kind.UNTIL_KIND, "effectiveUntil", Kind.DATE,
+                    "applicabilityVersion", Kind.COUNT, "visibleToReaders", Kind.BOOL, "reasonProvided", Kind.BOOL);
+            case DOCUMENT_STEWARDSHIP_UPDATE, DOCUMENT_STEWARDSHIP_CONFIRM -> fields(
+                    "responsibleUserId", Kind.NULLABLE_ID, "cycleMonths", Kind.CYCLE,
+                    "lastConfirmedOn", Kind.DATE, "dueDate", Kind.DATE, "stewardshipVersion", Kind.COUNT);
             case DOCUMENT_CATEGORY_CREATE, DOCUMENT_CATEGORY_UPDATE, DOCUMENT_CATEGORY_DELETE ->
                     fields("spaceId", Kind.ID, "categoryId", Kind.ID, "parentId", Kind.NULLABLE_ID,
                             "sortOrder", Kind.COUNT, "treeVersion", Kind.COUNT, "nameChanged", Kind.BOOL);
@@ -191,12 +199,25 @@ public class AuditSummaryProjector {
             kind = Kind.ID;
         }
         if (kind == Kind.BOOL && value.isBoolean()) return value.booleanValue();
+        if (kind == Kind.CYCLE && value.isIntegralNumber() && value.canConvertToInt()
+                && Set.of(3, 6, 12, 24).contains(value.intValue())) {
+            return value.longValue();
+        }
         if ((kind == Kind.ID || kind == Kind.COUNT || kind == Kind.LEVEL) && value.isIntegralNumber() && value.canConvertToLong()) {
             long number = value.longValue();
             if (number >= (kind == Kind.ID ? 1 : 0) && (kind != Kind.LEVEL || number <= Short.MAX_VALUE)) return number;
         }
         if (value.isTextual()) {
             String text = value.textValue();
+            if (kind == Kind.DATE && text.matches("[12][0-9]{3}-[0-9]{2}-[0-9]{2}")) {
+                LocalDate date = LocalDate.parse(text);
+                if (date.getYear() >= 1900 && date.getYear() <= 2999) {
+                    return text;
+                }
+            }
+            if (kind == Kind.UNTIL_KIND && Set.of("UNDECLARED", "OPEN_ENDED", "DATE").contains(text)) {
+                return text;
+            }
             if (kind == Kind.PUBLICATION_POLICY && Set.of("AUTO", "REVIEW_REQUIRED").contains(text)) return text;
             if (kind == Kind.FUNCTIONAL_PERMISSION && PERMISSIONS.contains(text)) return text;
             if (kind == Kind.ACL_PERMISSION && Set.of("view", "download", "edit", "review", "comment", "manage").contains(text)) return text;
@@ -211,5 +232,5 @@ public class AuditSummaryProjector {
     }
 
     private enum Kind {ID, NULLABLE_ID, IDS, CHANGED_FIELDS, COUNT, LEVEL, BOOL, FUNCTIONAL_PERMISSION, ACL_PERMISSION, PRINCIPAL, DEAD_LETTER_STATUS,
-        SSO_PLATFORM, SSO_RESULT, PUBLICATION_POLICY}
+        SSO_PLATFORM, SSO_RESULT, PUBLICATION_POLICY, DATE, UNTIL_KIND, CYCLE}
 }

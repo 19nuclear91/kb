@@ -16,6 +16,7 @@ function harness(path: string, read: (path: string) => Response) {
     if (path === '/api/auth/me') return response(me);
     if (path === '/api/auth/permissions') return response(['knowledge:gap:read']);
     if (path === '/api/notifications/unread-count') return response({ count: '0', asOf: '2026-11-14T00:00:00Z' });
+    if (path === '/api/documents/stewardship/count') return response({ count: '0', asOfDate: '2026-11-15' });
     return read(path);
   });
   const session = new Session(storage(), transport as typeof fetch), view = mountRouter(() => h(App, { session }), { path });
@@ -47,5 +48,6 @@ it('队列 503 不是空队列，详情 read 不补充文档/目录权限', asyn
   await screen.findByText('明确分享的描述'); expect(screen.getByText('当前需人工重新分派；提示不会自动修改分派或问题状态。')).toBeTruthy();
   expect(screen.getByRole('link', { name: '返回受理队列' }).getAttribute('href')).toBe('/admin/knowledge-gaps');
   await waitFor(() => expect(h.transport.mock.calls.some(([path]) => String(path).includes('/history?'))).toBe(true));
-  expect(h.transport.mock.calls.some(([path]) => /\/api\/(documents|admin\/identity|admin\/spaces)/.test(String(path)))).toBe(false);
+  expect(h.transport.mock.calls.some(([path]) => String(path) !== '/api/documents/stewardship/count'
+    && /\/api\/(documents|admin\/identity|admin\/spaces)/.test(String(path)))).toBe(false);
 });

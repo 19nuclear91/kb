@@ -70,6 +70,12 @@ class AuditSummaryProjectorTest {
                                 "\"title\":\"private-title\"}";
                 case DOCUMENT_METADATA_UPDATE ->
                         "{\"categoryId\":null,\"tagIds\":[1,2],\"metadataVersion\":1,\"changedFields\":[\"title\"],\"title\":\"private-title\"}";
+                case DOCUMENT_APPLICABILITY_UPDATE ->
+                        "{\"documentId\":2,\"versionId\":3,\"effectiveFrom\":null,\"untilKind\":\"DATE\",\"effectiveUntil\":\"2026-12-31\","
+                                + "\"applicabilityVersion\":1,\"visibleToReaders\":true,\"reasonProvided\":true,\"reason\":\"private-reason\"}";
+                case DOCUMENT_STEWARDSHIP_UPDATE, DOCUMENT_STEWARDSHIP_CONFIRM ->
+                        "{\"responsibleUserId\":7,\"cycleMonths\":3,\"lastConfirmedOn\":\"2026-11-30\",\"dueDate\":\"2027-02-28\","
+                                + "\"stewardshipVersion\":1,\"displayName\":\"private-name\"}";
                 case DOCUMENT_CATEGORY_CREATE, DOCUMENT_CATEGORY_UPDATE, DOCUMENT_CATEGORY_DELETE ->
                         "{\"categoryId\":1,\"spaceId\":2,\"parentId\":null,\"sortOrder\":0,\"treeVersion\":1,\"nameChanged\":true,\"name\":\"private-name\"}";
                 case DOCUMENT_TAG_CREATE, DOCUMENT_TAG_UPDATE ->
@@ -127,6 +133,63 @@ class AuditSummaryProjectorTest {
     private static IdentityAuditRecord row(String scope, String before, String after) {
         return new IdentityAuditRecord(1L, UUID.randomUUID(), scope, "request", null, "user", null,
                 "operation", "SUCCESS", before, after, "private-reason", Instant.EPOCH);
+    }
+
+    @Test
+    void applicabilityProjectsBeforeAndAfterDatesAndReasonPresenceWithoutFreeText() throws Exception {
+        var detail = new AuditSummaryProjector().detail(row("DOCUMENT_APPLICABILITY_UPDATE", """
+                {"documentId":2,"versionId":3,"effectiveFrom":null,"untilKind":"UNDECLARED",
+                 "effectiveUntil":null,"applicabilityVersion":0,"visibleToReaders":true,"reasonProvided":false}
+                """, """
+                {"documentId":2,"versionId":3,"effectiveFrom":"2026-01-01","untilKind":"DATE",
+                 "effectiveUntil":"2026-12-31","applicabilityVersion":1,"visibleToReaders":true,"reasonProvided":true,
+                 "reason":"private-reason","displayName":"private-name","title":"private-title",
+                 "unknown":{"token":"private-token"}}
+                """));
+        assertThat(detail.summaryAvailable()).isTrue();
+        assertThat(detail.changes()).contains(new Change("effectiveFrom", null, "2026-01-01"),
+                new Change("effectiveUntil", null, "2026-12-31"), new Change("reasonProvided", false, true));
+        assertThat(new ObjectMapper().writeValueAsString(detail.changes()))
+                .doesNotContain("private-", "displayName", "title", "unknown", "token", "\"reason\"");
+        assertThat(AuditScope.DOCUMENT_APPLICABILITY_UPDATE.targetType()).isEqualTo("document-version");
+    }
+
+    @Test
+    void stewardshipProjectsResponsibleIdsAndDatesWithoutNames() throws Exception {
+        for (AuditScope scope : List.of(AuditScope.DOCUMENT_STEWARDSHIP_UPDATE, AuditScope.DOCUMENT_STEWARDSHIP_CONFIRM)) {
+            var detail = new AuditSummaryProjector().detail(row(scope.name(), """
+                    {"responsibleUserId":7,"cycleMonths":12,"lastConfirmedOn":null,
+                     "dueDate":"2027-03-10","stewardshipVersion":1}
+                    """, """
+                    {"responsibleUserId":9223372036854775807,"cycleMonths":6,"lastConfirmedOn":"2026-03-10",
+                     "dueDate":"2026-09-10","stewardshipVersion":2,"displayName":"private-name",
+                     "title":"private-title","reason":"private-reason","unknown":{"body":"private-body"}}
+                    """));
+            assertThat(scope.targetType()).isEqualTo("document");
+            assertThat(detail.summaryAvailable()).isTrue();
+            assertThat(detail.changes()).contains(new Change("responsibleUserId", 7L, Long.MAX_VALUE),
+                    new Change("lastConfirmedOn", null, "2026-03-10"),
+                    new Change("dueDate", "2027-03-10", "2026-09-10"));
+            assertThat(new ObjectMapper().writeValueAsString(detail.changes()))
+                    .doesNotContain("private-", "displayName", "title", "reason", "unknown");
+        }
+    }
+
+    @Test
+    void malformedValidityFieldsKeepMetadataButMakeSummaryUnavailable() {
+        var projector = new AuditSummaryProjector();
+        for (String raw : List.of("{\"effectiveFrom\":\"2026-02-30\"}", "{\"effectiveUntil\":\"1899-12-31\"}",
+                "{\"effectiveUntil\":\"3000-01-01\"}", "{\"effectiveFrom\":{}}", "{\"untilKind\":\"FOREVER\"}",
+                "{\"reasonProvided\":\"private-text\"}")) {
+            var detail = projector.detail(row("DOCUMENT_APPLICABILITY_UPDATE", "{}", raw));
+            assertThat(detail.summaryAvailable()).isFalse();
+            assertThat(detail.changes()).isEmpty();
+            assertThat(detail.metadata().operationScope()).isEqualTo("DOCUMENT_APPLICABILITY_UPDATE");
+        }
+        for (String raw : List.of("{\"cycleMonths\":1}", "{\"cycleMonths\":9}", "{\"responsibleUserId\":\"7\"}",
+                "{\"lastConfirmedOn\":\"2026-3-10\"}")) {
+            assertThat(projector.detail(row("DOCUMENT_STEWARDSHIP_UPDATE", "{}", raw)).summaryAvailable()).isFalse();
+        }
     }
 
     @Test

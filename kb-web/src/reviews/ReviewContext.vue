@@ -13,6 +13,7 @@ import { reviewPaths, type ReviewCommand, type ReviewReceipt, type ReviewState, 
 import { commands, reviewLabel } from './labels';
 import Opinions from './Opinions.vue';
 import CommandDialog from './CommandDialog.vue';
+import ApplicabilityPanel from '../validity/ApplicabilityPanel.vue';
 
 const props = defineProps<{ documentId: string; versionId: string; files: boolean }>();
 const emit = defineEmits<{ changed: []; status: [value: ReviewStatus | undefined]; denied: [] }>();
@@ -61,6 +62,8 @@ const available = computed(() => commands.filter(([, ability]) => current.value?
     <template v-if="current">
       <p><ElTag type="info">{{ reviewLabel(current.state) }}</ElTag>固定策略：{{ current.state.policy === 'REVIEW_REQUIRED' ? '需审核' : '自动发布' }} · 本轮：{{ current.state.roundNo ?? '尚未送审' }}</p>
       <p v-if="current.capabilities.canRead">当前发布版本：{{ current.state.currentVersionId ?? '尚无版本' }}</p>
+      <p v-if="current.capabilities.canRead && current.state.reviewState === 'IN_REVIEW'">审核期间适用期已冻结，修改需先撤回。</p>
+      <ApplicabilityPanel v-if="current.capabilities.canRead" :key="`review-applicability:${documentId}/${versionId}/${query.revision}`" :document-id="documentId" :version-id="versionId" readonly />
       <p v-else>当前仅可查看本人最小状态；没有正文、文件或私有意见读取资格。</p>
       <ElSpace wrap>
         <ElButton v-for="[command, , label] in available" :key="command" :aria-label="label" :disabled="documents.state.exclusive" @click="chosen = { command, state: { ...current!.state } }">{{ label }}</ElButton>

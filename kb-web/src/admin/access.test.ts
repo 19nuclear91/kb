@@ -34,6 +34,7 @@ function backend(permissions: Answer[], admin: (path: string, init: RequestInit)
   const transport = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const path = String(input); calls.push({ path, method: init.method ?? 'GET' });
     if (path === '/api/auth/me') return json(identity);
+    if (path === '/api/documents/stewardship/count') return json({ count: '0', asOfDate: '2026-11-15' });
     if (path === '/api/admin/spaces') return json([]);
     if (path === '/api/auth/permissions') { const next = permissions.length > 1 ? permissions.shift()! : permissions[0]; return typeof next === 'function' ? next() : next.clone(); }
     return admin(path, init) ?? new Response(null, { status: 404 });
@@ -203,7 +204,9 @@ describe('文档管理面板入口', () => {
     const h = backend([json(['document:security-level:write'])]); show(h.session, '/documents');
     expect(await screen.findByRole('link', { name: /文档管理面板/ })).toBeTruthy(); expect(link('知识空间')).toBeNull();
     expect(link('文档管理面板')!.getAttribute('href')).toBe('/admin/documents');
-    expect(h.calls.some(call => call.path.startsWith('/api/admin/documents') || call.path.startsWith('/api/admin/spaces/') || call.path.startsWith('/api/documents'))).toBe(false);
+    // 全站导航可以读取本人提醒数，但不能因密级权限读取文档或管理资料。
+    expect(h.calls.some(call => call.path !== '/api/documents/stewardship/count'
+      && (call.path.startsWith('/api/admin/documents') || call.path.startsWith('/api/admin/spaces/') || call.path.startsWith('/api/documents')))).toBe(false);
     expect(h.count('/api/admin/spaces')).toBe(1);
   });
   it('仅 space:create 同时显示两个入口；无资格时都不显示', async () => {

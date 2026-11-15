@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { defineComponent, h, nextTick, reactive } from 'vue';
+import { computed, defineComponent, h, nextTick, reactive } from 'vue';
 import { RouterLink, RouterView } from 'vue-router';
 import { flushPromises } from '@vue/test-utils';
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue';
@@ -22,6 +22,13 @@ vi.mock('../favorites/useFavorites', () => ({ useFavorites: () => ({ unavailable
 vi.mock('../favorites/FavoriteButton.vue', () => ({ default: { render: () => null } }));
 vi.mock('./metadata/MetadataPanel.vue', () => ({ default: { render: () => null } }));
 vi.mock('../comments/VersionComments.vue', () => ({ default: { render: () => null } }));
+// 适用期在专用测试覆盖；文件恢复替身不能把新增只读查询当作下载并修改资格。
+vi.mock('../validity/api', async original => ({ ...await original<object>(), validityApi: {
+  get: async () => { throw new ApiError(503); }, batch: async () => ({ items: [], asOfDate: '2026-11-15' }),
+} }));
+vi.mock('../validity/useValidityBatch', () => ({ useValidityBatch: () => ({
+  badges: computed(() => new Map()), unavailable: computed(() => false),
+}) }));
 
 const documentData = (id = '1') => ({ id, spaceId: '9', title: `文档 ${id}`, securityLevel: 1,
   currentVersionId: '12', currentVersionNo: 2, versions: [

@@ -79,7 +79,7 @@ const expectOnly = (name: string) => {
   for (const other of registry.names.filter(value => value !== name)) expect(loaders[other]).not.toHaveBeenCalled();
 };
 
-it.each(['/documents/1', '/admin/users', '/imports', '/imports/9223372036854775807', '/knowledge-gaps', '/knowledge-gaps/new', '/knowledge-gaps/123'])('地址 %s 在身份未确认、匿名、改密或故障时不调用加载器', async path => {
+it.each(['/documents/1', '/admin/users', '/imports', '/imports/9223372036854775807', '/knowledge-gaps', '/knowledge-gaps/new', '/knowledge-gaps/123', '/stewardship'])('地址 %s 在身份未确认、匿名、改密或故障时不调用加载器', async path => {
   for (const options of [{ saved: false }, { identity: { ...me, mustChangePassword: true } },
     { identity: deferred<Response>().promise }, { identity: new Response(null, { status: 503 }) }]) {
     const h = harness(path, options);
@@ -206,4 +206,10 @@ it.each([['/knowledge-gaps', 'KnowledgeGapsPage'], ['/knowledge-gaps/new', 'Know
   expect(mounted).toHaveBeenCalledTimes(1);
   await fireEvent.click(screen.getByRole('link', { name: /文档中心/ })); await flushPromises();
   expect(unmounted).toHaveBeenCalledWith(name);
+});
+
+it('本人负责资料页面按需加载，离开后迟到模块不能挂载', async () => {
+  const h = harness('/stewardship', { permissions: [] }); await waitFor(() => expect(loaders.StewardshipPage).toHaveBeenCalled()); expectOnly('StewardshipPage');
+  await fireEvent.click(screen.getByRole('link', { name: /文档中心/ })); await waitFor(() => expect(loaders.DocumentsPage).toHaveBeenCalled());
+  await finish('StewardshipPage'); expect(mounted.mock.calls.some(([name]) => name === 'StewardshipPage')).toBe(false); h.view.unmount();
 });

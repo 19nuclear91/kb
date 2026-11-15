@@ -20,7 +20,7 @@ const emit = defineEmits<{ cancel: []; confirm: [acknowledge: boolean] }>();
     <p v-if="state.uncertainResult">先前删除结果仍未确认；当前可访问不表示原请求失败或回滚。</p>
     <KbAlert v-if="state.message" type="warning" :title="state.message" />
     <ElSpace style="margin-top: 16px"><ElButton @click="emit('cancel')">取消</ElButton>
-      <ElButton type="danger" :disabled="state.phase !== 'confirming' || !canDelete(state.facts?.capabilities) || operations.pending > 0 || !operations.exclusive" @click="emit('confirm', state.acknowledgement !== undefined)">{{ state.acknowledgement !== undefined ? '仍要删除整份文档' : '确认删除整份文档' }}</ElButton>
+      <ElButton type="danger" :disabled="state.phase !== 'confirming' || !canDelete(state.facts?.capabilities) || operations.pending > 0 || !!operations.validityUncertain || !operations.exclusive" @click="emit('confirm', state.acknowledgement !== undefined)">{{ state.acknowledgement !== undefined ? '仍要删除整份文档' : '确认删除整份文档' }}</ElButton>
     </ElSpace>
   </KbDialog>
 </template>

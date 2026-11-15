@@ -4,6 +4,8 @@
 
 页面展示已记录的管理、本地登录和企业 SSO 登录／绑定事件。AI 调用审计和独立向量重建记录不在本页范围内；未查到事件不表示操作没有发生。
 
+适用期与复审成功写入也进入既有审计：`DOCUMENT_APPLICABILITY_UPDATE`（目标 `document-version`）、`DOCUMENT_STEWARDSHIP_UPDATE`（目标 `document`，操作 assign/reassign/unassign/cycle）和 `DOCUMENT_STEWARDSHIP_CONFIRM`（目标 `document`）。仍只需当前 `audit:read`，不要求目标文档阅读或空间管理资格；匹配重试不重复写成功事件。摘要只展示批准的日期、责任人 ID、周期、版本及是否提供原因，不显示原因正文、显示名或文档标题。契约见[审计主规格](../openspec/specs/audit-query/spec.md)，发布及离线未验证边界见[知识适用期与复审](knowledge-validity-review.md)。
+
 ## 筛选与时间
 
 常用条件为时间、结果和操作域，高级条件为操作、操作者 ID、目标类型与 ID、请求标识和本地登录用户名。条件按 AND 精确匹配，保留大小写和特殊字符，空字段省略。非空文本含首尾空白、控制字符或超长时提示错误，不静默修剪。

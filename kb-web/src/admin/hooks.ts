@@ -72,7 +72,7 @@ export function useAdminWrite(scope: MaybeRefOrGetter<string>, execute: typeof a
       local = null;
       lock = false;
     });
-  }, { immediate: true });
+  }, { immediate: true, flush: 'sync' });
   // 调用方的表跨会话世代存活时，丢弃旧世代的未决绑定（含写入内容），不留在内存中。
   watch(() => auth.state.epoch, epoch => {
     if (!bindings) {
@@ -168,6 +168,16 @@ export function useAdminWrite(scope: MaybeRefOrGetter<string>, execute: typeof a
     }
     binding.current = null;
     view.value = { context: context.value, phase: 'idle' };
+    documents.operations?.resolveUncertain?.(context.value);
+  }
+  /** 离开身份/目标上下文时丢弃本地绑定与回调；在途写入仍按实际结果结算，不伪报撤回。 */
+  function discard() {
+    generation++;
+    controller?.abort();
+    controller = null;
+    lock = false;
+    binding.current = null;
+    view.value = { context: context.value, phase: 'idle' };
   }
   // 绑定表不是响应式的：每次读取都重新判断，调用方增删条目后的下一次渲染即反映。
   const current = (): WriteView => {
@@ -183,7 +193,7 @@ export function useAdminWrite(scope: MaybeRefOrGetter<string>, execute: typeof a
     get blocked() { return documents.state.exclusive; },
     get busy() { return current().phase === 'submitting'; },
     get pending() { const phase = current().phase; return phase === 'submitting' || phase === 'uncertain'; },
-    submit, retry, reset,
+    submit, retry, reset, discard,
   };
 }
 export type AdminWrite = ReturnType<typeof useAdminWrite>;

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.document.applicability.mapper.ValidityCommandMapper">
+    <resultMap id="commandRow" type="com.zhishiku.kb.app.document.applicability.model.ValidityCommandRow">
+        <constructor>
+            <idArg column="operation_scope" javaType="string"/>
+            <arg column="request_id" javaType="string"/>
+            <arg column="actor_user_id" javaType="_long"/>
+            <arg column="target_id" javaType="_long"/>
+            <arg column="document_id" javaType="_long"/>
+            <arg column="expected_version" javaType="_long"/>
+            <arg column="digest_version" javaType="_int"/>
+            <arg column="input_digest" javaType="string"/>
+            <arg column="receipt" javaType="string"/>
+        </constructor>
+    </resultMap>
+    <select id="lockRequest" resultType="int" timeout="3" useCache="false" flushCache="true">
+        SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(#{key}, 0))
+    </select>
+    <select id="get" resultMap="commandRow" timeout="3" useCache="false" flushCache="true">
+        SELECT operation_scope, request_id, actor_user_id, target_id, document_id, expected_version,
+            digest_version, input_digest, receipt::text AS receipt
+        FROM kb_document_validity_command WHERE operation_scope = #{scope} AND request_id = #{requestId}
+    </select>
+    <insert id="insert" timeout="3">
+        INSERT INTO kb_document_validity_command
+            (operation_scope, request_id, actor_user_id, target_id, document_id, expected_version, digest_version, input_digest, receipt)
+        VALUES (#{operationScope}, #{requestId}, #{actorUserId}, #{targetId}, #{documentId}, #{expectedVersion},
+            #{digestVersion}, #{inputDigest}, CAST(#{receipt} AS jsonb))
+    </insert>
+</mapper>

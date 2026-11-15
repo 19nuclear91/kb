@@ -17,6 +17,9 @@ import FavoriteButton from '../favorites/FavoriteButton.vue';
 import type { Citation, Hit } from '../types';
 import { lazyPage } from '../routing/lazyPage';
 import { useGapFeedback } from '../knowledgeGaps/feedback';
+import ApplicabilityBadge from '../validity/ApplicabilityBadge.vue';
+import { pairKey, sourcePair } from '../validity/api';
+import { useValidityBatch } from '../validity/useValidityBatch';
 
 const GapFeedbackDialog = lazyPage(() => import('../knowledgeGaps/GapFeedbackDialog.vue'));
 
@@ -24,9 +27,12 @@ const props = defineProps<{ maximum: number }>();
 const auth = useSession(), form = ref<FormInstance>(), values = reactive({ query: '' });
 const gapFeedback = useGapFeedback();
 const hits = shallowRef<Hit[] | null>(null), error = ref(''), loading = ref(false), invalid = ref(false);
+const badgeSource = shallowRef<Hit[]>([]);
 const citation = shallowRef<Citation | null>(null), draft = shallowRef(emptyFilterDraft());
 const submitted = shallowRef<{ query: string; summary: string } | null>(null);
 let request: AbortController | null = null, generation = 0, live = true;
+const validity = useValidityBatch(() => badgeSource.value.flatMap(hit => { const pair = sourcePair(hit); return pair ? [pair] : []; }), () => String(generation));
+const badgeFor = (hit: Hit) => { const pair = sourcePair(hit); return pair ? validity.badges.value.get(pairKey(pair)) : undefined; };
 const favorites = useFavorites(() => (hits.value ?? []).flatMap(hit => { const id = hit.docId ?? hit.documentId; return id ? [id] : []; }), () => hits.value);
 const visible = computed(() => hits.value?.filter(hit => !favorites.unavailable(hit.docId ?? hit.documentId ?? '')));
 const currentCitation = computed(() => citation.value && !favorites.unavailable(citation.value.docId ?? citation.value.documentId ?? '') ? citation.value : null);
@@ -45,11 +51,13 @@ const rules: FormRules = { query: [{ validator: (_, value: string, callback) => 
   callback(error ? new Error(error) : undefined);
 } }] };
 function clear() {
+  badgeSource.value = [];
   gapFeedback.close();
   request?.abort();
   hits.value = null; error.value = ''; loading.value = false; citation.value = null; submitted.value = null;
 }
 async function search() {
+  badgeSource.value = [];
   const at = ++generation, query = values.query;
   const valid = await form.value?.validate().catch(() => false);
   if (!live || at !== generation) {
@@ -83,6 +91,7 @@ async function search() {
     const result = await searchApi.search(session, query, filters, controller.signal);
     if (active()) {
       hits.value = result;
+      badgeSource.value = result;
     }
   } catch (failure) {
     if (active() && !isAbort(failure)) {
@@ -107,11 +116,13 @@ async function search() {
     <ElButton @click="gapFeedback.open(submitted.query)">反馈知识需求</ElButton>
   </section>
   <section v-if="visible" class="panel">
+    <p v-if="validity.unavailable.value" class="muted">适用期暂不可确认</p>
     <ElEmpty v-if="!visible.length" description="当前条件下未找到可用结果" />
     <template v-else><h2>相关片段 <span class="muted">{{ visible.length }} 条</span></h2>
       <article v-for="(hit, index) in visible" :key="`${hit.chunkId}/${index}`" class="search-hit">
         <h2><ElButton link type="primary" :disabled="!citationPath(hit)" @click="citation = hit">{{ hit.docTitle ?? '参考材料' }}</ElButton></h2>
         <div style="margin-bottom: 12px"><ElTag type="info">{{ hit.versionNo == null ? '版本未知' : `v${hit.versionNo}` }}</ElTag><span class="muted">{{ hit.pageNo == null ? '页码未知' : `第 ${hit.pageNo} 页` }}</span></div>
+        <ApplicabilityBadge v-if="badgeFor(hit)" :value="badgeFor(hit)!" />
         <SafeText :text="hit.content" /><FavoriteButton v-if="hit.docId ?? hit.documentId" :id="(hit.docId ?? hit.documentId)!" :favorites="favorites" />
       </article>
     </template>

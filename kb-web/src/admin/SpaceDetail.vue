@@ -17,6 +17,7 @@ import PublicationPolicyPanel from '../reviews/PublicationPolicyPanel.vue';
 import CategoryManager from './CategoryManager.vue';
 import ManagedDocuments from './ManagedDocuments.vue';
 import DeleteSpace from './DeleteSpace.vue';
+import SpaceStewardship from './SpaceStewardship.vue';
 
 const props = defineProps<{ id: string }>();
 const auth = useSession(), access = useAdminAccess();
@@ -38,6 +39,7 @@ const allowed = computed(() => !query.loading && !query.error && query.data?.man
   <template v-if="allowed && query.data"><section class="panel"><p>编码：{{ query.data.code }}（创建后只读）</p><p>{{ query.data.description }}</p><ElTag>{{ query.data.archived ? '已归档' : '未归档' }}</ElTag>
     <ElSpace><ElButton @click="dialog = 'edit'">修改空间</ElButton><ElButton @click="dialog = 'archive'">{{ query.data.archived ? '取消归档' : '归档空间' }}</ElButton><ElButton type="danger" plain @click="dialog = 'delete'">删除空间</ElButton></ElSpace></section>
     <PublicationPolicyPanel :space-id="id" @changed="changed" /><CategoryManager :space-id="id" :archived="query.data.archived" /><AclPanel :key="id" kind="spaces" :resource-id="id" @changed="changed" /><ManagedDocuments :id="id" />
+    <SpaceStewardship :key="id" :id="id" :archived="query.data.archived" @recheck="changed" />
     <ResourceWriteDialog v-if="dialog === 'edit'" title="修改空间" :scope="`space:${id}:metadata`" :on-refresh="refresh" :on-done="done" :build="data => spaceWrites.update(id, fieldValue(data, 'name'), fieldValue(data, 'description'), query.data!.version)" @close="dialog = null">
       <p>当前版本：{{ String(query.data.version) }}。版本变化后需要重新确认。</p><TextField :key="`name:${query.data.version}`" name="name" label="空间名称" :value="query.data.name" :max="200" /><TextField :key="`desc:${query.data.version}`" name="description" label="空间描述" :value="query.data.description ?? ''" :max="2000" :required="false" multiline />
     </ResourceWriteDialog>

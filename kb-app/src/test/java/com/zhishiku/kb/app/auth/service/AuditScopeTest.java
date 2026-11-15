@@ -38,7 +38,7 @@ class AuditScopeTest {
      */
     private static final Set<String> ENTITY_PREFIXES =
             Set.of("USER", "EXTERNAL", "DEPARTMENT", "SPACE", "DOC", "DOCUMENT", "PARSE",
-                    "AUTH", "ROLE", "SSO");
+                    "AUTH", "ROLE", "SSO", "LIFECYCLE");
 
     @Test
     @DisplayName("每个操作域都必须带已登记的实体前缀，不得是裸动词")

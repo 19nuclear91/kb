@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.document.applicability.mapper.ApplicabilityMapper">
+    <resultMap id="targetRow" type="com.zhishiku.kb.app.document.applicability.model.ApplicabilityTarget">
+        <constructor>
+            <idArg column="document_id" javaType="_long"/>
+            <arg column="version_id" javaType="_long"/>
+            <arg column="space_id" javaType="_long"/>
+            <arg column="document_status" javaType="string"/>
+            <arg column="space_archived" javaType="_boolean"/>
+            <arg column="publication_protocol" javaType="string"/>
+            <arg column="publication_evidence" javaType="string"/>
+            <arg column="review_in_progress" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="applicabilityRow" type="com.zhishiku.kb.app.document.applicability.model.ApplicabilityRow">
+        <constructor>
+            <idArg column="document_id" javaType="_long"/>
+            <arg column="version_id" javaType="_long"/>
+            <arg column="effective_from" javaType="java.time.LocalDate"/>
+            <arg column="until_kind" javaType="com.zhishiku.kb.app.document.applicability.model.UntilKind"/>
+            <arg column="effective_until" javaType="java.time.LocalDate"/>
+            <arg column="applicability_version" javaType="_long"/>
+            <arg column="corrected" javaType="_boolean"/>
+            <arg column="updated_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="current" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="changeRow" type="com.zhishiku.kb.app.document.applicability.model.ApplicabilityChange">
+        <constructor>
+            <idArg column="id" javaType="_long"/>
+            <arg column="doc_id" javaType="_long"/>
+            <arg column="version_id" javaType="_long"/>
+            <arg column="changed_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="before_effective_from" javaType="java.time.LocalDate"/>
+            <arg column="before_until_kind" javaType="com.zhishiku.kb.app.document.applicability.model.UntilKind"/>
+            <arg column="before_effective_until" javaType="java.time.LocalDate"/>
+            <arg column="after_effective_from" javaType="java.time.LocalDate"/>
+            <arg column="after_until_kind" javaType="com.zhishiku.kb.app.document.applicability.model.UntilKind"/>
+            <arg column="after_effective_until" javaType="java.time.LocalDate"/>
+            <arg column="visible_to_readers" javaType="_boolean"/>
+            <arg column="reason" javaType="string"/>
+        </constructor>
+    </resultMap>
+    <sql id="targetSelect">
+        SELECT d.id AS document_id, v.id AS version_id, d.space_id, d.status AS document_status,
+            s.archived AS space_archived, v.publication_protocol, v.publication_evidence,
+            EXISTS (SELECT 1 FROM kb_document_review r WHERE r.version_id = v.id AND r.state = 'IN_REVIEW') AS review_in_progress
+        FROM kb_document_version v JOIN kb_document d ON d.id = v.doc_id JOIN kb_space s ON s.id = d.space_id
+        WHERE d.id = #{documentId} AND v.id = #{versionId} AND d.status &lt;&gt; 'deleted'
+    </sql>
+    <select id="target" resultMap="targetRow" timeout="3" useCache="false" flushCache="true">
+        <include refid="targetSelect"/>
+    </select>
+    <select id="lockVersion" resultMap="targetRow" timeout="3" useCache="false" flushCache="true">
+        <include refid="targetSelect"/> FOR UPDATE OF v
+    </select>
+    <sql id="rowSelect">
+        SELECT d.id AS document_id, v.id AS version_id, a.effective_from,
+            COALESCE(a.until_kind, 'UNDECLARED') AS until_kind, a.effective_until,
+            COALESCE(a.applicability_version, 0) AS applicability_version, COALESCE(a.corrected, FALSE) AS corrected,
+            a.updated_at, COALESCE(d.current_version_id = v.id, FALSE) AS current
+        FROM kb_document_version v JOIN kb_document d ON d.id = v.doc_id
+        LEFT JOIN kb_document_version_applicability a ON a.version_id = v.id AND a.doc_id = d.id
+        WHERE d.status &lt;&gt; 'deleted'
+    </sql>
+    <select id="get" resultMap="applicabilityRow" timeout="3" useCache="false" flushCache="true">
+        <include refid="rowSelect"/> AND d.id = #{documentId} AND v.id = #{versionId}
+    </select>
+    <select id="batch" resultMap="applicabilityRow" timeout="3" useCache="false" flushCache="true">
+        <include refid="rowSelect"/> AND
+        <choose>
+            <when test="sources != null and sources.size() > 0">
+                <foreach collection="sources" item="source" open="(" separator=" OR " close=")">
+                    (d.id = #{source.documentId} AND v.id = #{source.versionId})
+                </foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+    </select>
+    <insert id="insert" timeout="3">
+        INSERT INTO kb_document_version_applicability
+            (version_id, doc_id, effective_from, until_kind, effective_until, applicability_version, corrected)
+        VALUES (#{versionId}, #{documentId}, #{effectiveFrom}, #{untilKind}, #{effectiveUntil}, #{applicabilityVersion}, #{corrected})
+        ON CONFLICT (version_id) DO NOTHING
+    </insert>
+    <update id="update" timeout="3">
+        UPDATE kb_document_version_applicability SET effective_from = #{effectiveFrom}, until_kind = #{untilKind},
+            effective_until = #{effectiveUntil}, applicability_version = #{applicabilityVersion},
+            corrected = corrected OR #{corrected}, updated_at = clock_timestamp()
+        WHERE version_id = #{versionId} AND doc_id = #{documentId} AND applicability_version = #{applicabilityVersion} - 1
+    </update>
+    <insert id="appendChange" timeout="3">
+        INSERT INTO kb_document_applicability_change
+            (version_id, doc_id, before_effective_from, before_until_kind, before_effective_until,
+             after_effective_from, after_until_kind, after_effective_until, visible_to_readers, reason)
+        VALUES (#{versionId}, #{documentId}, #{beforeEffectiveFrom}, #{beforeUntilKind}, #{beforeEffectiveUntil},
+                #{afterEffectiveFrom}, #{afterUntilKind}, #{afterEffectiveUntil}, #{visibleToReaders}, #{reason})
+    </insert>
+    <select id="history" resultMap="changeRow" timeout="3" useCache="false" flushCache="true">
+        SELECT id, doc_id, version_id, changed_at, before_effective_from, before_until_kind, before_effective_until,
+            after_effective_from, after_until_kind, after_effective_until, visible_to_readers, reason
+        FROM kb_document_applicability_change WHERE doc_id = #{documentId} AND version_id = #{versionId}
+        <if test="beforeId != null">AND (changed_at, id) &lt; (#{beforeTime}, #{beforeId})</if>
+        ORDER BY changed_at DESC, id DESC LIMIT #{limit}
+    </select>
+    <select id="hasPermission" resultType="boolean" timeout="3" useCache="false" flushCache="true">
+        SELECT EXISTS (SELECT 1 FROM kb_document d WHERE d.id = #{documentId}
+            AND d.status NOT IN ('deleted', 'archived') AND d.security_level &lt;= #{clearance}
+            AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+            <if test="aclPermission != 'edit'">
+                AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.parentVersionVisibility"/>
+            </if>)
+    </select>
+</mapper>

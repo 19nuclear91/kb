@@ -11,6 +11,10 @@ import type { ReviewCapabilities, ReviewState, ReviewStatus } from './api';
 const f = vi.hoisted(() => ({ json: vi.fn(), send: vi.fn() }));
 const session = { json: f.json, send: f.send, getSnapshot: () => ({ phase: 'ready', epoch: 1 }) };
 vi.mock('../SessionProvider', () => ({ useSession: () => ({ session, state: { phase: 'ready', epoch: 1 } }) }));
+// 隔离新增标识读取，原 send 的顺序替身只处理文件与审核命令。
+vi.mock('../validity/api', async original => ({ ...await original<object>(), validityApi: {
+  get: async () => { throw new ApiError(503); },
+} }));
 const roundId = '11111111-2222-3333-4444-555555555555';
 function status(ability: keyof ReviewCapabilities = 'canSubmit'): ReviewStatus {
   return {

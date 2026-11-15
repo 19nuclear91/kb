@@ -1,7 +1,7 @@
 import { ApiError } from '../api';
 
 export type OperationOutcome = 'confirmed' | 'rejected' | 'uncertain';
-export interface OperationState { pending: number; exclusive: boolean; uncertain: number; uncertaintyRevision: number }
+export interface OperationState { pending: number; exclusive: boolean; uncertain: number; uncertaintyRevision: number; validityUncertain?: number }
 export const idleOperations: OperationState = { pending: 0, exclusive: false, uncertain: 0, uncertaintyRevision: 0 };
 
 export function operationFailure(error: unknown): OperationOutcome {
@@ -18,7 +18,7 @@ export class DocumentOperations {
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish(update: Partial<OperationState> = {}) {
-    this.state = { ...this.state, ...update, pending: this.writes.size, uncertain: this.unknown.size };
+    this.state = { ...this.state, ...update, pending: this.writes.size, uncertain: this.unknown.size, validityUncertain: [...this.unknown].filter(key => this.validityKey(key)).length };
     this.listeners.forEach(listener => listener());
   }
 
@@ -44,6 +44,11 @@ export class DocumentOperations {
     if (this.state.exclusive) return false;
     this.publish({ exclusive: true }); return true;
   }
+  resolveUncertain(key: string) { this.unknown.delete(key); this.publish(); }
+  private validityKey(key: string) { return /^(?:\d+\|)?(?:applicability|stewardship):/.test(key); }
+  hasValidityUncertain() { return [...this.unknown].some(key => this.validityKey(key)); }
+  /** 用户明确放弃本地核对，不表示撤回服务端写入。 */
+  abandonValidityUncertainties() { for (const key of this.unknown) if (this.validityKey(key)) this.unknown.delete(key); this.publish(); }
   cancelDelete() { this.publish({ exclusive: false }); }
-  canSubmitDelete() { return this.state.exclusive && this.writes.size === 0; }
+  canSubmitDelete() { return this.state.exclusive && this.writes.size === 0 && !this.hasValidityUncertain(); }
 }

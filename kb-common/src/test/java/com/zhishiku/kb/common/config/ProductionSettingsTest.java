@@ -158,6 +158,52 @@ class ProductionSettingsTest {
         ProductionSettings.validate("kb-worker", Set.of("prod"), settings);
     }
 
+    @ParameterizedTest
+    @CsvSource({"applicability,DEBUG", "stewardship,TRACE",
+            "applicability.mapper,ALL", "stewardship.mapper,DEBUG",
+            "applicability.mapper.ApplicabilityMapper,TRACE",
+            "applicability.mapper.ApplicabilityMapper.appendChange,DEBUG",
+            "stewardship.mapper.StewardshipMapper.candidates,TRACE"})
+    void validitySqlAndInheritedLevelsCannotExposeReasonsOrCandidateQueries(String suffix, String level) {
+        var settings = safeApp();
+        String key = "logging.level.com.zhishiku.kb.app.document." + suffix;
+        settings.put(key, level);
+        assertThatThrownBy(() -> ProductionSettings.validate("kb-app", Set.of("prod"), settings))
+                .hasMessage("生产禁止敏感数据调试日志：" + key).hasNoCause()
+                .hasMessageNotContaining("external-secret");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"applicability", "stewardship"})
+    void safeValidityMapperAllowsParentDiagnosticsButNotSpecificStatementLogging(String feature) {
+        var settings = safeApp();
+        String logger = "com.zhishiku.kb.app.document." + feature;
+        settings.put("logging.level." + logger, "DEBUG");
+        settings.put("logging.level." + logger + ".mapper", "OFF");
+        ProductionSettings.validate("kb-app", Set.of("prod"), settings);
+        String key = "logging.level." + logger + ".mapper.Statement";
+        settings.put(key, "TRACE");
+        assertThatThrownBy(() -> ProductionSettings.validate("kb-app", Set.of("prod"), settings))
+                .hasMessage("生产禁止敏感数据调试日志：" + key).hasNoCause();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"logging.group.validitySql", "logging.group.validitySql[0]"})
+    void validityLogGroupsCannotBypassSafeMapperLevels(String groupKey) {
+        var settings = safeApp();
+        settings.put("logging.level.com.zhishiku.kb.app.document.applicability.mapper", "OFF");
+        settings.put("logging.level.com.zhishiku.kb.app.document.stewardship.mapper", "OFF");
+        settings.put("logging.level.validitySql", "DEBUG");
+        for (String member : List.of("com.zhishiku.kb.app.document.applicability",
+                "com.zhishiku.kb.app.document.applicability.mapper.ApplicabilityMapper",
+                "com.zhishiku.kb.app.document.stewardship",
+                "com.zhishiku.kb.app.document.stewardship.mapper.StewardshipMapper.candidates")) {
+            settings.put(groupKey, member);
+            assertThatThrownBy(() -> ProductionSettings.validate("kb-app", Set.of("prod"), settings))
+                    .hasMessage("生产禁止敏感数据调试日志：logging.level.validitySql").hasNoCause();
+        }
+    }
+
     @Test
     void builtInSqlGroupCannotEnableSensitiveLogging() {
         var settings = safeApp();

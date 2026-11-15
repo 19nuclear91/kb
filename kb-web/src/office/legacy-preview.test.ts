@@ -9,6 +9,9 @@ import VersionReviewPanel from '../reviews/VersionReviewPanel.vue';
 const f = reactive({ json: vi.fn(), send: vi.fn(), state: { phase: 'ready', epoch: 1 } });
 const session = { json: f.json, send: f.send, getSnapshot: () => f.state, subscribe: () => () => {} };
 vi.mock('../SessionProvider', () => ({ useSession: () => ({ session, get state() { return f.state; } }) }));
+vi.mock('../validity/api', async original => ({ ...await original<object>(), validityApi: {
+  get: async () => { throw new ApiError(503); },
+} }));
 const base = '/api/documents/9007199254740993/versions/9007199254740995';
 const citation = { docId: '9007199254740993', versionId: '9007199254740995', chunkId: '9007199254740997', versionNo: 1 };
 beforeEach(() => { f.state = { phase: 'ready', epoch: f.state.epoch + 1 }; f.json.mockReset(); f.send.mockReset(); });

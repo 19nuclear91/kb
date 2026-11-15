@@ -32,4 +32,9 @@ describe('用户端路由', () => {
     expect(conversationEnabled('false')).toBe(false);
     expect(conversationEnabled('true')).toBe(true);
   });
+  it('本人负责资料接受直接返回地址并显示编号10，拒绝身份参数和站外返回', () => {
+    expect(safeReturnPath('/stewardship')).toBe('/stewardship');
+    for (const path of ['/stewardship?userId=2', '/stewardship/1', '//stewardship', '/stewardship#x']) expect(safeReturnPath(path)).toBe('/documents');
+    mountRouter(() => h(Navigation), { path: '/stewardship' }); expect(screen.getByRole('link', { name: /我负责的资料/ }).getAttribute('aria-current')).toBe('page');
+  });
 });

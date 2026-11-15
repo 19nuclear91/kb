@@ -11,7 +11,7 @@ import ResourceWriteDialog from './ResourceWriteDialog.vue';
 
 const props = defineProps<{ id: string; owner: ManagedDocument | undefined; title: string | undefined; operations: DocumentOperations; open: boolean; onDone: (result: DeleteDocumentResult) => void; onRejected: (error: ApiError) => void; refresh: () => void }>();
 const emit = defineEmits<{ open: []; close: [] }>();
-const state = useExternalStore(() => props.operations), blocked = computed(() => state.value.pending > 0);
+const state = useExternalStore(() => props.operations), blocked = computed(() => state.value.pending > 0 || !!state.value.validityUncertain);
 // 删除本身不登记为普通写入，否则互斥会拦下自己。
 provideDocumentOperations(() => null);
 onScopeDispose(() => props.operations.cancelDelete());

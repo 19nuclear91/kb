@@ -48,6 +48,8 @@ beforeEach(() => {
     ['/api/admin/documents/9/relocation-context', { documentId: '9', fromSpaceId: '7', metadataVersion: 9007199254740993n }],
     ['/api/admin/spaces/8/categories', { items: [], hasMore: false, nextCursor: null, treeVersion: 0 }],
     ['/api/admin/documents/9/security-level', { documentId: '9', securityLevel: 1, securityVersion: 9007199254740993n }], ['/api/auth/security-levels', [0, 1, 2, 3]],
+    ['/api/admin/documents/9/stewardship', { documentId: '9', spaceId: '7', state: 'UNASSIGNED', responsible: null, cycleMonths: null, firstAssignedOn: null, lastConfirmedOn: null, dueDate: null, stewardshipVersion: 0, asOfDate: '2026-11-15' }],
+    ['/api/admin/spaces/7/stewardship?state=UNASSIGNED', { items: [], nextCursor: null, asOfDate: '2026-11-15' }],
   ]);
   f.send.mockImplementation(async (path: string, init: RequestInit = {}) => {
     const value = answers.get(`${init.method ?? 'GET'} ${path}`) ?? answers.get(path) ?? [];
@@ -57,6 +59,13 @@ beforeEach(() => {
     return value instanceof Response ? value.clone() : json(value);
   });
   f.json.mockImplementation(async (path: string, init: RequestInit = {}) => readJson(await f.send(path, init)));
+});
+
+it('复审写入在途或结果未确认时删除提交禁用，明确放弃后释放', async () => {
+  const operations = new DocumentOperations(), writing = operations.beginWrite('1|stewardship:9')!; operations.beginDelete();
+  show(h(DeletionBox, { id: '9', owner: { documentId: '9', spaceId: '7', spaceArchived: false }, title: '资料', operations, open: true, onDone: vi.fn(), onRejected: vi.fn(), refresh: vi.fn() }));
+  await flushPromises(); expect(confirmation().disabled).toBe(true); writing.settle('uncertain'); await flushPromises(); expect(confirmation().disabled).toBe(true);
+  operations.abandonValidityUncertainties(); await flushPromises(); expect(confirmation().disabled).toBe(false);
 });
 function access(overrides: Partial<AdminAccess> = {}): AdminAccess {
   return { ...emptyAdminAccess, status: 'ready', spaceStatus: 'ready', spaces: [space, target], canManageSpace: id => ['7', '8'].includes(id), has: () => false, check, ...overrides };

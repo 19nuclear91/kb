@@ -28,6 +28,7 @@ export const routes: RouteRecordRaw[] = [
       page('/favorites', 'FavoritesPage'),
       page('/reviews', 'ReviewsPage'),
       page('/notifications', 'NotificationsPage'),
+      page('/stewardship', 'StewardshipPage'),
       page('/knowledge-gaps', 'KnowledgeGapsPage'), page('/knowledge-gaps/new', 'KnowledgeGapNewPage'),
       page('/knowledge-gaps/:gapId', 'KnowledgeGapDetailPage'),
       page('/search', 'SearchPage'), page('/assistant', 'AssistantPage'), page('/assistant/:conversationId', 'AssistantPage'),

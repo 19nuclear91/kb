@@ -148,3 +148,22 @@ test('知识需求路由和反馈单独统计，入口只允许最小地址助�
     }
   }
 });
+test('本人复审页面单独统计，禁止进入入口或与管理页面交叉内联', () => {
+  const input = fixture({
+    'entry.js': { modules: ['src/main.ts'], dynamicImports: ['list.js', 'stewardship.js', 'admin.js'] },
+    'list.js': { modules: ['src/pages/DocumentsPage.vue'] },
+    'stewardship.js': { modules: ['src/stewardship/StewardshipPage.vue?vue&type=script&setup=true&lang.ts'] },
+    'admin.js': { modules: ['src/admin/DocumentPanelPage.vue'] },
+  });
+  input.routeModules = { documents: ['src/pages/DocumentsPage.vue'], stewardship: ['src/stewardship/StewardshipPage.vue'],
+    documentPanel: ['src/admin/DocumentPanelPage.vue'] };
+  const report = bundleReport(input); report.scenarios.login = report.scenarios.entry;
+  checkIsolation(report);
+  assert.deepEqual(report.scenarios.stewardship.incremental.files, ['stewardship.js']);
+  const entry = structuredClone(report); entry.files['entry.js'].modules.push('src/stewardship/StewardshipPage.vue');
+  assert.throws(() => checkIsolation(entry), /入口包含受保护页面实现/);
+  const admin = structuredClone(report); admin.files['admin.js'].modules.push('src/stewardship/StewardshipPage.vue');
+  assert.throws(() => checkIsolation(admin), /管理与普通页面交叉内联: documentPanel/);
+  const user = structuredClone(report); user.files['stewardship.js'].modules.push('src/admin/DocumentPanelPage.vue');
+  assert.throws(() => checkIsolation(user), /管理与普通页面交叉内联: stewardship/);
+});

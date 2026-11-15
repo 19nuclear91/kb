@@ -125,3 +125,27 @@ it('候选 404 保留已选标签，合法空结果不重试或移除条件', as
   expect(screen.getByRole('button', { name: '移除 全局停用' })).toBeTruthy(); await submit(); await screen.findByText('当前条件下未找到可用结果');
   expect(searches()).toHaveLength(1); expect(tagReads()).toHaveLength(2); expect(searches()[0][1]!.body).toContain('9223372036854775807');
 });
+
+const validityPath = '/api/documents/applicability/query';
+const validityBadge = { documentId: '99', versionId: '22', state: 'EXPIRED', effectiveFrom: null, untilKind: 'DATE', effectiveUntil: '2026-12-31', corrected: false, current: true };
+it('适用期标识保持搜索结果顺序，503 不移除结果或重发搜索', async () => {
+  vi.mocked(context.session.send).mockImplementation(async path => {
+    if (path === validityPath) return new Response(null, { status: 503 });
+    if (path !== '/api/search') return directory(path);
+    const value = json([hit('第一正文'), { ...hit('第二正文'), chunkId: '34' }]); value.headers.set('X-Search-Filter-Version', '1'); return value;
+  });
+  const view = mount(); await submit(); await screen.findByText('第二正文'); await screen.findByText('适用期暂不可确认');
+  expect([...view.container.querySelectorAll('.search-hit')].map(item => item.textContent)).toEqual([expect.stringContaining('第一正文'), expect.stringContaining('第二正文')]);
+  expect(searches()).toHaveLength(1);
+});
+it('新搜索丢弃旧标识，缺少版本身份不发请求', async () => {
+  const pending = deferred<Response>(); let batchCount = 0;
+  vi.mocked(context.session.send).mockImplementation(async path => path === validityPath ? (++batchCount === 1 ? pending.promise : json({ items: [], asOfDate: '2027-01-01' }))
+    : path === '/api/search' ? response('最新正文') : directory(path));
+  mount(); await submit(); await screen.findByText('最新正文'); await waitFor(() => expect(batchCount).toBe(1));
+  await submit('新搜索'); await waitFor(() => expect(batchCount).toBe(2)); pending.resolve(json({ items: [validityBadge], asOfDate: '2027-01-01' })); await flushPromises();
+  expect(screen.queryByText(/已届满 ·/)).toBeNull();
+  vi.mocked(context.session.send).mockImplementation(async path => { if (path !== '/api/search') return directory(path);
+    const value = json([{ ...hit('版本身份未知正文'), versionId: null }]); value.headers.set('X-Search-Filter-Version', '1'); return value; });
+  await submit('未知版本'); await screen.findByText('版本身份未知正文'); expect(batchCount).toBe(2);
+});

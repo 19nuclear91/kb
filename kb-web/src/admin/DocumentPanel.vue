@@ -8,6 +8,7 @@ import { useSession } from '../SessionProvider';
 import type { DocumentSummary, QueryPage } from '../types';
 import { provideDocumentOperations } from '../documents/OperationContext';
 import { DocumentOperations } from '../documents/operations';
+import { useExternalStore } from '../useExternalStore';
 import { perm, useAdminAccess } from './access';
 import AclPanel from './AclPanel.vue';
 import { useAdminResource } from './hooks';
@@ -17,11 +18,13 @@ import ResourceStatus from './ResourceStatus.vue';
 import RelocationBox from './RelocationBox.vue';
 import SecurityBox from './SecurityBox.vue';
 import DeletionBox from './DeletionBox.vue';
+import StewardshipBox from './StewardshipBox.vue';
 
 const props = defineProps<{ id: string }>();
 const auth = useSession(), access = useAdminAccess(), acl = shallowRef<Acl[] | undefined>(), revision = ref(0);
 // 随面板的 epoch/文档 key 重建，删除确认与其他三个写入口互斥。
 const operations = markRaw(new DocumentOperations());
+const operationState = useExternalStore(() => operations);
 provideDocumentOperations(() => operations);
 const deleting = ref(false), probe = ref(false), receipt = useResourceReceipt(() => `document:${props.id}`), conflict = useResourceNotice(() => `document:${props.id}:relocation-conflict`);
 const membership = useAdminResource<QueryPage<ManagedDocument>>(signal => auth.session.json(spacePaths.documents({ documentId: props.id }), { signal }), () => `document-owner:${props.id}`);
@@ -84,7 +87,9 @@ function relocationConflict(message: string) {
 <template>
   <PageHeader :title="title.data?.title ?? `文档 ${id}`" description="各管理区块独立按资格开放"><template #extra><RouterLink to="/admin/spaces">返回空间目录</RouterLink></template></PageHeader>
   <KbAlert v-if="receipt" type="success" :title="receipt" /><KbAlert v-if="conflict" type="warning" :title="conflict" /><ResourceStatus :loading="membership.loading" :error="membership.error" :retry="membership.reload" />
+  <p v-if="operationState.validityUncertain">复审结果未确认，删除已禁用。<button @click="operations.abandonValidityUncertainties()">放弃复审结果核对（不会撤回写入）</button></p>
   <template v-if="owner"><p>当前空间 {{ owner.spaceId }} · {{ owner.spaceArchived ? '已归档' : '未归档' }}</p>
+    <StewardshipBox :key="`stewardship:${id}:${owner.spaceId}`" :id="id" :archived="owner.spaceArchived" @changed="receipt = '责任人与复审设置已保存。'" @recheck="refresh" />
     <AclPanel :key="`acl:${id}:${owner.spaceId}`" kind="documents" :resource-id="id" :archived="owner.spaceArchived" @data="acl = $event" />
     <RelocationBox :key="`relocate:${id}:${owner.spaceId}`" :id="id" :source="owner.spaceId" :acl="acl" :refresh="refresh" :done="relocated" :on-conflict="relocationConflict" />
   </template><SecurityBox v-if="securityAllowed" :key="`${id}:${revision}`" :id="id" />

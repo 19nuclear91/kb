@@ -4,7 +4,7 @@ import { ElButton, ElInput } from 'element-plus';
 import { useSession } from '../SessionProvider';
 import { useResource } from '../useResource';
 import { ApiError, isAbort, messageOf, positiveId } from '../api';
-import { bindTurn, mergeTurns, reconcileTurn, type TurnBinding } from '../logic';
+import { bindTurn, mergeTurns, reconcileTurn, visibleTurn, type TurnBinding } from '../logic';
 import { openTurn } from '../stream';
 import Feedback from '../ui/Feedback.vue';
 import SafeText from '../ui/SafeText.vue';
@@ -16,6 +16,8 @@ import CitationDrawer from '../CitationDrawer.vue';
 import type { Citation, Conversation, Turn, TurnPage } from '../types';
 import { lazyPage } from '../routing/lazyPage';
 import { savedFeedbackQuestion, useGapFeedback } from '../knowledgeGaps/feedback';
+import { sourcePair } from '../validity/api';
+import { useValidityBatch } from '../validity/useValidityBatch';
 
 const GapFeedbackDialog = lazyPage(() => import('../knowledgeGaps/GapFeedbackDialog.vue'));
 
@@ -34,6 +36,9 @@ const running = ref(false), error = ref(''), hint = ref('');
 const temporary = shallowRef<{ question: string; text: string; citations: Citation[] } | null>(null);
 const citation = shallowRef<Citation | null>(null), confirmDelete = ref(false), quarantined = ref(false);
 const deleting = ref(false), paging = ref(false), liveMeta = shallowRef<Conversation | null>(null);
+const validity = useValidityBatch(() => quarantined.value || query.loading || query.error ? []
+  : [...turns.value.flatMap(turn => visibleTurn(turn).citations ?? []), ...(temporary.value?.citations ?? [])]
+    .flatMap(citation => { const pair = sourcePair(citation); return pair ? [pair] : []; }), () => props.conversationId);
 const binding = shallowRef<TurnBinding>();
 let lock = false, deleteLock = false, pageLock = false, generation = 0;
 let stream: AbortController | null = null, reconciliation: AbortController | null = null;
@@ -222,12 +227,12 @@ async function remove() {
   <Feedback :loading="query.loading" :error="query.error" :retry="query.reload" />
   <template v-if="!query.loading && !query.error && !quarantined">
     <section v-for="turn in turns" :key="turn.id" aria-label="已保存问答轮次">
-      <TurnCard :value="turn" @open="citation = $event" />
+      <TurnCard :value="turn" :validity="validity.badges.value" @open="citation = $event" />
       <ElButton v-if="savedFeedbackQuestion(turn) !== null" @click="gapFeedback.open(savedFeedbackQuestion(turn)!)">反馈此提问</ElButton>
     </section>
     <ElButton v-if="cursor != null" :loading="paging" @click="more">更多轮次</ElButton>
     <article v-if="temporary" class="turn"><div class="question"><SafeText :text="temporary.question" /></div><p class="muted">生成中 · 内容尚待保存确认</p>
-      <SafeText :text="temporary.text" /><References :citations="temporary.citations" @open="citation = $event" /></article>
+      <SafeText :text="temporary.text" /><References :citations="temporary.citations" :validity="validity.badges.value" @open="citation = $event" /></article>
     <div class="composer"><ElInput v-model="question" type="textarea" aria-label="问题" :disabled="running" :autosize="{ minRows: 3, maxRows: 10 }" placeholder="向知识库提问…" />
       <div class="toolbar" style="margin-top: 12px"><ElButton type="primary" :disabled="running || !question.trim() || (!!meta?.activeTurnId && binding?.question !== question)" @click="send(false)">{{ binding ? '匹配重试' : '发送问题' }}</ElButton>
         <ElButton v-if="binding" :disabled="running || !!meta?.activeTurnId" @click="send(true)">主动重新发送</ElButton>

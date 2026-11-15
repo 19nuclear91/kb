@@ -12,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
@@ -157,6 +158,28 @@ class ModuleBoundaryTest {
                 .that().resideInAPackage("..web..")
                 .should().accessClassesThat().resideInAPackage("..mapper..")
                 .because("绕过 service 层意味着绕过权限解析，这是越权漏洞的常见来源")
+                .check(classes);
+    }
+
+    @Test
+    @DisplayName("适用期与复审只使用公开的授权、空间管理及审计服务，不访问其他业务 Mapper")
+    void validityAndStewardshipOnlyUseDeclaredExternalServices() {
+        String applicability = "com.zhishiku.kb.app.document.applicability.";
+        String stewardship = "com.zhishiku.kb.app.document.stewardship.";
+        Set<String> allowed = Set.of("com.zhishiku.kb.app.auth.service.PermissionService",
+                "com.zhishiku.kb.app.auth.service.IdentityAuditService",
+                "com.zhishiku.kb.app.document.service.DocumentVersionAccessService",
+                "com.zhishiku.kb.app.space.service.SpaceQueryService");
+        var source = DescribedPredicate.describe("适用期和复审子包", (JavaClass type) ->
+                type.getPackageName().startsWith(applicability) || type.getPackageName().startsWith(stewardship));
+        noClasses().that(source).should().dependOnClassesThat(DescribedPredicate.describe("其他业务 Mapper", (JavaClass type) ->
+                type.getPackageName().startsWith("com.zhishiku.kb.app.") && type.getPackageName().contains(".mapper")
+                        && !type.getPackageName().startsWith(applicability) && !type.getPackageName().startsWith(stewardship)))
+                .check(classes);
+        noClasses().that(source).should().dependOnClassesThat(DescribedPredicate.describe("未登记的外部服务", (JavaClass type) ->
+                type.getPackageName().startsWith("com.zhishiku.kb.app.") && type.getPackageName().contains(".service")
+                        && !type.getPackageName().startsWith(applicability) && !type.getPackageName().startsWith(stewardship)
+                        && !type.isEnum() && allowed.stream().noneMatch(name -> type.getName().equals(name) || type.getName().startsWith(name + "$"))))
                 .check(classes);
     }
 

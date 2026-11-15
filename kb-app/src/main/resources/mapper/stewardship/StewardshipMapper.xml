@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.document.stewardship.mapper.StewardshipMapper">
+    <sql id="editGrant">
+        (EXISTS (SELECT 1 FROM kb_space_acl a WHERE a.space_id = d.space_id AND a.permission = 'edit'
+            AND a.principal_key IN (<include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.userKeys"/>))
+        OR EXISTS (SELECT 1 FROM kb_document_acl a WHERE a.doc_id = d.id AND a.permission = 'edit'
+            AND a.principal_key IN (<include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.userKeys"/>)))
+    </sql>
+    <sql id="stewardEligible">
+        u.enabled = TRUE AND dept.enabled = TRUE AND u.must_change_password = FALSE AND u.clearance_level &gt;= d.security_level
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.viewGrant"/>
+        AND <include refid="editGrant"/>
+    </sql>
+    <sql id="responsibleEligible">
+        EXISTS (SELECT 1 FROM sys_user u JOIN sys_dept dept ON dept.id = u.dept_id
+            WHERE u.id = f.responsible_user_id AND <include refid="stewardEligible"/>)
+    </sql>
+    <resultMap id="documentRow" type="com.zhishiku.kb.app.document.stewardship.model.StewardshipDocument">
+        <constructor>
+            <idArg column="document_id" javaType="_long"/>
+            <arg column="space_id" javaType="_long"/>
+            <arg column="status" javaType="string"/>
+            <arg column="space_archived" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="stewardshipRow" type="com.zhishiku.kb.app.document.stewardship.model.StewardshipRow">
+        <constructor>
+            <idArg column="doc_id" javaType="_long"/>
+            <arg column="responsible_user_id" javaType="java.lang.Long"/>
+            <arg column="cycle_months" javaType="_int"/>
+            <arg column="first_assigned_on" javaType="java.time.LocalDate"/>
+            <arg column="last_confirmed_on" javaType="java.time.LocalDate"/>
+            <arg column="last_confirmed_by" javaType="java.lang.Long"/>
+            <arg column="due_date" javaType="java.time.LocalDate"/>
+            <arg column="stewardship_version" javaType="_long"/>
+            <arg column="updated_at" javaType="java.time.OffsetDateTime"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="candidateRow" type="com.zhishiku.kb.app.document.stewardship.model.StewardCandidate">
+        <constructor>
+            <idArg column="user_id" javaType="_long"/>
+            <arg column="display_name" javaType="string"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="listRow" type="com.zhishiku.kb.app.document.stewardship.model.StewardshipListRow">
+        <constructor>
+            <idArg column="document_id" javaType="_long"/>
+            <arg column="title" javaType="string"/>
+            <arg column="responsible_user_id" javaType="java.lang.Long"/>
+            <arg column="display_name" javaType="string"/>
+            <arg column="cycle_months" javaType="java.lang.Integer"/>
+            <arg column="last_confirmed_on" javaType="java.time.LocalDate"/>
+            <arg column="due_date" javaType="java.time.LocalDate"/>
+            <arg column="stewardship_version" javaType="_long"/>
+            <arg column="eligible" javaType="_boolean"/>
+            <arg column="version_id" javaType="java.lang.Long"/>
+            <arg column="effective_from" javaType="java.time.LocalDate"/>
+            <arg column="until_kind" javaType="com.zhishiku.kb.app.document.applicability.model.UntilKind"/>
+            <arg column="effective_until" javaType="java.time.LocalDate"/>
+            <arg column="corrected" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <sql id="documentSelect">
+        SELECT d.id AS document_id, d.space_id, d.status, s.archived AS space_archived
+        FROM kb_document d JOIN kb_space s ON s.id = d.space_id WHERE d.id = #{documentId} AND d.status &lt;&gt; 'deleted'
+    </sql>
+    <select id="document" resultMap="documentRow" timeout="3" useCache="false" flushCache="true">
+        <include refid="documentSelect"/>
+    </select>
+    <select id="shareDocument" resultMap="documentRow" timeout="3" useCache="false" flushCache="true">
+        <include refid="documentSelect"/> FOR SHARE OF d
+    </select>
+    <sql id="rowSelect">
+        SELECT doc_id, responsible_user_id, cycle_months, first_assigned_on, last_confirmed_on, last_confirmed_by,
+            due_date, stewardship_version, updated_at FROM kb_document_stewardship WHERE doc_id = #{documentId}
+    </sql>
+    <select id="get" resultMap="stewardshipRow" timeout="3" useCache="false" flushCache="true">
+        <include refid="rowSelect"/>
+    </select>
+    <select id="lock" resultMap="stewardshipRow" timeout="3" useCache="false" flushCache="true">
+        <include refid="rowSelect"/> FOR UPDATE
+    </select>
+    <insert id="insert" timeout="3">
+        INSERT INTO kb_document_stewardship (doc_id, responsible_user_id, cycle_months, first_assigned_on,
+            last_confirmed_on, last_confirmed_by, due_date, stewardship_version)
+        VALUES (#{documentId}, #{responsibleUserId}, #{cycleMonths}, #{firstAssignedOn}, #{lastConfirmedOn},
+            #{lastConfirmedBy}, #{dueDate}, #{stewardshipVersion}) ON CONFLICT (doc_id) DO NOTHING
+    </insert>
+    <update id="update" timeout="3">
+        UPDATE kb_document_stewardship SET responsible_user_id = #{responsibleUserId}, cycle_months = #{cycleMonths},
+            last_confirmed_on = #{lastConfirmedOn}, last_confirmed_by = #{lastConfirmedBy}, due_date = #{dueDate},
+            stewardship_version = #{stewardshipVersion}, updated_at = clock_timestamp()
+        WHERE doc_id = #{documentId} AND stewardship_version = #{stewardshipVersion} - 1
+    </update>
+    <select id="responsible" resultMap="candidateRow" timeout="3" useCache="false" flushCache="true">
+        SELECT u.id AS user_id, u.display_name FROM kb_document_stewardship f JOIN sys_user u ON u.id = f.responsible_user_id
+        WHERE f.doc_id = #{documentId}
+    </select>
+    <select id="eligible" resultType="boolean" timeout="3" useCache="false" flushCache="true">
+        SELECT EXISTS (SELECT 1 FROM kb_document d CROSS JOIN sys_user u JOIN sys_dept dept ON dept.id = u.dept_id
+            WHERE d.id = #{documentId} AND d.status &lt;&gt; 'deleted' AND u.id = #{userId} AND <include refid="stewardEligible"/>)
+    </select>
+    <select id="candidates" resultMap="candidateRow" timeout="3" useCache="false" flushCache="true">
+        SELECT u.id AS user_id, u.display_name FROM kb_document d CROSS JOIN sys_user u JOIN sys_dept dept ON dept.id = u.dept_id
+        WHERE d.id = #{documentId} AND d.status &lt;&gt; 'deleted' AND <include refid="stewardEligible"/>
+        AND u.display_name LIKE #{namePattern} ESCAPE '\'
+        <if test="afterId != null">AND u.id &gt; #{afterId}</if>
+        ORDER BY u.id LIMIT #{limit}
+    </select>
+    <sql id="mineFrom">
+        FROM kb_document_stewardship f JOIN kb_document d ON d.id = f.doc_id
+        JOIN sys_user u ON u.id = f.responsible_user_id JOIN sys_dept dept ON dept.id = u.dept_id
+        LEFT JOIN kb_document_version v ON v.id = d.current_version_id AND v.doc_id = d.id
+        LEFT JOIN kb_document_version_applicability a ON a.version_id = v.id AND a.doc_id = d.id
+    </sql>
+    <sql id="mineWhere">
+        WHERE f.responsible_user_id = #{actor} AND d.status NOT IN ('deleted', 'archived') AND d.security_level &lt;= #{clearance}
+        AND <include refid="stewardEligible"/>
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.parentVersionVisibility"/>
+        <if test="view == 'attention'">
+            AND (f.due_date &lt;= CAST(#{today} AS DATE) + 30 OR (a.until_kind = 'DATE'
+                AND (a.effective_from IS NULL OR a.effective_from &lt;= #{today}) AND a.effective_until &lt;= CAST(#{today} AS DATE) + 30))
+        </if>
+    </sql>
+    <select id="mine" resultMap="listRow" timeout="3" useCache="false" flushCache="true">
+        <bind name="aclPermission" value="'view'"/>
+        SELECT d.id AS document_id, d.title, f.responsible_user_id, u.display_name, f.cycle_months, f.last_confirmed_on,
+            f.due_date, f.stewardship_version, TRUE AS eligible, v.id AS version_id, a.effective_from,
+            COALESCE(a.until_kind, 'UNDECLARED') AS until_kind, a.effective_until, COALESCE(a.corrected, FALSE) AS corrected
+        <include refid="mineFrom"/> <include refid="mineWhere"/>
+        <if test="afterId != null">AND (f.due_date, d.id) &gt; (#{afterDate}, #{afterId})</if>
+        ORDER BY f.due_date, d.id LIMIT #{limit}
+    </select>
+    <select id="count" resultType="string" timeout="3" useCache="false" flushCache="true">
+        <bind name="aclPermission" value="'view'"/>
+        SELECT count(*)::text <include refid="mineFrom"/> <include refid="mineWhere"/>
+    </select>
+    <select id="space" resultMap="listRow" timeout="3" useCache="false" flushCache="true">
+        SELECT d.id AS document_id, NULL AS title, f.responsible_user_id, responsible.display_name, f.cycle_months,
+            f.last_confirmed_on, f.due_date, COALESCE(f.stewardship_version, 0) AS stewardship_version,
+            <include refid="responsibleEligible"/> AS eligible, NULL AS version_id, NULL AS effective_from,
+            'UNDECLARED' AS until_kind, NULL AS effective_until, FALSE AS corrected
+        FROM kb_document d LEFT JOIN kb_document_stewardship f ON f.doc_id = d.id
+        LEFT JOIN sys_user responsible ON responsible.id = f.responsible_user_id
+        WHERE d.space_id = #{spaceId} AND d.status &lt;&gt; 'deleted' AND
+        <choose>
+            <when test="state == 'UNASSIGNED'">f.responsible_user_id IS NULL</when>
+            <when test="state == 'NEEDS_REASSIGN'">f.responsible_user_id IS NOT NULL AND NOT <include refid="responsibleEligible"/></when>
+            <when test="state == 'DUE_SOON'">f.responsible_user_id IS NOT NULL AND <include refid="responsibleEligible"/>
+                AND f.due_date &gt;= #{today} AND f.due_date &lt;= CAST(#{today} AS DATE) + 30</when>
+            <when test="state == 'OVERDUE'">f.responsible_user_id IS NOT NULL AND <include refid="responsibleEligible"/>
+                AND f.due_date &lt; #{today}</when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+        <if test="afterId != null">
+            AND <choose>
+                <when test="state == 'DUE_SOON' or state == 'OVERDUE'">(f.due_date, d.id) &gt; (#{afterDate}, #{afterId})</when>
+                <otherwise>d.id &gt; #{afterId}</otherwise>
+            </choose>
+        </if>
+        ORDER BY <if test="state == 'DUE_SOON' or state == 'OVERDUE'">f.due_date,</if> d.id LIMIT #{limit}
+    </select>
+</mapper>

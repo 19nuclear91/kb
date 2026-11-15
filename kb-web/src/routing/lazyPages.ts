@@ -10,6 +10,7 @@ export const SearchPage = lazyPage(() => import('../pages/SearchPage.vue'));
 export const FavoritesPage = lazyPage(() => import('../pages/FavoritesPage.vue'));
 export const ReviewsPage = lazyPage(() => import('../pages/ReviewsPage.vue'));
 export const NotificationsPage = lazyPage(() => import('../pages/NotificationsPage.vue'));
+export const StewardshipPage = lazyPage(() => import('../stewardship/StewardshipPage.vue'));
 export const KnowledgeGapsPage = lazyPage(() => import('../pages/KnowledgeGapsPage.vue'));
 export const KnowledgeGapNewPage = lazyPage(() => import('../pages/KnowledgeGapNewPage.vue'));
 export const KnowledgeGapDetailPage = lazyPage(() => import('../pages/KnowledgeGapDetailPage.vue'));

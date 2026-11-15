@@ -10,6 +10,7 @@ import type { ReviewStatus } from './api';
 const f = reactive({ json: vi.fn(), send: vi.fn(), epoch: 1, phase: 'ready' });
 const unitSession = { json: f.json, send: f.send, getSnapshot: () => ({ epoch: f.epoch, phase: f.phase }) };
 vi.mock('../SessionProvider', () => ({ useSession: () => ({ session: unitSession, get state() { return { epoch: f.epoch, phase: f.phase }; } }) }));
+vi.mock('../validity/api', async original => ({ ...await original<object>(), validityApi: { get: async () => { throw new ApiError(503); } } }));
 const state = { documentId: '10', versionId: '21', versionNo: 2, stateVersion: '7', indexStatus: 'indexed', policy: 'REVIEW_REQUIRED' as const,
   publicationEvidence: 'NONE' as const, reviewState: 'IN_REVIEW', reviewId: '11111111-2222-3333-4444-555555555555', roundNo: 1, currentVersionId: '20' };
 const abilities = { canRead: false, canDownload: false, canSubmit: true, canApprove: false, canReject: false, canWithdraw: false, canRefresh: false, canReadOpinions: false };
@@ -83,4 +84,12 @@ it('私有原因纯文本显示，必须显式加载；冲突保留原因但不�
   expect(await screen.findByText(/本窗口不会把决定应用到新状态/)).toBeTruthy();
   expect((screen.getByLabelText('私有驳回原因') as HTMLTextAreaElement).value).toBe('需要补充');
   expect((screen.getByRole('button', { name: '确认驳回' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('适用期读取503仅影响只读标识，冻结说明与审核决定仍可用', async () => {
+  status.capabilities = { ...abilities, canRead: true, canSubmit: false, canApprove: true };
+  show(); await fireEvent.click(await screen.findByRole('button', { name: '查看版本 21 状态' }));
+  expect(await screen.findByText('适用期暂不可确认')).toBeTruthy(); expect(screen.getByText('审核期间适用期已冻结，修改需先撤回。')).toBeTruthy();
+  expect((screen.getByRole('button', { name: '通过并发布' }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByRole('button', { name: '编辑适用期' })).toBeNull(); expect(f.send).not.toHaveBeenCalled();
 });

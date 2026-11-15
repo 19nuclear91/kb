@@ -70,9 +70,14 @@ logging:
     com.zhishiku.kb.app.auth.mapper.AuditQueryMapper: "OFF"
     com.zhishiku.kb.app.document.mapper.DocumentAdminQueryMapper: "OFF"
     com.zhishiku.kb.app.document.metadata.mapper: "OFF"
+    com.zhishiku.kb.app.document.applicability.mapper: "OFF"
+    com.zhishiku.kb.app.document.stewardship.mapper: "OFF"
     com.zhishiku.kb.app.document.imports.mapper: "OFF"
 
 kb:
+  validity:
+    # 全站业务日期口径；上线后不得修改，只接受地区 ID。
+    business-time-zone: ${KB_VALIDITY_BUSINESS_TIME_ZONE:Asia/Shanghai}
   document-import:
     max-items: ${KB_IMPORT_MAX_ITEMS:100}
     max-total-bytes: ${KB_IMPORT_MAX_TOTAL_BYTES:1073741824}

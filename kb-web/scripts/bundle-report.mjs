@@ -10,6 +10,7 @@ export const routes = {
   detail: ['src/pages/DocumentDetailPage.vue'], account: ['src/pages/AccountPage.vue'],
   search: ['src/pages/SearchPage.vue'], favorites: ['src/pages/FavoritesPage.vue'],
   reviews: ['src/pages/ReviewsPage.vue'], notifications: ['src/pages/NotificationsPage.vue'],
+  stewardship: ['src/stewardship/StewardshipPage.vue'],
   imports: ['src/pages/ImportsPage.vue'], importDetail: ['src/pages/ImportDetailPage.vue'],
   knowledgeGapList: ['src/pages/KnowledgeGapsPage.vue'], knowledgeGapNew: ['src/pages/KnowledgeGapNewPage.vue'],
   knowledgeGapDetail: ['src/pages/KnowledgeGapDetailPage.vue'], knowledgeGapFeedback: ['src/knowledgeGaps/GapFeedbackDialog.vue'],
@@ -111,7 +112,7 @@ export function checkIsolation(report) {
     fail('入口、登录或文档列表提前包含知识问题实现');
   }
   const adminPages = Object.values(routes).flat().filter(id => id.startsWith('src/admin/'));
-  const userPages = Object.values(routes).flat().filter(id => id.startsWith('src/pages/') && !['login', 'password', 'sso'].some(name => routes[name].includes(id)));
+  const userPages = Object.values(routes).flat().filter(id => !id.startsWith('src/admin/') && !['login', 'password', 'sso'].some(name => routes[name].includes(id)));
   for (const [name, ids] of Object.entries(routes)) {
     if (!report.scenarios[name]) continue;
     const current = modules(name), opposite = ids.some(id => id.startsWith('src/admin/')) ? userPages : adminPages;
