@@ -1,6 +1,8 @@
 package com.zhishiku.kb.ai.model;
 
 import com.zhishiku.kb.ai.telemetry.ModelTelemetry;
+import com.zhishiku.kb.ai.chat.RetrievalClient;
+import com.zhishiku.kb.ai.evaluation.CaptureSession;
 import io.micrometer.observation.ObservationRegistry;
 import io.netty.channel.ChannelOption;
 import org.reactivestreams.Subscription;
@@ -16,6 +18,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.netty.http.client.HttpClient;
+import reactor.util.context.ContextView;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -70,7 +73,7 @@ public class OpenAiChatTransport {
             if (!subscribed.compareAndSet(false, true)) {
                 return Flux.error(new ChatModelFailure(ChatModelFailure.Kind.ALREADY_SUBSCRIBED));
             }
-            return telemetry.observe(() -> call(prepared));
+            return telemetry.observe(() -> Flux.deferContextual(context -> call(prepared, context)));
         }).onErrorMap(error -> {
             if (error instanceof ChatModelFailure) {
                 return error;
@@ -80,11 +83,16 @@ public class OpenAiChatTransport {
         });
     }
 
-    private Flux<ModelEvent> call(PreparedChatRequest prepared) {
+    private Flux<ModelEvent> call(PreparedChatRequest prepared, ContextView context) {
         Scheduler clock = Schedulers.parallel();
         long deadline = clock.now(TimeUnit.MILLISECONDS) + totalTimeout.toMillis();
         byte[] bytes = prepared.encode();
-        return client.post().uri(endpoint).headers(headers -> {
+        CaptureSession capture = CaptureSession.current(context);
+        if (capture != null && context.hasKey(CaptureSession.MATERIALS_KEY)) {
+            List<RetrievalClient.Citation> materials = context.get(CaptureSession.MATERIALS_KEY);
+            capture.input(prepared, materials, bytes);
+        }
+        Flux<ModelEvent> response = client.post().uri(endpoint).headers(headers -> {
                     headers.clear();
                     headers.setBearerAuth(apiKey);
                     headers.setContentType(MediaType.APPLICATION_JSON);
@@ -94,6 +102,12 @@ public class OpenAiChatTransport {
                 // 每次活动只重置空闲期限，总期限固定；timeout 同时取消实际上游订阅。
                 .timeout(nextTimeout(clock, deadline), event -> nextTimeout(clock, deadline))
                 .filter(event -> event instanceof ModelEvent.Delta || event instanceof ModelEvent.FinalUsage);
+        if (capture == null) {
+            return response;
+        }
+        return response.doOnSubscribe(subscription -> capture.subscribed())
+                .doOnNext(capture::event).doOnComplete(capture::modelCompleted)
+                .doOnError(failure -> capture.modelFailed(false)).doOnCancel(() -> capture.modelFailed(true));
     }
 
     private Mono<Long> nextTimeout(Scheduler clock, long deadline) {

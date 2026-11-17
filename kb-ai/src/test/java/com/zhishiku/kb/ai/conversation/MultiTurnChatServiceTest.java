@@ -10,6 +10,8 @@ import com.zhishiku.kb.ai.budget.BudgetCapability;
 import com.zhishiku.kb.ai.budget.BudgetKind;
 import com.zhishiku.kb.ai.budget.InputTokenCount;
 import com.zhishiku.kb.ai.model.ChatModelFailure;
+import com.zhishiku.kb.ai.evaluation.CaptureRegistry;
+import com.zhishiku.kb.ai.evaluation.CaptureSession;
 import com.zhishiku.kb.ai.conversation.config.ConversationProperties;
 import com.zhishiku.kb.common.conversation.UsageSettlement;
 import org.junit.jupiter.api.Test;
@@ -48,6 +50,49 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MultiTurnChatServiceTest {
+    @Test
+    void evaluationCarriesOnlyRegisteredExecutionAndSeparatesSettlementFailure() {
+        var registry = mock(CaptureRegistry.class);
+        var capture = mock(CaptureSession.class);
+        when(registry.bind(begin, "q")).thenReturn(Mono.just(capture));
+        var service = service(true);
+        service.setEvaluation(registry);
+        events = Flux.deferContextual(context -> {
+            assertThat(context.get(CaptureSession.class)).isSameAs(capture);
+            return Flux.just(new MultiTurnModel.Event("答案", false, null, null));
+        });
+        when(settlement.settle(any())).thenReturn(Mono.error(new IllegalStateException("settlement unavailable")));
+        var state = service.prepare(9, "q", "r", 0, "token").block();
+        StepVerifier.create(service.stream(state)).thenConsumeWhile(event -> !"error".equals(event.event()))
+                .expectNextMatches(event -> "error".equals(event.event())).verifyComplete();
+        verify(capture).businessSaved("COMPLETED");
+        verify(capture, never()).settled();
+        verify(capture).finish();
+        assertThat(subscriptions).hasValue(1);
+    }
+
+    @Test
+    void evaluationDoesNotBindReplaysOrChangeNoResultsSemantics() {
+        var registry = mock(CaptureRegistry.class);
+        var capture = mock(CaptureSession.class);
+        when(registry.bind(begin, "q")).thenReturn(Mono.just(capture));
+        var service = service(true);
+        service.setEvaluation(registry);
+        when(retrieval.retrieve(anyString(), anyString())).thenReturn(Mono.just(List.of()));
+        var state = service.prepare(9, "q", "r", 0, "token").block();
+        StepVerifier.create(service.stream(state)).thenConsumeWhile(event -> !"done".equals(event.event()))
+                .expectNextMatches(event -> "done".equals(event.event())).verifyComplete();
+        verify(capture).sealed(true, List.of(), false);
+        verify(capture).businessSaved("COMPLETED");
+        verify(capture).settled();
+        verify(capture).finish();
+        assertThat(subscriptions).hasValue(0);
+        when(app.check(anyLong(), anyString(), anyString(), anyLong(), anyString()))
+                .thenReturn(Mono.just(new BeginResult(9, key.turnId(), 1, "COMPLETED", true, null)));
+        service.prepare(9, "q", "r", 0, "token").block();
+        verify(registry).bind(begin, "q");
+    }
+
     final ConversationAppClient app = mock(ConversationAppClient.class);
     final RetrievalClient retrieval = mock(RetrievalClient.class);
     final ChatQuotaAuditService quota = mock(ChatQuotaAuditService.class);

@@ -1,0 +1,1 @@
+{"reviewPolicy":{"sampleProportion":1.0,"version":"stratified-sha256-v1"},"rules":[{"maxRegression":null,"metric":"factCoverage","min":0.9,"tag":null},{"maxRegression":null,"metric":"claimSupport","min":0.9,"tag":null}],"schemaVersion":1}

@@ -77,10 +77,11 @@ class MultiTurnControllerTest {
         invalid.setExpectedLastTurnSeq(-1L);
         StepVerifier.create(controller.turn(9, invalid, "token", null)).expectErrorMatches(e -> e instanceof ResponseStatusException s && s.getStatusCode().value() == 400).verify();
         StepVerifier.create(controller.turn(9, request(), "token", "different")).expectError(ResponseStatusException.class).verify();
-        for (String field : new String[]{"messages", "history", "role", "userId", "sources"})
+        for (String field : new String[]{"messages", "history", "role", "userId", "sources", "system", "evaluation"}) {
             assertThatThrownBy(() -> new ObjectMapper().readValue("{\"question\":\"问题\",\"expectedLastTurnSeq\":0," +
                     "\"requestId\":\"r\",\"" + field + "\":[]}", MultiTurnChatController.TurnRequest.class))
                     .isInstanceOf(JsonProcessingException.class);
+        }
         when(fixture.quota.acquire(anyString(), anyInt())).thenReturn(Mono.error(new ChatQuotaAuditService.QuotaExceededException("private")));
         StepVerifier.create(controller.turn(9, request(), "token", null)).expectErrorMatches(e -> e instanceof ResponseStatusException s && s.getStatusCode().value() == 429).verify();
         assertThat(fixture.subscriptions).hasValue(0);

@@ -11,6 +11,9 @@ import com.zhishiku.kb.ai.conversation.config.ConversationProperties;
 import com.zhishiku.kb.ai.telemetry.StreamTelemetry;
 import com.zhishiku.kb.ai.auth.OutputPermitService;
 import com.zhishiku.kb.ai.auth.OutputRevokedException;
+import com.zhishiku.kb.ai.evaluation.CaptureRegistry;
+import com.zhishiku.kb.ai.evaluation.CaptureSession;
+import com.zhishiku.kb.ai.model.OpenAiMultiTurnModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
@@ -47,6 +50,12 @@ public class MultiTurnChatService {
     private com.zhishiku.kb.ai.observation.AiObservationClient observation;
     private StreamTelemetry telemetry = StreamTelemetry.NOOP;
     private OutputPermitService permits;
+    private CaptureRegistry evaluation;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setEvaluation(CaptureRegistry evaluation) {
+        this.evaluation = evaluation;
+    }
 
     @org.springframework.beans.factory.annotation.Autowired
     public void setOutputPermits(OutputPermitService permits) {
@@ -98,6 +107,7 @@ public class MultiTurnChatService {
         private volatile boolean accountRevoked;
         private SettlementIntent intent;
         private Mono<Void> closing;
+        private CaptureSession capture;
 
         private Prepared(String question, String token) {
             this.question = question;
@@ -130,13 +140,19 @@ public class MultiTurnChatService {
                     new ConversationBudget(properties).ready(state.model);
                     return app.begin(id, question, request, expected, token).flatMap(begin -> {
                         state.result = begin;
-                        if (begin.replayed()) return Mono.just(state);
+                        if (begin.replayed()) {
+                            return Mono.just(state);
+                        }
                         return quota.acquire(token, question.codePointCount(0, question.length())).flatMap(lease -> {
                             state.lease = lease;
-                            if (lease.userId() != begin.execution().ownerUserId())
+                            if (lease.userId() != begin.execution().ownerUserId()) {
                                 return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN, "当前主体已变化"));
+                            }
                             return app.reserve(begin.execution(), lease.departmentId(), lease.leaseId(),
-                                    lease.eventId(), lease.reservedTokens()).thenReturn(state);
+                                    lease.eventId(), lease.reservedTokens())
+                                    .then(Mono.defer(() -> evaluation == null ? Mono.<CaptureSession>empty()
+                                            : evaluation.bind(begin, question)))
+                                    .doOnNext(capture -> state.capture = capture).thenReturn(state);
                         });
                     });
                 }).onErrorResume(error -> {
@@ -183,6 +199,11 @@ public class MultiTurnChatService {
                         List<RetrievalClient.Citation> materials = noResults ? List.of() : plan.input().materials();
                         return app.seal(key, noResults ? "NO_RESULTS" : "MODEL", noResults ? List.of() :
                                         plan.history(), materials, state.token)
+                                .doOnSuccess(ignored -> {
+                                    if (state.capture != null) {
+                                        state.capture.sealed(noResults, materials, state.model instanceof OpenAiMultiTurnModel);
+                                    }
+                                })
                                 .thenMany(Flux.fromIterable(materials).map(c -> event("citation",
                                         ConversationAppClient.citation(c))))
                                 .concatWith(Flux.defer(() -> {
@@ -229,11 +250,16 @@ public class MultiTurnChatService {
                     })
                     .doFinally(signal -> {
                         state.modelSubscription.dispose();
-                        if (signal == SignalType.CANCEL && !state.terminal)
+                        if (signal == SignalType.CANCEL && !state.terminal) {
                             cleanup(state, "CANCELLED").subscribe(ignored -> {
                             }, ignored -> {
                             });
-                    });
+                        }
+                        if (state.capture != null) {
+                            state.capture.finish();
+                        }
+                    })
+                    .contextWrite(context -> state.capture == null ? context : context.put(CaptureSession.class, state.capture));
     }
 
     private Flux<ServerSentEvent<Object>> commands(Prepared state, Flux<MultiTurnModel.Event> source) {
@@ -336,6 +362,9 @@ public class MultiTurnChatService {
                 .doOnNext(intent -> {
                     state.intent = intent;
                     state.terminal = true;
+                    if (state.capture != null) {
+                        state.capture.businessSaved(intent.generationStatus());
+                    }
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     if (state.lease == null) {
@@ -345,7 +374,12 @@ public class MultiTurnChatService {
                     return state.lease.cancelAsync().then(Mono.<SettlementIntent>empty());
                 }))
                 .flatMap(intent -> settlement.settle(intent).then(Mono.defer(() -> app.acknowledge(intent))))
-                .doOnSuccess(ignored -> state.terminal = true);
+                .doOnSuccess(ignored -> {
+                    state.terminal = true;
+                    if (state.capture != null && state.intent != null) {
+                        state.capture.settled();
+                    }
+                });
     }
 
     private Mono<Void> cleanup(Prepared state, String status) {

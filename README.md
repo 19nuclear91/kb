@@ -26,6 +26,7 @@
 | 审计与运营 | 管理/登录审计查询、AI 用量与调用审计、知识库运营报表、对象存储对账 | AI 用量采集默认关闭，对象存储对账默认只报告、不删除。见[审计页面](docs/admin-audit-web.md)、[AI 用量](docs/admin-ai-usage-web.md)、[运营报表](docs/knowledge-operations-reports.md) |
 | 监控与告警 | Prometheus 指标、可选追踪、可信数据库快照、独立结算监控、29 类聚合告警、三组 Grafana 面板及钉钉投递 | 独立部署，不接入业务事务；通知采用受控模板与管理入口，不逐任务外发。见[遥测运维](docs/telemetry-operations.md)、[监控告警](docs/monitoring-alerts-operations.md)、[生命周期监控](docs/lifecycle-operations.md#监控语义与排障顺序)、[监控部署](docs/monitoring-deployment-operations.md) |
 | 检索评测 | 通过真实搜索 API 采集结果，离线计算质量指标、基线差异及质量门禁 | `kb-eval-collector` 负责采集，`kb-eval` 负责离线评测，均为独立 Java CLI。见[采集说明](docs/retrieval-result-collection.md)、[评测说明](docs/retrieval-evaluation.md) |
+| 回答质量评测 | 固定数据集的回答/证据初评、人工复核及回归门禁 | `kb-answer-eval` 独立 CLI，AI 采集默认关闭；已实现并完成离线验证，真实联调和业务质量未验证。见[操作手册](docs/answer-evaluation.md) |
 
 权限同时包含功能资格与资源授权。拥有管理权限不自动获得文档阅读、下载、编辑或审核资格，文档可见性还受密级、空间归档和版本发布状态约束。功能权限按持久化 permission code 精确匹配，不依据角色名称放行；相关目录见 [Permission.java](kb-app/src/main/java/com/zhishiku/kb/app/auth/model/Permission.java)。
 
@@ -41,6 +42,7 @@
 | `kb-alert-notifier` | 8090（通知） / 9090（管理） | 独立钉钉群机器人适配器；接收 Alertmanager 聚合通知，不依赖业务模块、数据库、Redis 或 Sa-Token；两个端口仅供受控内网使用 |
 | `kb-eval` | — | 离线检索质量评测与报告 CLI |
 | `kb-eval-collector` | — | 核对会话身份、串行调用搜索 API 并输出评测输入的 CLI |
+| `kb-answer-eval` | — | 回答与证据采集、裁判初评、人工复核、基线比较和报告 CLI |
 | `kb-web` | 5173（Vite 默认） | Vue 3 / TypeScript 6 / Element Plus，vue-router 5 与 Pinia；独立安装和构建，不属于 Maven reactor |
 
 浏览器通过同源 `/api/**` 访问网关；网关将业务请求转发到 `kb-app`，将 `/api/ai/**` 转发到 `kb-ai`。网关、应用与 AI 通过 Redis 共享 Sa-Token 会话。当前路由使用配置的服务地址，不依赖注册中心。
@@ -478,6 +480,10 @@ java -jar .\kb-eval\target\kb-eval-0.1.0-SNAPSHOT.jar --help
 
 `kb-eval` 读取文件进行离线评测，按文档版本计算检索质量、重复率和基线退步，输出 JSON / CSV / Markdown 报告；质量门禁退出码为 0（通过或未配置门禁）、1（未达标）、2（本地错误）。示例位于 [kb-eval/examples/demo](kb-eval/examples/demo)，使用合成数据，不能作为真实模型质量证明。
 
+回答及证据质量使用独立的 `kb-answer-eval`，格式与检索评测分开。完整 PowerShell 入口、合成基准、配置与脱敏业务模板见[回答评测操作手册](docs/answer-evaluation.md)。其报告区分 INVALID、INCOMPLETE、REVIEW_REQUIRED、FAIL、NOT_CONFIGURED、PASS，保留初评和人工有效结果；离线测试通过不代表真实模型质量达标。
+
+E-11 首期 48/48 项任务已完成，已同步 5 份主规格并[归档](openspec/changes/archive/2026-11-17-answer-quality-and-evidence-evaluation/archive-summary.md)。实现及离线验证见[验证记录](docs/answer-evaluation-verification.md)；真实联调与业务质量仍未验证，功能未部署。
+
 ## 正式部署要点
 
 - **显式提供生产配置。** app / Worker 需要 `KB_DB_URL`、`KB_DB_USERNAME`、`KB_DB_PASSWORD`、S3 配置和 Embedding profile 清单；app / gateway / AI 需共享 Redis 会话配置，网关配置下游地址与明确的 `KB_CORS_ALLOWED_ORIGINS`。生产启动会校验配置，不使用 `dev` 绕过。
@@ -507,6 +513,7 @@ kb-alert-notifier/  独立钉钉聚合告警适配器
 kb-web/             用户端与管理端
 kb-eval/            离线检索评测
 kb-eval-collector/  检索结果采集
+kb-answer-eval/     回答质量与引用证据评测
 db/                 数据库验证脚本
 docs/               API、功能、运维与验证记录
 ops/office/         可选 Office 预览部署配置

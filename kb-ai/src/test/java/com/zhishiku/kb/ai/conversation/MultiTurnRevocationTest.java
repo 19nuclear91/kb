@@ -2,11 +2,16 @@ package com.zhishiku.kb.ai.conversation;
 
 import com.zhishiku.kb.ai.auth.AuthenticationClient;
 import com.zhishiku.kb.ai.auth.OutputPermitService;
+import com.zhishiku.kb.ai.evaluation.CaptureFixtures;
+import com.zhishiku.kb.ai.evaluation.CaptureRegistry;
+import com.zhishiku.kb.ai.evaluation.CaptureSession;
+import com.zhishiku.kb.answereval.OutputPublisher;
 import com.zhishiku.kb.common.api.ApiException;
 import com.zhishiku.kb.common.security.AuthenticationCheck;
 import com.zhishiku.kb.common.security.AccountRevokedException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.codec.ServerSentEvent;
@@ -15,9 +20,13 @@ import reactor.core.publisher.Mono;
 import reactor.test.scheduler.VirtualTimeScheduler;
 
 import java.time.Duration;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -33,6 +42,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MultiTurnRevocationTest {
+    @TempDir
+    Path root;
     private final VirtualTimeScheduler timer = VirtualTimeScheduler.getOrSet();
     private final MultiTurnChatServiceTest fixture = new MultiTurnChatServiceTest();
     private final AuthenticationClient authentication = mock(AuthenticationClient.class);
@@ -127,6 +138,64 @@ class MultiTurnRevocationTest {
         verify(fixture.app).finish(fixture.key, "FAILED", 0, false, null, null);
         verify(fixture.app, never()).finishRevoked(any(), anyLong(), anyBoolean(), any(), any());
         assertStopped("AUTHENTICATION_UNAVAILABLE");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void revocationAndCaptureWriteFailureNeverWaitOrResumeOutput(boolean captureFailsFirst) throws IOException {
+        var queued = new ArrayList<Runnable>();
+        var writes = new AtomicInteger();
+        var broken = new OutputPublisher() {
+            @Override
+            protected void write(OutputStream stream, byte[] bytes) throws IOException {
+                if (captureFailsFirst) {
+                    denied.set(true);
+                } else {
+                    assertThat(fixture.cancelled).isTrue();
+                }
+                writes.incrementAndGet();
+                stream.write(bytes, 0, 1);
+                throw new IOException("PRIVATE_CAPTURE_FAILURE");
+            }
+        };
+        var bound = CaptureFixtures.bound(root, fixture.begin, broken, queued::add);
+        var registry = mock(CaptureRegistry.class);
+        when(registry.bind(fixture.begin, CaptureFixtures.QUESTION)).thenReturn(Mono.just(bound.session()));
+        fixture.events = Flux.deferContextual(context -> {
+            assertThat(context.get(CaptureSession.class)).isSameAs(bound.session());
+            return Flux.never();
+        });
+        var service = fixture.service(true);
+        service.setEvaluation(registry);
+        service.setOutputPermits(new OutputPermitService(authentication, timer, () -> timer.now(TimeUnit.NANOSECONDS)));
+        var prepared = service.prepare(9, CaptureFixtures.QUESTION, "request", 0, "token").block();
+        service.stream(prepared).subscribe(output::add);
+        if (captureFailsFirst) {
+            // 模拟登记提前结束采集，业务仍等待模型；写入失败与账号撤权同时发生。
+            bound.session().finish();
+            assertThat(queued).hasSize(1);
+            queued.getFirst().run();
+            assertThat(fixture.cancelled).isFalse();
+        }
+        denied.set(true);
+        timer.advanceTimeBy(Duration.ofSeconds(3));
+        assertThat(fixture.cancelled).isTrue();
+        assertThat(fixture.subscriptions).hasValue(1);
+        verify(fixture.app).finishRevoked(fixture.key, 0, false, null, null);
+        assertStopped("ACCOUNT_REVOKED");
+        // 撤权已收尾，采集仍在队列中；随后真实临时文件写入失败也不能恢复输出。
+        assertThat(queued).hasSize(1);
+        int stoppedCount = output.size();
+        if (!captureFailsFirst) {
+            assertThat(writes).hasValue(0);
+            queued.getFirst().run();
+        }
+        assertThat(writes).hasValue(1);
+        assertThat(root.resolve("captures").resolve(bound.registration().artifactKey())).doesNotExist();
+        timer.advanceTimeBy(Duration.ofSeconds(30));
+        assertThat(output).hasSize(stoppedCount).noneMatch(event -> "delta".equals(event.event()));
+        assertThat(output.toString()).doesNotContain("PRIVATE_CAPTURE_FAILURE");
+        assertThat(fixture.subscriptions).hasValue(1);
     }
 
     private void start() {

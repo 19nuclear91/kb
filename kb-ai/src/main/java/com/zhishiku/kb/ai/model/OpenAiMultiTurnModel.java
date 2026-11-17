@@ -1,6 +1,7 @@
 package com.zhishiku.kb.ai.model;
 
 import com.zhishiku.kb.ai.conversation.MultiTurnModel;
+import com.zhishiku.kb.ai.evaluation.CaptureSession;
 import com.zhishiku.kb.ai.budget.BudgetCapability;
 import com.zhishiku.kb.ai.budget.BudgetGuard;
 import com.zhishiku.kb.ai.budget.BudgetKind;
@@ -63,7 +64,10 @@ public class OpenAiMultiTurnModel implements MultiTurnModel {
             if (!BudgetGuard.fits(budgetCapability(), budget.count(request), reservationTokens, request.maxOutputTokens())) {
                 throw new ChatModelFailure(ChatModelFailure.Kind.BUDGET_UNAVAILABLE);
             }
-            return transport.stream(request).map(event -> {
+            return transport.stream(request)
+                    .contextWrite(context -> context.hasKey(CaptureSession.class)
+                            ? context.put(CaptureSession.MATERIALS_KEY, input.materials()) : context)
+                    .map(event -> {
                 if (event instanceof ModelEvent.Delta delta) {
                     return new Event(delta.text(), false, null, null);
                 }

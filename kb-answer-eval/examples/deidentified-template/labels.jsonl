@@ -1,0 +1,1 @@
+{"abstentionCondition":null,"caseId":"correct","criticalErrorCriteria":["额外声称免审批"],"expected":"ANSWER","facts":[{"factId":"amount","text":"金额上限为100元"},{"factId":"approval","text":"须经主管批准"}],"forbiddenAssertions":["自动免审批"],"injection":null}

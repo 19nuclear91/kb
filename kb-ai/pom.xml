@@ -16,6 +16,11 @@
     <dependencies>
         <dependency>
             <groupId>com.zhishiku</groupId>
+            <artifactId>kb-answer-eval</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.zhishiku</groupId>
             <artifactId>kb-common</artifactId>
         </dependency>
         <!--
