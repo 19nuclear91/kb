@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.document.changenote.mapper.ChangeNoteMapper">
+    <resultMap id="target" type="com.zhishiku.kb.app.document.changenote.model.ChangeNoteTarget">
+        <constructor>
+            <idArg column="document_id" javaType="_long"/><arg column="version_id" javaType="_long"/>
+            <arg column="space_id" javaType="_long"/><arg column="document_status" javaType="string"/>
+            <arg column="space_archived" javaType="_boolean"/><arg column="publication_protocol" javaType="string"/>
+            <arg column="publication_evidence" javaType="string"/><arg column="review_in_progress" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="note" type="com.zhishiku.kb.app.document.changenote.model.ChangeNoteRow">
+        <constructor>
+            <idArg column="document_id" javaType="_long"/><arg column="version_id" javaType="_long"/>
+            <arg column="text" javaType="string"/><arg column="base_version_id" javaType="java.lang.Long"/>
+            <arg column="base_version_no" javaType="java.lang.Integer"/><arg column="note_version" javaType="_long"/>
+            <arg column="corrected" javaType="_boolean"/><arg column="created_after_visible" javaType="_boolean"/>
+            <arg column="updated_at" javaType="java.time.OffsetDateTime"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="base" type="com.zhishiku.kb.app.document.changenote.mapper.ChangeNoteMapper$Base">
+        <constructor><idArg column="version_id" javaType="_long"/><arg column="version_no" javaType="_int"/></constructor>
+    </resultMap>
+    <resultMap id="history" type="com.zhishiku.kb.app.document.changenote.model.ChangeNoteHistory">
+        <constructor>
+            <idArg column="id" javaType="_long"/><arg column="doc_id" javaType="_long"/>
+            <arg column="version_id" javaType="_long"/><arg column="changed_at" javaType="java.time.OffsetDateTime"/>
+            <arg column="text_before" javaType="string"/><arg column="text_after" javaType="string"/>
+            <arg column="base_before" javaType="java.lang.Long"/><arg column="base_after" javaType="java.lang.Long"/>
+            <arg column="visible_to_readers" javaType="_boolean"/><arg column="reason" javaType="string"/>
+        </constructor>
+    </resultMap>
+    <sql id="targetSelect">
+        SELECT d.id AS document_id, v.id AS version_id, d.space_id, d.status AS document_status,
+            s.archived AS space_archived, v.publication_protocol, v.publication_evidence,
+            EXISTS (SELECT 1 FROM kb_document_review r WHERE r.version_id = v.id AND r.state = 'IN_REVIEW') AS review_in_progress
+        FROM kb_document_version v JOIN kb_document d ON d.id = v.doc_id JOIN kb_space s ON s.id = d.space_id
+        WHERE d.id = #{documentId} AND v.id = #{versionId} AND d.status &lt;&gt; 'deleted'
+    </sql>
+    <select id="target" resultMap="target" timeout="3" useCache="false" flushCache="true"><include refid="targetSelect"/></select>
+    <select id="lockVersion" resultMap="target" timeout="3" useCache="false" flushCache="true"><include refid="targetSelect"/> FOR UPDATE OF v</select>
+    <select id="get" resultMap="note" timeout="3" useCache="false" flushCache="true">
+        SELECT d.id AS document_id, v.id AS version_id, n.text, n.base_version_id, b.version_no AS base_version_no,
+            COALESCE(n.note_version, 0) AS note_version, COALESCE(n.corrected, FALSE) AS corrected,
+            COALESCE(n.created_after_visible, FALSE) AS created_after_visible, n.updated_at
+        FROM kb_document_version v JOIN kb_document d ON d.id = v.doc_id
+        LEFT JOIN kb_document_change_note n ON n.version_id = v.id AND n.doc_id = d.id
+        LEFT JOIN kb_document_version b ON b.id = n.base_version_id AND b.doc_id = d.id
+        WHERE d.id = #{documentId} AND v.id = #{versionId} AND d.status &lt;&gt; 'deleted'
+    </select>
+    <select id="base" resultMap="base" timeout="3" useCache="false" flushCache="true">
+        SELECT b.id AS version_id, b.version_no FROM kb_document_version b
+        JOIN kb_document_version v ON v.doc_id = b.doc_id
+        WHERE v.doc_id = #{documentId} AND v.id = #{versionId} AND b.version_no &lt; v.version_no
+            AND b.publication_evidence IN ('PUBLISHED', 'OBSERVED_CURRENT')
+        ORDER BY b.version_no DESC LIMIT 1
+    </select>
+    <insert id="insert" timeout="3">
+        INSERT INTO kb_document_change_note (version_id, doc_id, text, base_version_id, note_version, corrected, created_after_visible)
+        VALUES (#{versionId}, #{documentId}, #{text}, #{baseVersionId}, #{noteVersion}, #{corrected}, #{createdAfterVisible})
+        ON CONFLICT (version_id) DO NOTHING
+    </insert>
+    <update id="update" timeout="3">
+        UPDATE kb_document_change_note SET text = #{text}, base_version_id = #{baseVersionId}, note_version = #{noteVersion},
+            corrected = corrected OR #{corrected}, created_after_visible = created_after_visible OR #{createdAfterVisible},
+            updated_at = clock_timestamp() WHERE version_id = #{versionId} AND doc_id = #{documentId}
+    </update>
+    <insert id="appendHistory" timeout="3">
+        INSERT INTO kb_document_change_note_history (version_id, doc_id, text_before, text_after, base_before, base_after, visible_to_readers, reason)
+        VALUES (#{versionId}, #{documentId}, #{textBefore}, #{textAfter}, #{baseBefore}, #{baseAfter}, #{visibleToReaders}, #{reason})
+    </insert>
+    <select id="history" resultMap="history" timeout="3" useCache="false" flushCache="true">
+        SELECT id, doc_id, version_id, changed_at, text_before, text_after, base_before, base_after, visible_to_readers, reason
+        FROM kb_document_change_note_history WHERE doc_id = #{documentId} AND version_id = #{versionId}
+        <if test="beforeTime != null">AND (changed_at, id) &lt; (#{beforeTime}, #{beforeId})</if>
+        ORDER BY changed_at DESC, id DESC LIMIT #{limit}
+    </select>
+    <select id="hasPermission" resultType="boolean" timeout="3" useCache="false" flushCache="true">
+        SELECT EXISTS (SELECT 1 FROM kb_document d WHERE d.id = #{documentId}
+            AND d.status NOT IN ('deleted', 'archived') AND d.security_level &lt;= #{clearance}
+            AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+            <if test="aclPermission != 'edit'">AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.parentVersionVisibility"/></if>)
+    </select>
+</mapper>

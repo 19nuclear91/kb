@@ -5,6 +5,8 @@ import com.zhishiku.kb.common.embedding.EmbeddingResult;
 import com.zhishiku.kb.common.embedding.EmbeddingRole;
 import com.zhishiku.kb.common.embedding.ProfileEmbeddingClient;
 import com.zhishiku.kb.worker.parse.model.ParseIssue;
+import com.zhishiku.kb.worker.parse.model.DocumentBlock;
+import com.zhishiku.kb.worker.parse.model.SourceLocation;
 import com.zhishiku.kb.worker.parse.model.ParseTask;
 import com.zhishiku.kb.worker.parse.model.ParsedDocument;
 import com.zhishiku.kb.worker.storage.ObjectStorage;
@@ -27,6 +29,30 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class DefaultParsePipelineTest {
+
+    @Test
+    void preservesOrderedWholeBlocksWhileChunksSplitLargeTables() throws Exception {
+        var cells = List.of(List.of("甲".repeat(150), "乙".repeat(150)), List.of("末行", "末格"));
+        var table = new DocumentBlock(DocumentBlock.Kind.TABLE, "甲".repeat(150) + " | "
+                + "乙".repeat(150) + "\n末行 | 末格", 2, "标题", SourceLocation.unknown(), cells);
+        var parser = mock(DocumentParser.class);
+        when(parser.isAvailable()).thenReturn(true);
+        when(parser.parseDocument(any(), anyString(), anyString(), anyInt())).thenReturn(new ParsedDocument(
+                "a.txt", "text/plain", List.of(new DocumentBlock(DocumentBlock.Kind.HEADING,
+                "  标题\r\n第二行  ", 1, null, null), new DocumentBlock(DocumentBlock.Kind.PARAGRAPH,
+                " \t \r\n", null, null, null), table), List.of(), false));
+        var pipeline = new DefaultParsePipeline(key -> new ByteArrayInputStream(new byte[]{1}), parser,
+                new IngestionProperties(1024, 10000, 100, 5), ParseEmbeddingFixture.clients());
+
+        var result = pipeline.process(ParseEmbeddingFixture.task(), () -> true);
+
+        assertThat(result.blocks()).extracting(DocumentBlock::text)
+                .containsExactly("标题\n第二行", table.text());
+        assertThat(result.blocks().get(1).tableCells()).isEqualTo(cells);
+        assertThat(result.chunks().size()).isGreaterThan(result.blocks().size());
+        assertThat(new ParsePipeline.ParsedDocument(result.chunks(), "fixture", "1", false,
+                List.of(), result.execution()).blocks()).isEmpty();
+    }
 
     @Test
     void refusesMissingIdentityAndWrongGeneratedProfile() throws Exception {

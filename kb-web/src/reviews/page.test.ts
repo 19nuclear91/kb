@@ -11,6 +11,7 @@ const f = reactive({ json: vi.fn(), send: vi.fn(), epoch: 1, phase: 'ready' });
 const unitSession = { json: f.json, send: f.send, getSnapshot: () => ({ epoch: f.epoch, phase: f.phase }) };
 vi.mock('../SessionProvider', () => ({ useSession: () => ({ session: unitSession, get state() { return { epoch: f.epoch, phase: f.phase }; } }) }));
 vi.mock('../validity/api', async original => ({ ...await original<object>(), validityApi: { get: async () => { throw new ApiError(503); } } }));
+vi.mock('../changeNotes/api', async original => ({ ...await original<object>(), changeNotesApi: { get: async () => { throw new ApiError(503); } } }));
 const state = { documentId: '10', versionId: '21', versionNo: 2, stateVersion: '7', indexStatus: 'indexed', policy: 'REVIEW_REQUIRED' as const,
   publicationEvidence: 'NONE' as const, reviewState: 'IN_REVIEW', reviewId: '11111111-2222-3333-4444-555555555555', roundNo: 1, currentVersionId: '20' };
 const abilities = { canRead: false, canDownload: false, canSubmit: true, canApprove: false, canReject: false, canWithdraw: false, canRefresh: false, canReadOpinions: false };
@@ -44,6 +45,7 @@ it.each([
 it('edit-only 本人状态不加载文件、意见或人员目录；自审无审批入口', async () => {
   show(); await fireEvent.click(await screen.findByRole('button', { name: '查看版本 21 状态' }));
   expect(await screen.findByText(/当前仅可查看本人最小状态/)).toBeTruthy(); expect(screen.queryByText('不应显示的本人标题')).toBeNull();
+  expect(screen.queryByRole('link', { name: '与当前发布版本对比' })).toBeNull(); expect(screen.queryByText('版本变更说明')).toBeNull();
   for (const title of ['通过并发布', '驳回', '查看私有意见', '预览此版本', '下载原件']) {
     expect(screen.queryByRole('button', { name: title })).toBeNull();
   }
@@ -84,6 +86,17 @@ it('私有原因纯文本显示，必须显式加载；冲突保留原因但不�
   expect(await screen.findByText(/本窗口不会把决定应用到新状态/)).toBeTruthy();
   expect((screen.getByLabelText('私有驳回原因') as HTMLTextAreaElement).value).toBe('需要补充');
   expect((screen.getByRole('button', { name: '确认驳回' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it.each([undefined, '20'])('当前发布版本=%s，说明故障不影响审核操作且只读', async currentVersionId => {
+  status.state = { ...state, currentVersionId };
+  status.capabilities = { ...abilities, canRead: true, canSubmit: false, canApprove: true };
+  show(); await fireEvent.click(await screen.findByRole('button', { name: '查看版本 21 状态' }));
+  await screen.findByText('变更说明暂不可确认'); expect(screen.getByText('审核期间变更说明已冻结，修改需先撤回。')).toBeTruthy();
+  const link = screen.queryByRole('link', { name: '与当前发布版本对比' });
+  if (currentVersionId) expect(link?.getAttribute('href')).toBe('/documents/10/compare/20/21'); else expect(link).toBeNull();
+  expect((screen.getByRole('button', { name: '通过并发布' }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByRole('button', { name: '编辑变更说明' })).toBeNull(); expect(f.send).not.toHaveBeenCalled();
 });
 
 it('适用期读取503仅影响只读标识，冻结说明与审核决定仍可用', async () => {

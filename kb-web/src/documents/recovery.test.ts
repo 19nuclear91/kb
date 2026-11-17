@@ -23,6 +23,9 @@ vi.mock('../favorites/FavoriteButton.vue', () => ({ default: { render: () => nul
 vi.mock('./metadata/MetadataPanel.vue', () => ({ default: { render: () => null } }));
 vi.mock('../comments/VersionComments.vue', () => ({ default: { render: () => null } }));
 // 适用期在专用测试覆盖；文件恢复替身不能把新增只读查询当作下载并修改资格。
+vi.mock('../changeNotes/api', async original => ({ ...await original<object>(), changeNotesApi: {
+  get: async () => { throw new ApiError(503); },
+} }));
 vi.mock('../validity/api', async original => ({ ...await original<object>(), validityApi: {
   get: async () => { throw new ApiError(503); }, batch: async () => ({ items: [], asOfDate: '2026-11-15' }),
 } }));

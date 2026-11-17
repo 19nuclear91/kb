@@ -4,6 +4,21 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { bundleReport, checkIsolation, compare } from './bundle-report.mjs';
 
+test('对比页独立统计，入口与列表隔离差异及说明实现', () => {
+  const input = fixture({ 'entry.js': { modules: ['src/main.ts'], dynamicImports: ['list.js', 'compare.js'] },
+    'list.js': { modules: ['src/pages/DocumentsPage.vue'] },
+    'compare.js': { modules: ['src/versionDiff/VersionComparePage.vue', 'src/changeNotes/ChangeNotePanel.vue'] } });
+  input.routeModules = { documents: ['src/pages/DocumentsPage.vue'], compare: ['src/versionDiff/VersionComparePage.vue'] };
+  const report = bundleReport(input); report.scenarios.login = report.scenarios.entry; checkIsolation(report);
+  assert.deepEqual(report.scenarios.compare.incremental.files, ['compare.js']);
+  for (const location of ['entry.js', 'list.js']) {
+    for (const id of ['src/versionDiff/api.ts', 'src/changeNotes/api.ts']) {
+      const changed = structuredClone(report); changed.files[location].modules.push(id);
+      assert.throws(() => checkIsolation(changed), /提前包含版本对比或说明实现/);
+    }
+  }
+});
+
 function fixture(graph) {
   const manifest = {}, chunks = {}, assets = {}, data = {};
   for (const [file, config] of Object.entries(graph)) {

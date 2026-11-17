@@ -23,6 +23,10 @@ import VersionReviewPanel from '../reviews/VersionReviewPanel.vue';
 import VersionComments from '../comments/VersionComments.vue';
 import ProgressCard from '../documents/ProgressCard.vue';
 import ApplicabilityPanel from '../validity/ApplicabilityPanel.vue';
+import ChangeNotePanel from '../changeNotes/ChangeNotePanel.vue';
+import CompareSelector from '../changeNotes/CompareSelector.vue';
+import type { Note } from '../changeNotes/api';
+import { useChangeNoteDraft } from '../changeNotes/useChangeNoteDraft';
 import ApplicabilityBadge from '../validity/ApplicabilityBadge.vue';
 import { pairKey } from '../validity/api';
 import { useValidityBatch } from '../validity/useValidityBatch';
@@ -40,6 +44,7 @@ const detail = computed(() => blocked.value ? undefined : query.data);
 const selected = ref<string | null>(null), revision = ref(0), upload = ref(false), preview = ref<string | null>(null);
 const busy = ref(false), error = ref(''), metadataTitle = ref<string | null>(null);
 const versionStatus = shallowRef<{ key: string; value: ReviewStatus }>();
+const note = shallowRef<Note | null>(null);
 const deniedVersions = shallowRef<Set<string>>(new Set());
 let lock = false, retryRequest: AbortController | null = null;
 onScopeDispose(() => retryRequest?.abort());
@@ -66,6 +71,11 @@ const versions = computed(() => (detail.value?.versions ?? []).filter(item => !d
 const validity = useValidityBatch(() => versions.value.map(item => ({ documentId: props.documentId, versionId: item.id })), () => `${props.documentId}/${query.revision}`);
 const version = computed(() => selected.value ? versions.value.find(item => item.id === selected.value) : versions.value.find(item => item.id === detail.value?.currentVersionId));
 const versionId = computed(() => version.value?.id);
+const noteDraft = useChangeNoteDraft(() => props.documentId, versionId);
+watch([blocked, () => query.status, () => capabilities.status], ([unavailable, ...statuses]) => {
+  if (unavailable || statuses.some(status => [401, 403, 404].includes(status ?? 0))) noteDraft.clear();
+});
+watch(versionId, () => { note.value = null; }, { flush: 'sync' });
 const path = computed(() => versionId.value ? `/api/documents/${props.documentId}/versions/${versionId.value}` : '');
 const versionKey = computed(() => `${query.key}/${query.revision}/${versionId.value ?? ''}/${revision.value}`);
 let liveVersion = versionKey.value;
@@ -112,6 +122,7 @@ const loseVersion = computed(() => {
       return;
     }
     liveVersion = '';
+    noteDraft.clear();
     if (id) {
       deniedVersions.value = new Set([...deniedVersions.value, id]);
     }
@@ -178,7 +189,7 @@ function uploaded(result: UploadResult) {
 <template>
   <PageHeader :title="detail ? metadataTitle ?? detail.title : '文档详情'" description="版本、处理状态与原始文件"><template #extra><RouterLink to="/documents">返回文档中心</RouterLink></template></PageHeader>
   <ElButton :disabled="factsLoading || documents.state.exclusive" @click="recheck">重新核对操作资格</ElButton>
-  <p v-if="documents.state.uncertain && documents.operations?.hasValidityUncertain()">适用期结果未确认，删除已禁用。<ElButton @click="documents.operations?.abandonValidityUncertainties()">放弃适用期未确认结果核对（不会撤回写入）</ElButton></p>
+    <p v-if="documents.state.uncertain && documents.operations?.hasValidityUncertain()">适用期或变更说明结果未确认，删除已禁用。<ElButton @click="documents.operations?.abandonValidityUncertainties()">放弃适用期或说明未确认结果核对（不会撤回写入）</ElButton></p>
   <p v-if="factsLoading" role="status">正在核对文档与操作资格…</p>
   <Feedback :loading="query.loading" :error="query.error" :retry="recheck" />
   <KbAlert v-if="blocked" type="info" title="文档当前不可查看"><template #action><ElButton @click="recheck">重新读取</ElButton></template></KbAlert>
@@ -198,12 +209,13 @@ function uploaded(result: UploadResult) {
     <MetadataPanel :document-id="documentId" :can-edit="capabilities.data?.canEditMetadata === true" @title="metadataTitle = $event" @denied="metadataDenied" />
     <template v-if="versionId">
       <ApplicabilityPanel :key="`applicability:${versionKey}`" :document-id="documentId" :version-id="versionId" :current="version?.current" @changed="revision++; query.reload()" @denied="metadataDenied" />
+      <ChangeNotePanel :key="`note:${versionKey}`" :document-id="documentId" :version-id="versionId" :draft-state="noteDraft" @loaded="note = $event" @denied="metadataDenied" />
       <VersionReviewPanel :key="`review:${versionKey}`" :document-id="documentId" :version-id="versionId" :files="false" @status="receiveStatus" @denied="loseVersion" @changed="reviewChanged" />
       <ProgressCard v-if="canRead" :key="`progress:${documentId}/${versionId}/${revision}`" :document-id="documentId" :version-id="versionId" :revision="revision" @denied="loseVersion" />
       <VersionComments :key="`${documentId}/${versionId}`" :document-id="documentId" :version-id="versionId" :status="currentStatus" />
     </template>
     <p v-else>默认读取当前发布版本；查看候选时请从可见版本列表明确选择。</p>
-    <section class="panel"><h2>版本历史</h2><ElTable row-key="id" :data="versions">
+    <section class="panel"><h2>版本历史</h2><CompareSelector :document-id="documentId" :versions="versions" :target-id="versionId" :note="note" /><ElTable row-key="id" :data="versions">
       <ElTableColumn label="版本"><template #default="{ row }"><ElButton link type="primary" @click="select(row as Version)">v{{ row.versionNo }}{{ row.current ? ' · 当前发布' : '' }}</ElButton></template></ElTableColumn>
       <ElTableColumn label="文件名" prop="fileName" /><ElTableColumn label="处理状态"><template #default="{ row }">{{ progressLabel(row) }}</template></ElTableColumn>
       <ElTableColumn label="适用期"><template #default="{ row }"><ApplicabilityBadge v-if="validity.badges.value.has(pairKey({ documentId, versionId: row.id }))" :value="validity.badges.value.get(pairKey({ documentId, versionId: row.id }))!" /><span v-else class="muted">适用期暂不可确认</span></template></ElTableColumn>

@@ -180,8 +180,10 @@ public final class TextChunker {
         return best;
     }
 
-    private static String normalize(String text) {
-        if (text == null) return "";
+    public static String normalize(String text) {
+        if (text == null) {
+            return "";
+        }
         return text.replace("\r\n", "\n")
                 .replace('\r', '\n')
                 .replaceAll("[\\t\\u000B\\f]+", " ")

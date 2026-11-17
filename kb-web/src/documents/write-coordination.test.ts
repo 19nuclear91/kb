@@ -72,15 +72,15 @@ it('收藏写入登记与独占门禁覆盖实际发送，页面销毁不伪报�
   expect(f.settle).toHaveBeenCalledExactlyOnceWith('uncertain'); expect(store.getSnapshot()).toEqual({}); expect(store.source).toBeUndefined();
 });
 
-it('适用期在途和未确认均阻止删除，显式放弃后才释放', () => {
+it.each(['applicability', 'change-note'])('%s 在途和未确认均阻止删除，显式放弃后才释放', scope => {
   const operations = new RealOperations();
-  const writing = operations.beginWrite('1|applicability:1/2')!; operations.beginDelete();
+  const writing = operations.beginWrite(`1|${scope}:1/2`)!; operations.beginDelete();
   expect(operations.canSubmitDelete()).toBe(false); writing.settle('uncertain'); expect(operations.canSubmitDelete()).toBe(false);
   operations.abandonValidityUncertainties(); expect(operations.canSubmitDelete()).toBe(true);
 });
-it('切换版本后旧适用期写入结果不会成为新版本成功结果', async () => {
+it.each(['applicability', 'change-note'])('切换版本后旧 %s 写入结果不会成为新版本成功结果', async scope => {
   const pending = deferred<unknown>(), execute = vi.fn(() => pending.promise);
-  const hook = renderHook(() => useAdminWrite('applicability:1/2', execute as typeof adminWrite));
+  const hook = renderHook(() => useAdminWrite(`${scope}:1/2`, execute as typeof adminWrite));
   const submitted = hook.result.current.submit(intent); hook.unmount();
   pending.resolve({}); expect(await submitted).toEqual({ status: 'ignored' }); expect(f.settle).toHaveBeenCalledWith('confirmed');
 });

@@ -6,6 +6,7 @@ export const DocumentsPage = lazyPage(() => import('../pages/DocumentsPage.vue')
 export const ImportsPage = lazyPage(() => import('../pages/ImportsPage.vue'));
 export const ImportDetailPage = lazyPage(() => import('../pages/ImportDetailPage.vue'));
 export const DocumentDetailPage = lazyPage(() => import('../pages/DocumentDetailPage.vue'));
+export const VersionComparePage = lazyPage(() => import('../versionDiff/VersionComparePage.vue'));
 export const SearchPage = lazyPage(() => import('../pages/SearchPage.vue'));
 export const FavoritesPage = lazyPage(() => import('../pages/FavoritesPage.vue'));
 export const ReviewsPage = lazyPage(() => import('../pages/ReviewsPage.vue'));

@@ -63,3 +63,5 @@ npm run build
 ```
 
 修复两项 403 边界问题后，最终白名单测试为 7 个文件、141 项通过，0 失败。新增回归覆盖慢身份／资格核对、错误体取消等待、取消与身份代次隔离，以及权限先返回、空间目录后返回或故障时的拒绝保持和正常查询保留。前期定向执行结果与最终结果存在重叠，不累计为独立用例数。TypeScript 类型检查通过；Vite 静态构建成功。测试使用 jsdom 与替身，没有运行完整应用或真实浏览器。
+
+版本变更说明成功写入使用 DOCUMENT_CHANGE_NOTE_UPDATE，目标类型 document-version。投影字段仅为 documentId、versionId、baseVersionId、hasNote、noteVersion、visibleToReaders、reasonProvided 的前后值；说明正文、原因和标题不进入审计投影。匹配重放不重复记成功事件，读取和对比不写审计。

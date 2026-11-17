@@ -201,6 +201,14 @@ kb:
   # 固定版本评论：回退时可只关闭发表与回复，保留读取与本人删除。见 docs/version-comments.md。
   comment:
     creation-enabled: ${KB_COMMENT_CREATION_ENABLED:true}
+  document-diff:
+    max-chars-per-version: ${KB_DOCUMENT_DIFF_MAX_CHARS_PER_VERSION:500000}
+    max-blocks-per-version: ${KB_DOCUMENT_DIFF_MAX_BLOCKS_PER_VERSION:10000}
+    timeout-ms: ${KB_DOCUMENT_DIFF_TIMEOUT_MS:5000}
+    max-concurrent: ${KB_DOCUMENT_DIFF_MAX_CONCURRENT:4}
+    inline-diff-max-chars: ${KB_DOCUMENT_DIFF_INLINE_DIFF_MAX_CHARS:20000}
+    pairing-max-cells: ${KB_DOCUMENT_DIFF_PAIRING_MAX_CELLS:250000}
+    min-similarity: ${KB_DOCUMENT_DIFF_MIN_SIMILARITY:0.3}
   search:
     rerank:
       # 本地规则是确定性兜底；生产可切到任意兼容 /rerank 的服务。

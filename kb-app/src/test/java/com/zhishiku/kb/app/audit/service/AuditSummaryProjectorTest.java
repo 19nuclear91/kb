@@ -73,6 +73,9 @@ class AuditSummaryProjectorTest {
                 case DOCUMENT_APPLICABILITY_UPDATE ->
                         "{\"documentId\":2,\"versionId\":3,\"effectiveFrom\":null,\"untilKind\":\"DATE\",\"effectiveUntil\":\"2026-12-31\","
                                 + "\"applicabilityVersion\":1,\"visibleToReaders\":true,\"reasonProvided\":true,\"reason\":\"private-reason\"}";
+                case DOCUMENT_CHANGE_NOTE_UPDATE ->
+                        "{\"documentId\":2,\"versionId\":3,\"baseVersionId\":1,\"hasNote\":true,\"noteVersion\":1,"
+                                + "\"visibleToReaders\":true,\"reasonProvided\":false,\"text\":\"private-text\"}";
                 case DOCUMENT_STEWARDSHIP_UPDATE, DOCUMENT_STEWARDSHIP_CONFIRM ->
                         "{\"responsibleUserId\":7,\"cycleMonths\":3,\"lastConfirmedOn\":\"2026-11-30\",\"dueDate\":\"2027-02-28\","
                                 + "\"stewardshipVersion\":1,\"displayName\":\"private-name\"}";
@@ -89,6 +92,34 @@ class AuditSummaryProjectorTest {
             String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(detail);
             assertThat(json).doesNotContain("private-", "beforeState", "afterState", "subject", "objectKey",
                     "password\"", "reason\"");
+        }
+    }
+
+    @Test
+    void changeNotesProjectOnlyFixedFieldsAcrossBothStates() throws Exception {
+        var projector = new AuditSummaryProjector();
+        String before = """
+                {"documentId":2,"versionId":3,"baseVersionId":null,"hasNote":false,"noteVersion":0,
+                 "visibleToReaders":false,"reasonProvided":false,"text":"private-before"}
+                """;
+        String after = """
+                {"documentId":2,"versionId":3,"baseVersionId":1,"hasNote":true,"noteVersion":1,
+                 "visibleToReaders":true,"reasonProvided":true,"text":"private-after",
+                 "reason":"private-reason","title":"private-title","unknown":{"text":"private-nested"}}
+                """;
+        var detail = projector.detail(row("DOCUMENT_CHANGE_NOTE_UPDATE", before, after));
+        assertThat(AuditScope.DOCUMENT_CHANGE_NOTE_UPDATE.targetType()).isEqualTo("document-version");
+        assertThat(detail.summaryAvailable()).isTrue();
+        assertThat(detail.changes()).containsExactly(new Change("documentId", 2L, 2L),
+                new Change("versionId", 3L, 3L), new Change("baseVersionId", null, 1L),
+                new Change("hasNote", false, true), new Change("noteVersion", 0L, 1L),
+                new Change("visibleToReaders", false, true), new Change("reasonProvided", false, true));
+        assertThat(new ObjectMapper().findAndRegisterModules().writeValueAsString(detail))
+                .doesNotContain("private-", "unknown", "title", "\"text\"", "\"reason\"");
+        for (String invalid : List.of("{\"baseVersionId\":\"1\"}", "{\"hasNote\":1}",
+                "{\"noteVersion\":-1}", "{\"visibleToReaders\":\"true\"}", "{\"reasonProvided\":{}}")) {
+            assertThat(projector.detail(row("DOCUMENT_CHANGE_NOTE_UPDATE", before, invalid))
+                    .summaryAvailable()).isFalse();
         }
     }
 

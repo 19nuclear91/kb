@@ -14,6 +14,14 @@ npm run build
 
 单元测试仅使用内存替身和模拟 DOM，不启动应用、浏览器、数据库、Redis、MinIO 或模型服务，不测试说明文档内容。
 
+版本对比页为 `/documents/:documentId/compare/:baseVersionId/:targetVersionId`，身份确认后独立懒加载，支持合法登录返回。文档详情的版本历史可从可见版本中选择基准与目标；默认采用说明基准，否则选择最近的已发布旧版本。审核上下文提供“与当前发布版本对比”入口和只读说明。
+
+详情页展示选中版本的变更说明、基准、更正和发布后补写标记及分页修改历史。待审可清除，审核中冻结，发布后修改已有说明必须填写原因。说明写入参与删除互斥；结果未确认时只允许原标识重试、读取核对或显式放弃。对比页显示纯文本结构差异、表格与数值变化，并分别说明缺快照、规模过大、超时、相似度过低及解析质量提示。读取说明失败不影响差异和审核操作。完整协议见 [版本对比与变更说明](../docs/version-diff-and-change-notes.md)。
+
+包体报告新增 `compare` 场景；入口和文档列表不得包含 `src/versionDiff/` 或 `src/changeNotes/`。与不含该场景的基线比较时需显式加入 `--new-scenarios compare`。
+
+`version-diff-and-change-notes` 已于 2026-11-17 同步七份主规格并[归档](../openspec/changes/archive/2026-11-17-version-diff-and-change-notes/)，未部署。详情页资格重读保留未确认说明的原请求及编辑内容；对比选择器按所选目标读取说明，并隔离迟到响应和手选基准。最终前端 **127 文件、1420 项**模拟 DOM 测试、类型检查、构建及包体隔离通过，证据见[验证记录](../openspec/changes/archive/2026-11-17-version-diff-and-change-notes/verification.md)和[核验报告](../openspec/changes/archive/2026-11-17-version-diff-and-change-notes/verify-report.md)。正式契约见[对比页主规格](../openspec/specs/user-web-document-diff/spec.md)及[文档详情主规格](../openspec/specs/user-web-documents/spec.md)。
+
 类型检查由 `vue-tsc --noEmit` 完成；组件测试使用 `@testing-library/vue`、Vitest 与 jsdom，文件统一为 `src/**/*.test.ts`。`src/test/render.ts` 提供 Pinia/内存路由宿主和 Element Plus 交互辅助。`vite.config.ts` 的 Element Plus 测试内联配置用于正确处理 `async-validator` 默认导出，确保非法表单输入确实被拒绝。
 
 会话和管理资格 facade 保持对象引用，在渲染、`computed` 或 `watch` 中读取当前属性，避免解构成快照；文档操作和评论使用子树级 `provide/inject`。外部核心对象与写入 Binding 保持原始身份，使用浅响应式容器桥接。组件显式导入 Element Plus，生产样式按需注入，根部提供中文语言包；正文只以文本插值展示，静态检查禁止 `v-html`。

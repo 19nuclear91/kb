@@ -52,13 +52,20 @@ public interface ParsePipeline {
                           String parserVersion,
                           boolean truncated,
                           List<ParseIssue> issues,
-                          ParseExecution execution) {
+                          ParseExecution execution,
+                          List<DocumentBlock> blocks) {
         public ParsedDocument {
             chunks = chunks == null ? List.of() : List.copyOf(chunks);
             parserName = parserName == null || parserName.isBlank() ? "unknown" : parserName;
             parserVersion = parserVersion == null || parserVersion.isBlank()
                     ? "unknown" : parserVersion;
             issues = issues == null ? List.of() : List.copyOf(issues);
+            blocks = blocks == null ? List.of() : List.copyOf(blocks);
+        }
+
+        public ParsedDocument(List<IndexedChunk> chunks, String parserName, String parserVersion,
+                              boolean truncated, List<ParseIssue> issues, ParseExecution execution) {
+            this(chunks, parserName, parserVersion, truncated, issues, execution, List.of());
         }
 
         public ParsedDocument(List<IndexedChunk> chunks) {

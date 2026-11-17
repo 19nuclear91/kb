@@ -79,7 +79,12 @@ const expectOnly = (name: string) => {
   for (const other of registry.names.filter(value => value !== name)) expect(loaders[other]).not.toHaveBeenCalled();
 };
 
-it.each(['/documents/1', '/admin/users', '/imports', '/imports/9223372036854775807', '/knowledge-gaps', '/knowledge-gaps/new', '/knowledge-gaps/123', '/stewardship'])('地址 %s 在身份未确认、匿名、改密或故障时不调用加载器', async path => {
+it('直接打开对比页仅按需加载对应模块', async () => {
+  harness('/documents/1/compare/20/21'); await waitFor(() => expect(loaders.VersionComparePage).toHaveBeenCalledOnce());
+  expectOnly('VersionComparePage'); await finish('VersionComparePage'); expect(await screen.findByRole('heading', { name: 'VersionComparePage:1' })).toBeTruthy();
+});
+
+it.each(['/documents/1', '/documents/1/compare/20/21', '/admin/users', '/imports', '/imports/9223372036854775807', '/knowledge-gaps', '/knowledge-gaps/new', '/knowledge-gaps/123', '/stewardship'])('地址 %s 在身份未确认、匿名、改密或故障时不调用加载器', async path => {
   for (const options of [{ saved: false }, { identity: { ...me, mustChangePassword: true } },
     { identity: deferred<Response>().promise }, { identity: new Response(null, { status: 503 }) }]) {
     const h = harness(path, options);

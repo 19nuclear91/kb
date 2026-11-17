@@ -12,6 +12,7 @@ import com.zhishiku.kb.worker.parse.model.IndexPublicationCommit;
 import com.zhishiku.kb.worker.parse.mapper.VersionPublicationMapper;
 import com.zhishiku.kb.worker.parse.mapper.ReviewFactMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,13 +34,23 @@ public class ChunkPublisher {
     private final EmbeddingStateMapper state;
     private final VersionPublicationMapper publication;
     private final ReviewFactMapper facts;
+    private final VersionSnapshotWriter snapshots;
 
     public ChunkPublisher(JdbcTemplate jdbc, EmbeddingStateMapper state,
                            VersionPublicationMapper publication, ReviewFactMapper facts) {
+        this(jdbc, state, publication, facts,
+                new VersionSnapshotWriter(jdbc, new com.fasterxml.jackson.databind.ObjectMapper()));
+    }
+
+    @Autowired
+    public ChunkPublisher(JdbcTemplate jdbc, EmbeddingStateMapper state,
+                          VersionPublicationMapper publication, ReviewFactMapper facts,
+                          VersionSnapshotWriter snapshots) {
         this.jdbc = jdbc;
         this.state = state;
         this.publication = publication;
         this.facts = facts;
+        this.snapshots = snapshots;
     }
 
     @Transactional
@@ -170,6 +181,8 @@ public class ChunkPublisher {
                 || Arrays.stream(insertedChunks).flatMapToInt(Arrays::stream)
                 .anyMatch(rows -> rows != 1 && rows != Statement.SUCCESS_NO_INFO))
             throw new IllegalStateException("Incomplete chunk insertion");
+
+        snapshots.replace(version.docId(), task, parsed);
 
         var commit = new IndexPublicationCommit(task.versionId(), bounded(parsed.parserName(), 128),
                 bounded(parsed.parserVersion(), 128), parsed.truncated(), parsed.issues().size(),

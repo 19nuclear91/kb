@@ -1,6 +1,6 @@
 # Proposal
 
-版本差异与变更说明，对应[开发路线图 F-03](../../../docs/development-roadmap.md)。本文记录探索阶段已确认的决定和首期边界；实施须另行确认。
+版本差异与变更说明，对应[开发路线图 F-03](../../../../docs/development-roadmap.md)。本文保留探索阶段已确认的决定和首期边界；实施、核验及归档现已完成，状态见[归档记录](archive-summary.md)。
 
 ## Why
 

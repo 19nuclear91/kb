@@ -141,6 +141,9 @@ public class AuditSummaryProjector {
             case DOCUMENT_APPLICABILITY_UPDATE -> fields("documentId", Kind.ID, "versionId", Kind.ID,
                     "effectiveFrom", Kind.DATE, "untilKind", Kind.UNTIL_KIND, "effectiveUntil", Kind.DATE,
                     "applicabilityVersion", Kind.COUNT, "visibleToReaders", Kind.BOOL, "reasonProvided", Kind.BOOL);
+            case DOCUMENT_CHANGE_NOTE_UPDATE -> fields("documentId", Kind.ID, "versionId", Kind.ID,
+                    "baseVersionId", Kind.NULLABLE_ID, "hasNote", Kind.BOOL, "noteVersion", Kind.COUNT,
+                    "visibleToReaders", Kind.BOOL, "reasonProvided", Kind.BOOL);
             case DOCUMENT_STEWARDSHIP_UPDATE, DOCUMENT_STEWARDSHIP_CONFIRM -> fields(
                     "responsibleUserId", Kind.NULLABLE_ID, "cycleMonths", Kind.CYCLE,
                     "lastConfirmedOn", Kind.DATE, "dueDate", Kind.DATE, "stewardshipVersion", Kind.COUNT);

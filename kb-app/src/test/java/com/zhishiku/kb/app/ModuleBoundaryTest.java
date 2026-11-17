@@ -31,6 +31,35 @@ class ModuleBoundaryTest {
 
     private static JavaClasses classes;
 
+    @Test
+    @DisplayName("变更说明只经公开服务鉴权与审计，不依赖适用期内部实现")
+    void changeNotesUseOnlyPublicServices() {
+        Set<String> allowed = Set.of("com.zhishiku.kb.app.auth.service.PermissionService",
+                "com.zhishiku.kb.app.auth.service.IdentityAuditService", "com.zhishiku.kb.app.auth.service.AuditScope",
+                "com.zhishiku.kb.app.document.service.DocumentVersionAccessService");
+        noClasses().that().resideInAPackage("..app.document.changenote..")
+                .should().dependOnClassesThat(DescribedPredicate.describe("未授权的应用内部类型", type -> {
+                    String name = type.getName();
+                    return name.startsWith("com.zhishiku.kb.app.")
+                            && !name.startsWith("com.zhishiku.kb.app.document.changenote.")
+                            && allowed.stream().noneMatch(service -> name.equals(service) || name.startsWith(service + "$"));
+                })).check(classes);
+    }
+
+    @Test
+    @DisplayName("版本对比仅依赖公开的访问与权限服务")
+    void documentDiffUsesOnlyPublicServices() {
+        noClasses().that().resideInAPackage("..app.document.diff..")
+                .should().dependOnClassesThat(DescribedPredicate.describe("未授权的应用内部类型", type -> {
+                    String name = type.getName();
+                    return name.startsWith("com.zhishiku.kb.app.")
+                            && !name.startsWith("com.zhishiku.kb.app.document.diff.")
+                            && !name.equals("com.zhishiku.kb.app.document.service.DocumentVersionAccessService")
+                            && !name.equals("com.zhishiku.kb.app.auth.service.PermissionService")
+                            && !name.startsWith("com.zhishiku.kb.app.auth.service.PermissionService$");
+                })).check(classes);
+    }
+
     @BeforeAll
     static void importClasses() {
         classes = new ClassFileImporter()

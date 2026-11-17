@@ -16,6 +16,7 @@
 | 批量文件导入 | 本地多选／拖拽、固定清单、逐项幂等受理、本人持久任务、跨登录人工恢复 | `/imports` 与 `/imports/:importId`；同名同内容不同项允许新建，响应未知先核对，未完成文件需重选匹配。见[导入 API](docs/document-import-api.md)、[导入运维](docs/document-import-operations.md) |
 | 文档资料 | 标题、人工摘要、空间分类树、全局标签，以及文档列表组合筛选 | 分类属于空间，标签可跨空间使用；资料修改作用于整份文档。见[资料与目录](docs/document-metadata-web.md) |
 | 审核与协作 | 空间发布策略、固定版本送审/通过/驳回/撤回、个人收藏、版本评论与回复、站内通知 | 解析完成、审核通过和发布是不同状态；评论和审核分别需要对应资格。见[版本审核](docs/document-review.md)、[收藏](docs/document-favorites.md)、[评论](docs/version-comments.md)、[通知](docs/in-app-notifications.md) |
+| 版本差异与说明 | 指定两个版本的结构及表格差异、关键数值变化、人工变更说明与修改历史 | F-03 已实现、同步主规格并归档，未部署；对比依赖新版 Worker 的结构快照。见[版本对比与变更说明](docs/version-diff-and-change-notes.md) |
 | 知识适用期与复审 | 固定版本日期声明与更正历史、文档责任人和周期、本人及空间清单、导航数量、责任人确认 | F-02 首期已实现，九份主规格已同步、[变更已归档](openspec/changes/archive/2026-11-15-knowledge-validity-and-review/)，未部署；适用期届满与复审逾期分别表达，不改变发布、召回或 AI 协议。见[接口与运维](docs/knowledge-validity-review.md)、[最新离线核验与未验证边界](openspec/changes/archive/2026-11-15-knowledge-validity-and-review/verify-report-2.md) |
 | 知识问题闭环 | 主动分享需求、本人/被分派问题、统一受理、人工分派、说明/固定资料方案、本人确认及站内提醒 | 只分享用户确认的描述，不复制回答/会话；四项资格独立，撤回不删除，关闭不等于解决。首期实现及离线验证完成，主规格已同步、[变更已归档](openspec/changes/archive/2026-11-14-knowledge-gap-feedback-loop/)，未部署，不代表真实环境验收通过。见[问题 API](docs/knowledge-gap-api.md)、[受理运维](docs/knowledge-gap-operations.md)、[协调发布](docs/knowledge-gap-rollout.md) |
 | 文件阅读 | PDF、UTF-8 TXT/Markdown 预览，以及独立授权的原件下载 | 下载拒绝不等于阅读拒绝，重核保持原版本且不自动打开文件；docx/xlsx/pptx 原生只读预览通过可选 ONLYOFFICE 服务提供，默认关闭；doc/xls/ppt 不进入该预览流程。见[Office 预览](docs/office-preview.md) |
@@ -331,6 +332,7 @@ app / Worker / AI / gateway 管理端口
 | 文档中心、知识搜索、收藏 | `/documents`、`/search`、`/favorites` |
 | 批量文件导入、本人任务详情 | `/imports`、`/imports/:importId` |
 | 版本审核、站内通知、个人账户 | `/reviews`、`/notifications`、`/account` |
+| 指定版本对比 | `/documents/:documentId/compare/:baseVersionId/:targetVersionId` |
 | 我负责的资料与复审确认 | `/stewardship` |
 | AI 助手 | `/assistant` |
 | 用户、部门、角色 | `/admin/users`、`/admin/departments`、`/admin/roles` |
@@ -489,7 +491,7 @@ java -jar .\kb-eval\target\kb-eval-0.1.0-SNAPSHOT.jar --help
 
 ## 开发路线图
 
-[开发路线图与候选功能](docs/development-roadmap.md) 保留 11 项工程完善任务和 14 项产品方向的原编号，区分明确缺口、条件性缺口、真实验收待补与候选增强，并记录最新状态。F-01 知识缺口闭环与 F-02 知识有效期及复审首期均已实现、完成离线核对、同步主规格并归档，未部署；F-03～F-14 仍为候选。真实解析链路及独立验收工程继续按各自范围评估，后续优先评估版本差异与变更摘要。
+[开发路线图与候选功能](docs/development-roadmap.md) 保留 11 项工程完善任务和 14 项产品方向的原编号，区分明确缺口、条件性缺口、真实验收待补与候选增强，并记录最新状态。F-01 知识缺口闭环、F-02 知识有效期及复审、F-03 版本差异与人工变更说明首期均已实现、完成离线核对、同步主规格并归档，未部署。F-03 的 36/36 项任务及核验结果见[归档记录](openspec/changes/archive/2026-11-17-version-diff-and-change-notes/archive-summary.md)。F-04～F-14 仍为候选。真实解析链路及独立验收工程继续按各自范围评估。
 
 路线图的候选条目不是实施授权、排期或工期承诺；已交付条目以各自范围和证据为准，不以归档代替真实环境验收，也不替代当前功能说明及 OpenSpec 正式规格。
 

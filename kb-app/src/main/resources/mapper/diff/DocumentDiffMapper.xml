@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.document.diff.mapper.DocumentDiffMapper">
+    <resultMap id="header" type="com.zhishiku.kb.app.document.diff.model.SnapshotHeader">
+        <constructor>
+            <idArg column="version_id" javaType="_long"/>
+            <arg column="version_no" javaType="_int"/>
+            <arg column="parser_name" javaType="string"/>
+            <arg column="parser_version" javaType="string"/>
+            <arg column="truncated" javaType="_boolean"/>
+            <arg column="block_count" javaType="_int"/>
+            <arg column="char_count" javaType="_long"/>
+            <arg column="available" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="block" type="com.zhishiku.kb.app.document.diff.model.SnapshotBlock">
+        <constructor>
+            <idArg column="block_idx" javaType="_int"/>
+            <arg column="kind" javaType="string"/>
+            <arg column="text" javaType="string"/>
+            <arg column="heading_path" javaType="string"/>
+            <arg column="page_no" javaType="java.lang.Integer"/>
+            <arg column="line_start" javaType="java.lang.Integer"/>
+            <arg column="line_end" javaType="java.lang.Integer"/>
+            <arg column="char_start" javaType="java.lang.Integer"/>
+            <arg column="char_end" javaType="java.lang.Integer"/>
+            <arg column="locator" javaType="string"/>
+            <arg column="table_cells" javaType="string"/>
+        </constructor>
+    </resultMap>
+    <select id="headers" resultMap="header" timeout="3" useCache="false" flushCache="true">
+        SELECT v.id AS version_id, v.version_no, s.parser_name, s.parser_version,
+            COALESCE(s.truncated, FALSE) AS truncated, COALESCE(s.block_count, 0) AS block_count,
+            COALESCE(s.char_count, 0) AS char_count,
+            COALESCE(s.version_id IS NOT NULL AND s.task_id = t.id
+                AND s.execution_generation = t.execution_generation AND v.index_status = 'indexed', FALSE) AS available
+        FROM kb_document_version v
+        LEFT JOIN kb_document_version_snapshot s ON s.version_id = v.id AND s.doc_id = v.doc_id
+        LEFT JOIN kb_parse_task t ON t.version_id = v.id
+        WHERE v.doc_id = #{documentId} AND v.id IN (#{baseVersionId}, #{targetVersionId})
+    </select>
+    <select id="blocks" resultMap="block" timeout="3" useCache="false" flushCache="true">
+        SELECT block_idx, kind, text, heading_path, page_no, line_start, line_end, char_start, char_end,
+            locator, table_cells::text AS table_cells
+        FROM kb_document_version_block WHERE version_id = #{versionId} ORDER BY block_idx
+    </select>
+</mapper>

@@ -6,6 +6,11 @@ import { mountRouter } from './test/app';
 import { conversationEnabled, safeReturnPath } from './navigation';
 
 describe('用户端路由', () => {
+  it('对比页只接受三个正整数段，拒绝查询串和非法版本', () => {
+    const path = '/documents/9223372036854775807/compare/20/21'; expect(safeReturnPath(path)).toBe(path);
+    for (const invalid of [`${path}?userId=2`, `${path}#x`, '/documents/0/compare/20/21', '/documents/1/compare/0/2', '/documents/1/compare/2/-3', '/documents/1/compare/x/3'])
+      expect(safeReturnPath(invalid)).toBe('/documents');
+  });
   it('按初始地址选择导航', () => {
     mountRouter(() => h(Navigation), { path: '/search' });
     expect(screen.getByRole('link', { name: /知识搜索/ }).getAttribute('aria-current')).toBe('page');

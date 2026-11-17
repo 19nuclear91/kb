@@ -5,6 +5,7 @@ import com.zhishiku.kb.worker.parse.model.DocumentBlock;
 import com.zhishiku.kb.worker.parse.model.ParseIssue;
 import com.zhishiku.kb.worker.parse.model.ParseTask;
 import com.zhishiku.kb.worker.parse.model.SourceLocation;
+import com.zhishiku.kb.common.review.PublicationEvidence;
 import com.zhishiku.kb.worker.parse.mapper.VersionPublicationMapper;
 import com.zhishiku.kb.worker.parse.mapper.ReviewFactMapper;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,9 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 
 class ChunkPublisherTest {
 
@@ -96,11 +100,13 @@ class ChunkPublisherTest {
         when(publication.indexed(any())).thenReturn(1);
         when(jdbc.batchUpdate(contains("INSERT INTO kb_doc_chunk"),
                 ArgumentMatchers.<List<ParsePipeline.IndexedChunk>>any(), anyInt(), any())).thenReturn(new int[][]{{1}});
-        ChunkPublisher publisher = new ChunkPublisher(jdbc, embeddings, publication, mock(ReviewFactMapper.class));
-        publisher.publish(task, "owner", new ParsePipeline.ParsedDocument(List.of(chunk), "fixture", "1",
-                false, List.of(), ParseEmbeddingFixture.execution(task)));
+        var snapshots = mock(VersionSnapshotWriter.class);
+        ChunkPublisher publisher = new ChunkPublisher(jdbc, embeddings, publication, mock(ReviewFactMapper.class), snapshots);
+        var parsed = new ParsePipeline.ParsedDocument(List.of(chunk), "fixture", "1",
+                false, List.of(), ParseEmbeddingFixture.execution(task));
+        publisher.publish(task, "owner", parsed);
 
-        InOrder ordered = inOrder(embeddings, jdbc);
+        InOrder ordered = inOrder(embeddings, jdbc, snapshots, publication);
         ordered.verify(embeddings).lockShared();
         ordered.verify(jdbc).query(contains("FROM kb_parse_task"),
                 ArgumentMatchers.<ResultSetExtractor<Integer>>any(), any(Object[].class));
@@ -110,6 +116,70 @@ class ChunkPublisherTest {
         ordered.verify(jdbc).batchUpdate(contains("INSERT INTO kb_doc_chunk"),
                 ArgumentMatchers.<List<ParsePipeline.IndexedChunk>>any(), anyInt(),
                 ArgumentMatchers.any());
+        ordered.verify(snapshots).replace(42L, task, parsed);
+        ordered.verify(publication).indexed(any());
+        ordered.verify(jdbc).update(contains("SET status = 'succeeded'"), any(Object[].class));
+    }
+
+    @Test
+    void snapshotFailurePropagatesBeforeIndexAndTaskCompletion() throws Exception {
+        var fixture = ready();
+        doThrow(new IllegalStateException("snapshot unavailable")).when(fixture.snapshots)
+                .replace(42, fixture.task, fixture.parsed);
+        assertThatThrownBy(() -> fixture.publisher.publish(fixture.task, "owner", fixture.parsed))
+                .isInstanceOf(IllegalStateException.class);
+        verify(fixture.publication, never()).indexed(any());
+        verify(fixture.jdbc, never()).update(contains("SET status = 'succeeded'"), any(Object[].class));
+    }
+
+    @Test
+    void earlyReturnsNeverTouchSnapshots() throws Exception {
+        var published = ready();
+        var state = ParseEmbeddingFixture.publication();
+        state.setPublicationEvidence(PublicationEvidence.PUBLISHED);
+        state.setPublishedAt(java.time.Instant.parse("2026-11-17T00:00:00Z"));
+        when(published.publication.lockState(2)).thenReturn(state);
+        assertThat(published.publisher.publish(published.task, "owner", published.parsed)).isFalse();
+        verifyNoInteractions(published.snapshots);
+
+        var deleted = ready();
+        when(deleted.jdbc.queryForObject(anyString(), ArgumentMatchers.<RowMapper<Object>>any(),
+                any(Object[].class))).thenReturn(newVersionInfo(42, 1, "deleted"));
+        assertThat(deleted.publisher.publish(deleted.task, "owner", deleted.parsed)).isFalse();
+        verifyNoInteractions(deleted.snapshots);
+
+        var lost = ready();
+        when(lost.jdbc.query(anyString(), ArgumentMatchers.<ResultSetExtractor<Integer>>any(),
+                any(Object[].class))).thenReturn(null);
+        assertThat(lost.publisher.publish(lost.task, "owner", lost.parsed)).isFalse();
+        verifyNoInteractions(lost.snapshots);
+    }
+
+    private record Ready(JdbcTemplate jdbc, VersionPublicationMapper publication, VersionSnapshotWriter snapshots,
+                         ChunkPublisher publisher, ParseTask task, ParsePipeline.ParsedDocument parsed) {
+    }
+
+    private static Ready ready() throws Exception {
+        var jdbc = mock(JdbcTemplate.class);
+        var embeddings = mock(EmbeddingStateMapper.class);
+        when(embeddings.lockShared()).thenReturn(ParseEmbeddingFixture.active());
+        when(jdbc.query(anyString(), ArgumentMatchers.<ResultSetExtractor<Integer>>any(), any(Object[].class)))
+                .thenReturn(1);
+        when(jdbc.queryForObject(anyString(), ArgumentMatchers.<RowMapper<Object>>any(), any(Object[].class)))
+                .thenReturn(newVersionInfo(42, 1, "published"));
+        when(jdbc.batchUpdate(contains("INSERT INTO kb_doc_chunk"),
+                ArgumentMatchers.<List<ParsePipeline.IndexedChunk>>any(), anyInt(), any()))
+                .thenReturn(new int[][]{{1}});
+        var publication = mock(VersionPublicationMapper.class);
+        when(publication.lockDocumentForVersion(2)).thenReturn(42L);
+        when(publication.lockState(2)).thenReturn(ParseEmbeddingFixture.publication());
+        var task = ParseEmbeddingFixture.task();
+        var parsed = new ParsePipeline.ParsedDocument(List.of(new ParsePipeline.IndexedChunk(0, "正文", null,
+                null, ParseEmbeddingFixture.vector())), "fixture", "1", false, List.of(),
+                ParseEmbeddingFixture.execution(task));
+        var snapshots = mock(VersionSnapshotWriter.class);
+        return new Ready(jdbc, publication, snapshots,
+                new ChunkPublisher(jdbc, embeddings, publication, mock(ReviewFactMapper.class), snapshots), task, parsed);
     }
 
     /**

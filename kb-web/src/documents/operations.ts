@@ -45,7 +45,7 @@ export class DocumentOperations {
     this.publish({ exclusive: true }); return true;
   }
   resolveUncertain(key: string) { this.unknown.delete(key); this.publish(); }
-  private validityKey(key: string) { return /^(?:\d+\|)?(?:applicability|stewardship):/.test(key); }
+  private validityKey(key: string) { return /^(?:\d+\|)?(?:applicability|stewardship|change-note):/.test(key); }
   hasValidityUncertain() { return [...this.unknown].some(key => this.validityKey(key)); }
   /** 用户明确放弃本地核对，不表示撤回服务端写入。 */
   abandonValidityUncertainties() { for (const key of this.unknown) if (this.validityKey(key)) this.unknown.delete(key); this.publish(); }

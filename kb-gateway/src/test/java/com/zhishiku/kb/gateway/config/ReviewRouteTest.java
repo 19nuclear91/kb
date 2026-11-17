@@ -40,6 +40,8 @@ class ReviewRouteTest {
                 var definition = route.getPredicates().stream().filter(item -> item.getName().equals("Path")).findFirst().orElseThrow();
                 var predicate = new PathRoutePredicateFactory().apply(new PathRoutePredicateFactory.Config().setPatterns(new ArrayList<>(definition.getArgs().values())));
                 for (String path : List.of("/api/reviews", "/api/reviews/invalid", "/api/documents/7/versions/8/comments",
+                        "/api/documents/7/versions/8/diff", "/api/documents/7/versions/8/change-note",
+                        "/api/documents/7/versions/8/change-note/history",
                         "/api/documents/7/versions/8/comments/00000000-0000-0000-0000-000000000001/replies",
                         "/api/documents/7/versions/8/preview-info", "/api/office-preview/sessions/example/heartbeat")) {
                     assertThat(predicate.test(MockServerWebExchange.from(MockServerHttpRequest.get(path)))).isEqualTo(route.getId().equals("kb-app"));

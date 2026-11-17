@@ -35,3 +35,11 @@ Worker 继续负责对象存储读取、任务租约、失败恢复、统一结�
 - `mvn -o test-compile '-DskipTests' '-Dstyle.color=never'` 全模块通过。
 - `openspec validate document-parsing --type spec --strict` 通过。
 - 检查新 Worker JAR，未包含已移除的本地解析实现及其解析依赖。
+
+## 版本结构快照
+
+从 V40 起，Worker 在 `ChunkPublisher.publish` 的发布事务中，在分块写入后、更新 `indexed` 前替换版本快照。快照保存归一化后的非空结构块、标题路径、页码与来源坐标、完整表格单元格，以及解析器身份、截断标记、领取任务 ID 和执行周期。大表格仍保存为一个完整块，检索分块的容量和重叠规则不变。
+
+快照与分块原子提交；任一写入失败均回滚。已有发布证据的版本不会被覆盖。快照只用于版本对比，不参与搜索、问答召回、向量重建或发布门禁；没有快照时不从检索分块拼接，也不重新调用解析器。旧 Worker 发布的版本不会自动补齐。
+
+发布顺序是 app（完成 V40 迁移）、Worker、web。Worker 不运行 Flyway，启动时用 `to_regclass` 检查两张快照表，任一缺失即启动失败并提示先完成 app 迁移。读取方还必须核对任务 ID、当前执行周期和 `index_status = 'indexed'`，刷新期间及回退到旧 Worker 后的过期快照不可用于对比。

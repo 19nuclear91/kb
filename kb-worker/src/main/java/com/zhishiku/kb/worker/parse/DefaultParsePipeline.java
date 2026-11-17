@@ -3,6 +3,7 @@ package com.zhishiku.kb.worker.parse;
 import com.zhishiku.kb.common.embedding.EmbeddingClientRegistry;
 import com.zhishiku.kb.common.embedding.EmbeddingRole;
 import com.zhishiku.kb.worker.parse.model.ParseExecution;
+import com.zhishiku.kb.worker.parse.model.DocumentBlock;
 import com.zhishiku.kb.worker.parse.model.ParseIssue;
 import com.zhishiku.kb.worker.parse.model.ParseTask;
 import com.zhishiku.kb.worker.storage.ObjectStorage;
@@ -106,7 +107,10 @@ public class DefaultParsePipeline implements ParsePipeline {
                     chunks.get(i).tableCells(), vector));
         }
         return new ParsedDocument(result, parsed.parserName(), parsed.parserVersion(),
-                parsed.truncated(), parsed.issues(), execution);
+                parsed.truncated(), parsed.issues(), execution, parsed.blocks().stream()
+                .map(block -> new DocumentBlock(block.kind(), TextChunker.normalize(block.text()),
+                        block.pageNo(), block.headingPath(), block.source(), block.tableCells()))
+                .filter(DocumentBlock::hasContent).toList());
     }
 
     private static void check(LeaseHandle lease) {
