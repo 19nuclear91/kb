@@ -36,8 +36,12 @@ public class OpenAiSseDecoder {
     }
 
     public Flux<ModelEvent> decode(Flux<DataBuffer> buffers) {
+        return decode(buffers, false);
+    }
+
+    Flux<ModelEvent> decode(Flux<DataBuffer> buffers, boolean collectUsageOnInvalidOutput) {
         return Flux.defer(() -> {
-            var state = new State();
+            var state = new State(collectUsageOnInvalidOutput);
             return buffers.concatMapIterable(state::feed, 1)
                     .<ModelEvent>handle((event, sink) -> {
                         if (event instanceof ModelEvent.Failure failure) {
@@ -55,6 +59,8 @@ public class OpenAiSseDecoder {
     }
 
     private final class State {
+        private final boolean collectUsageOnInvalidOutput;
+        private ChatModelFailure.Kind invalidOutput;
         private final ByteArrayOutputStream line = new ByteArrayOutputStream();
         private final StringBuilder data = new StringBuilder();
         private boolean hasData;
@@ -68,6 +74,19 @@ public class OpenAiSseDecoder {
         private long responseBytes;
         private long answerCodepoints;
         private ModelEvent.FinalUsage candidate;
+
+        State(boolean collectUsageOnInvalidOutput) {
+            this.collectUsageOnInvalidOutput = collectUsageOnInvalidOutput;
+        }
+
+        private void rejectOutput(ChatModelFailure.Kind reason) {
+            if (!collectUsageOnInvalidOutput) {
+                throw failure(reason);
+            }
+            if (invalidOutput == null) {
+                invalidOutput = reason;
+            }
+        }
 
         private synchronized List<ModelEvent> feed(DataBuffer buffer) {
             var output = new ArrayList<ModelEvent>();
@@ -159,14 +178,21 @@ public class OpenAiSseDecoder {
 
         private void processEvent(String payload, List<ModelEvent> output) {
             if ("[DONE]".equals(payload.trim())) {
-                if (!stop || !hasText) {
+                if (!stop) {
                     throw failure(ChatModelFailure.Kind.INCOMPLETE_STREAM);
+                }
+                if (!hasText && invalidOutput == null) {
+                    rejectOutput(ChatModelFailure.Kind.INCOMPLETE_STREAM);
                 }
                 done = true;
                 if (candidate != null) {
                     output.add(candidate);
                 }
-                output.add(ModelEvent.Signal.END);
+                if (invalidOutput == null) {
+                    output.add(ModelEvent.Signal.END);
+                } else {
+                    output.add(new ModelEvent.Failure(failure(invalidOutput)));
+                }
                 return;
             }
             JsonNode root;
@@ -178,7 +204,7 @@ public class OpenAiSseDecoder {
             if (root == null || !root.isObject() || root.has("error")) {
                 throw failure(ChatModelFailure.Kind.PROTOCOL_INVALID);
             }
-            unsupported(root);
+            checkOutput(root);
             var choices = root.get("choices");
             if (choices == null || !choices.isArray() || choices.size() > 1) {
                 throw failure(ChatModelFailure.Kind.PROTOCOL_INVALID);
@@ -187,25 +213,26 @@ public class OpenAiSseDecoder {
             String finish = null;
             if (!choices.isEmpty()) {
                 var choice = choices.get(0);
-                unsupported(choice);
+                checkOutput(choice);
                 var index = choice.get("index");
                 var delta = choice.get("delta");
                 if (index == null || !index.isIntegralNumber() || !index.canConvertToInt() || index.intValue() != 0
                         || delta == null || !delta.isObject()) {
                     throw failure(ChatModelFailure.Kind.PROTOCOL_INVALID);
                 }
-                unsupported(delta);
+                checkOutput(delta);
                 var role = delta.get("role");
                 if (role != null && !role.isNull() && (!role.isTextual() || !"assistant".equals(role.textValue()))) {
-                    throw failure(ChatModelFailure.Kind.UNSUPPORTED_OUTPUT);
+                    rejectOutput(ChatModelFailure.Kind.UNSUPPORTED_OUTPUT);
                 }
                 var content = delta.get("content");
                 if (content != null && !content.isNull()) {
                     if (!content.isTextual()) {
-                        throw failure(ChatModelFailure.Kind.UNSUPPORTED_OUTPUT);
+                        rejectOutput(ChatModelFailure.Kind.UNSUPPORTED_OUTPUT);
+                    } else {
+                        text = content.textValue();
+                        ChatJson.text(text);
                     }
-                    text = content.textValue();
-                    ChatJson.text(text);
                 }
                 var reason = choice.get("finish_reason");
                 if (reason != null && !reason.isNull()) {
@@ -214,7 +241,7 @@ public class OpenAiSseDecoder {
                     }
                     finish = reason.textValue();
                     if (!"stop".equals(finish)) {
-                        throw failure("length".equals(finish) ? ChatModelFailure.Kind.OUTPUT_TRUNCATED
+                        rejectOutput("length".equals(finish) ? ChatModelFailure.Kind.OUTPUT_TRUNCATED
                                 : ChatModelFailure.Kind.UNSUPPORTED_OUTPUT);
                     }
                     if (stop) {
@@ -228,7 +255,7 @@ public class OpenAiSseDecoder {
                 }
                 answerCodepoints += text.codePointCount(0, text.length());
                 if (answerCodepoints > answerLimit) {
-                    throw failure(ChatModelFailure.Kind.PAYLOAD_LIMIT);
+                    rejectOutput(ChatModelFailure.Kind.PAYLOAD_LIMIT);
                 }
                 candidate = null;
                 hasText = true;
@@ -244,13 +271,25 @@ public class OpenAiSseDecoder {
             if (choices.isEmpty() && (usage == null || usage.isNull())) {
                 throw failure(ChatModelFailure.Kind.PROTOCOL_INVALID);
             }
-            if (text != null && !text.isEmpty()) {
+            if (invalidOutput == null && text != null && !text.isEmpty()) {
                 output.add(new ModelEvent.Delta(text));
             }
             if (finish != null) {
                 stop = true;
             }
             output.add(ModelEvent.Signal.ACTIVITY);
+        }
+
+        private void checkOutput(JsonNode node) {
+            for (String field : List.of("tool_calls", "function_call", "refusal", "reasoning_content", "reasoning",
+                    "thinking", "audio", "images")) {
+                var value = node.get(field);
+                if (value != null && !value.isNull() && !(value.isTextual() && value.textValue().isEmpty())
+                        && !((value.isArray() || value.isObject()) && value.isEmpty())) {
+                    rejectOutput(ChatModelFailure.Kind.UNSUPPORTED_OUTPUT);
+                    candidate = null;
+                }
+            }
         }
 
         private synchronized void clear() {
@@ -266,17 +305,6 @@ public class OpenAiSseDecoder {
             throw failure(ChatModelFailure.Kind.PROTOCOL_INVALID);
         }
         return node.longValue();
-    }
-
-    private static void unsupported(JsonNode node) {
-        for (String field : List.of("tool_calls", "function_call", "refusal", "reasoning_content", "reasoning",
-                "thinking", "audio", "images")) {
-            var value = node.get(field);
-            if (value != null && !value.isNull() && !(value.isTextual() && value.textValue().isEmpty())
-                    && !((value.isArray() || value.isObject()) && value.isEmpty())) {
-                throw failure(ChatModelFailure.Kind.UNSUPPORTED_OUTPUT);
-            }
-        }
     }
 
     private static ChatModelFailure failure(ChatModelFailure.Kind kind) {

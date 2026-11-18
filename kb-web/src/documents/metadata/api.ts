@@ -17,16 +17,22 @@ export const fileTypes = ['PDF', 'TXT', 'MARKDOWN', 'WORD', 'EXCEL', 'POWERPOINT
 export interface Filters { titleQuery?: string; spaceId?: string; categoryId?: string; uncategorized?: boolean; tagIds?: string[]; fileType?: typeof fileTypes[number]; updatedFrom?: string; updatedTo?: string }
 export type CategoryContext = { kind: 'edit' | 'manage' | 'filter'; id: string };
 const reasons = {
+  SUGGESTIONS_DISABLED: 'AI 整理暂未启用。',
+  SOURCE_CHANGED: '当前发布版本已变化，请重新读取后生成。', SUGGESTION_EXPIRED: '建议已失效，请重新读取后生成。',
+  NO_PUBLISHED_VERSION: '文档尚无发布版本。',
   METADATA_VERSION_CONFLICT: '文档资料已变化，请重新读取后编辑。', TREE_VERSION_CONFLICT: '分类目录已变化，请重新读取。',
   TAG_VERSION_CONFLICT: '标签已变化，请重新读取。', CATEGORY_UNAVAILABLE: '分类不可选，请重新选择。', TAG_UNAVAILABLE: '标签不可选，请重新选择。',
   NAME_CONFLICT: '名称已被占用。', REFERENCE_CONFLICT: '分类仍有子节点或文档引用，不能删除。', REQUEST_MISMATCH: '请求标识与原操作不匹配。',
   NO_CHANGE: '资料没有变化。', TREE_STRUCTURE_CONFLICT: '分类不能移入自身、后代或超过八层的位置。', SPACE_ARCHIVED: '空间已归档，目录只读。',
 } as const;
 export class MetadataError extends ApiError {
-  constructor(public readonly reason: keyof typeof reasons) { super(409); this.message = reasons[reason]; }
+  constructor(public readonly reason: keyof typeof reasons, status = 409) { super(status); this.message = reasons[reason]; }
+}
+export function isDocumentAccessDenied(error: unknown): error is ApiError & { status: 401 | 403 | 404 } {
+  return error instanceof ApiError && [401, 403, 404].includes(error.status);
 }
 export async function metadataFailure(response: Response): Promise<ApiError> {
-  if (response.status !== 409 || !response.body || !response.headers.get('Content-Type')?.includes('application/json')) {
+  if (![409, 503].includes(response.status) || !response.body || !response.headers.get('Content-Type')?.includes('application/json')) {
     await response.body?.cancel().catch(() => {}); return new ApiError(response.status);
   }
   const reader = response.body.getReader(), parts: Uint8Array[] = []; let length = 0;
@@ -36,8 +42,9 @@ export async function metadataFailure(response: Response): Promise<ApiError> {
     const bytes = new Uint8Array(length); let offset = 0;
     parts.forEach(part => { bytes.set(part, offset); offset += part.length; });
     const value = decodeJson<Record<string, unknown>>(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-    if (value.code === 500 && value.data === null && typeof value.reasonCode === 'string' && Object.hasOwn(reasons, value.reasonCode))
-      return new MetadataError(value.reasonCode as keyof typeof reasons);
+    if (value.code === 500 && value.data === null && typeof value.reasonCode === 'string' && Object.hasOwn(reasons, value.reasonCode)
+        && (response.status === 409 || value.reasonCode === 'SUGGESTIONS_DISABLED'))
+      return new MetadataError(value.reasonCode as keyof typeof reasons, response.status);
   } catch (error) { if (error instanceof Error && error.name === 'AbortError') throw error; }
   finally { reader.releaseLock(); }
   return new ApiError(response.status);
@@ -113,6 +120,14 @@ export async function metadataWrite<T>(session: Session, intent: WriteIntent, re
   return data as T;
 }
 export const metadataApi = {
+  publishedVersion: async (session: Session, documentId: string, signal: AbortSignal) => {
+    const detail = object(await call(session, `/api/documents/${positiveId(documentId)}`, undefined, signal));
+    if (id(detail.id) !== documentId) throw broken();
+    if (detail.currentVersionId === null && detail.currentVersionNo === null) return { id: null, versionNo: null };
+    const versionNo = detail.currentVersionNo;
+    if (typeof versionNo !== 'number' || !Number.isSafeInteger(versionNo) || versionNo < 1) throw broken();
+    return { id: id(detail.currentVersionId), versionNo };
+  },
   get: async (session: Session, id: string, signal?: AbortSignal) => {
     const value = decodeMetadata(await call(session, `/api/documents/${positiveId(id)}/metadata`, undefined, signal));
     if (value.documentId !== id) throw broken();

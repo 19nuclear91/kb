@@ -6,6 +6,7 @@ import com.zhishiku.kb.app.document.metadata.service.MetadataReadService;
 import com.zhishiku.kb.app.document.metadata.service.MetadataWriteService;
 import com.zhishiku.kb.app.document.metadata.support.MetadataInput;
 import com.zhishiku.kb.common.api.R;
+import com.zhishiku.kb.app.document.suggestion.SuggestionSaveGuard;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,6 +30,14 @@ public class MetadataController {
             throw new MetadataException(MetadataException.Reason.INVALID_INPUT);
         }
         return R.ok(reads.get(MetadataInput.id(id)));
+    }
+
+    @PutMapping("/api/documents/{id}/metadata-suggestions/{generation}/metadata")
+    public R<MetadataViews.Receipt> apply(@PathVariable String id, @PathVariable String generation,
+                                          HttpServletRequest request, @RequestHeader("X-Request-Id") String requestId) {
+        var body = MetadataBody.read(request, MetadataInput.WRITE_LIMIT);
+        var adoption = SuggestionSaveGuard.Adoption.parse(MetadataSuggestionController.uuid(generation), body.remove("adoptedFields"));
+        return R.ok(writes.apply(MetadataInput.id(id), MetadataInput.update(body), requestId, adoption));
     }
 
     @PutMapping("/api/documents/{id}/metadata")

@@ -63,7 +63,10 @@ public class MetadataAccess {
     }
 
     public Editable document(long documentId, boolean edit) {
-        var actor = current();
+        return document(current(), documentId, edit);
+    }
+
+    public Editable document(PermissionService.PrincipalHandle actor, long documentId, boolean edit) {
         DocumentSummary document = matches(documentId, permissions.resolve(actor, PermissionService.PERM_VIEW), PermissionService.PERM_VIEW);
         if (document == null || "archived".equals(document.getStatus())) {
             throw new MetadataException(NOT_FOUND);

@@ -24,7 +24,7 @@ import static com.zhishiku.kb.app.document.metadata.service.MetadataException.Re
 
 @Service
 public class MetadataCommands {
-    private static final Set<AuditScope> SCOPES = Set.of(AuditScope.DOCUMENT_METADATA_UPDATE,
+    private static final Set<AuditScope> SCOPES = Set.of(AuditScope.DOCUMENT_METADATA_UPDATE, AuditScope.DOCUMENT_METADATA_SUGGESTION_APPLY,
             AuditScope.DOCUMENT_CATEGORY_CREATE, AuditScope.DOCUMENT_CATEGORY_UPDATE, AuditScope.DOCUMENT_CATEGORY_DELETE,
             AuditScope.DOCUMENT_TAG_CREATE, AuditScope.DOCUMENT_TAG_UPDATE, AuditScope.DOCUMENT_RELOCATE);
     private final MetadataMapper mapper;

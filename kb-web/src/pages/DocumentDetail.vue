@@ -206,7 +206,7 @@ function uploaded(result: UploadResult) {
       <KbAlert v-if="capabilities.error" style="margin-top: 16px" type="warning" title="操作资格暂不可确认，相关操作已禁用。" />
       <KbAlert v-if="error" style="margin-top: 16px" type="error" :title="error" />
     </section>
-    <MetadataPanel :document-id="documentId" :can-edit="capabilities.data?.canEditMetadata === true" @title="metadataTitle = $event" @denied="metadataDenied" />
+    <MetadataPanel :document-id="documentId" :source-version-id="detail.currentVersionId" :version-no="detail.currentVersionNo" :can-edit="capabilities.data?.canEditMetadata === true" @title="metadataTitle = $event" @denied="metadataDenied" />
     <template v-if="versionId">
       <ApplicabilityPanel :key="`applicability:${versionKey}`" :document-id="documentId" :version-id="versionId" :current="version?.current" @changed="revision++; query.reload()" @denied="metadataDenied" />
       <ChangeNotePanel :key="`note:${versionKey}`" :document-id="documentId" :version-id="versionId" :draft-state="noteDraft" @loaded="note = $event" @denied="metadataDenied" />

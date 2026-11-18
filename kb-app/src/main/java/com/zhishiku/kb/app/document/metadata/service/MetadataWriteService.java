@@ -7,7 +7,9 @@ import com.zhishiku.kb.app.document.metadata.mapper.MetadataMapper;
 import com.zhishiku.kb.app.document.metadata.mapper.TagMapper;
 import com.zhishiku.kb.app.document.metadata.model.MetadataInputs;
 import com.zhishiku.kb.app.document.metadata.model.MetadataViews;
+import com.zhishiku.kb.app.document.metadata.support.MetadataInput;
 import com.zhishiku.kb.app.document.model.DocumentEntity;
+import com.zhishiku.kb.app.document.suggestion.SuggestionSaveGuard;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,9 +34,11 @@ public class MetadataWriteService {
     private final MetadataAccess access;
     private final MetadataCommands commands;
     private final IdentityAuditService audit;
+    private final SuggestionSaveGuard suggestions;
 
     public MetadataWriteService(MetadataMapper mapper, CategoryMapper categories, TagMapper tags, MetadataAccess access,
-                                MetadataCommands commands, IdentityAuditService audit) {
+                                MetadataCommands commands, IdentityAuditService audit, SuggestionSaveGuard suggestions) {
+        this.suggestions = suggestions;
         this.mapper = mapper;
         this.categories = categories;
         this.tags = tags;
@@ -45,15 +49,29 @@ public class MetadataWriteService {
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public MetadataViews.Receipt update(long id, MetadataInputs.Update input, String requestId) {
+        return write(id, input, requestId, null);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public MetadataViews.Receipt apply(long id, MetadataInputs.Update input, String requestId, SuggestionSaveGuard.Adoption adoption) {
+        if (adoption == null || adoption.generation().toString().equalsIgnoreCase(MetadataInput.requestId(requestId))) {
+            throw new MetadataException(MetadataException.Reason.INVALID_INPUT);
+        }
+        return write(id, input, requestId, adoption);
+    }
+
+    private MetadataViews.Receipt write(long id, MetadataInputs.Update input, String requestId, SuggestionSaveGuard.Adoption adoption) {
         var initial = access.document(id, true);
-        var binding = commands.bind(AuditScope.DOCUMENT_METADATA_UPDATE, requestId, initial.actorId(), id, null, id,
-                input.expectedMetadataVersion(), input);
+        var scope = adoption == null ? AuditScope.DOCUMENT_METADATA_UPDATE : AuditScope.DOCUMENT_METADATA_SUGGESTION_APPLY;
+        var binding = commands.bind(scope, requestId, initial.actorId(), id, null, id,
+                input.expectedMetadataVersion(), adoption == null ? input : List.of(adoption, input));
         var previous = commands.lock(binding);
         var hint = mapper.document(id);
         if (hint == null) {
             throw new MetadataException(NOT_FOUND);
         }
-        if (categories.shareTree(hint.getSpaceId()) == null) {
+        Long tree = categories.shareTree(hint.getSpaceId());
+        if (tree == null) {
             throw new MetadataException(METADATA_VERSION_CONFLICT);
         }
         var selected = tags.share(input.tagIds());
@@ -64,6 +82,9 @@ public class MetadataWriteService {
         }
         if (before == null || !Objects.equals(hint.getSpaceId(), before.getSpaceId())) {
             throw new MetadataException(METADATA_VERSION_CONFLICT);
+        }
+        if (adoption != null) {
+            suggestions.check(adoption, current.actorId(), before, tree, previous != null);
         }
         if (previous != null) {
             var result = commands.receipt(previous, MetadataViews.Receipt.class);

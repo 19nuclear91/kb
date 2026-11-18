@@ -15,6 +15,7 @@ import com.zhishiku.kb.app.document.metadata.service.MetadataException;
 import com.zhishiku.kb.app.document.metadata.service.MetadataReadService;
 import com.zhishiku.kb.app.document.metadata.service.MetadataWriteService;
 import com.zhishiku.kb.app.document.model.DocumentEntity;
+import com.zhishiku.kb.app.document.suggestion.SuggestionSaveGuard;
 import com.zhishiku.kb.app.document.model.DocumentSummary;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,8 +41,9 @@ class MetadataServiceTest {
     private final TagMapper tags = mock(TagMapper.class);
     private final MetadataAccess access = mock(MetadataAccess.class);
     private final IdentityAuditService audit = mock(IdentityAuditService.class);
+    private final SuggestionSaveGuard guard = mock(SuggestionSaveGuard.class);
     private final MetadataWriteService write = new MetadataWriteService(mapper, categories, tags, access,
-            new MetadataCommands(mapper, new ObjectMapper().findAndRegisterModules()), audit);
+            new MetadataCommands(mapper, new ObjectMapper().findAndRegisterModules()), audit, guard);
     private final DocumentEntity before = DocumentEntity.builder().id(9L).spaceId(2L).title("原名").metadataVersion(0L)
             .updatedAt(OffsetDateTime.parse("2026-11-01T00:00:00Z")).build();
     private final TagRow disabled = new TagRow(3, "停用", "停用", false, 1, null, null);
@@ -142,6 +144,37 @@ class MetadataServiceTest {
         assertThatThrownBy(() -> write.update(9, input, "moved"))
                 .isInstanceOfSatisfying(MetadataException.class, e -> assertThat(e.reason()).isEqualTo(MetadataException.Reason.METADATA_VERSION_CONFLICT));
         verify(mapper, never()).updateMetadata(any());
+    }
+
+    @Test
+    void assistedSaveBindsFinalDraftAndReplaysAfterChanges() {
+        var adoption = new SuggestionSaveGuard.Adoption(java.util.UUID.randomUUID(), List.of("summary"));
+        var input = new MetadataInputs.Update("手改标题", "改写过的摘要", null, List.of(3L), 0);
+        var stored = new AtomicReference<MetadataCommandRow>();
+        when(mapper.command("DOCUMENT_METADATA_SUGGESTION_APPLY", "assisted")).thenAnswer(call -> stored.get());
+        when(mapper.insertCommand(any())).thenAnswer(call -> {
+            stored.set(call.getArgument(0));
+            return 1;
+        });
+        assertThat(write.apply(9, input, "assisted", adoption).changedFields()).containsExactly("title", "summary");
+        before.setMetadataVersion(3L);
+        before.setCurrentVersionId(12L);
+        assertThat(write.apply(9, input, "assisted", adoption).replayed()).isTrue();
+        verify(guard).check(adoption, 7, before, 0, true);
+        assertThatThrownBy(() -> write.apply(9, input, "assisted", new SuggestionSaveGuard.Adoption(adoption.generation(),
+                List.of("title")))).hasMessageContaining("请求标识");
+        verify(mapper).updateMetadata(any());
+        verify(mapper, never()).clearTags(9);
+    }
+
+    @Test
+    void guardedNoChangeAndAuditFailureAbort() {
+        var adoption = new SuggestionSaveGuard.Adoption(java.util.UUID.randomUUID(), List.of("summary"));
+        var same = new MetadataInputs.Update("原名", null, null, List.of(3L), 0);
+        assertThatThrownBy(() -> write.apply(9, same, "same", adoption)).hasMessageContaining("没有变化");
+        doThrow(new IllegalStateException("审计不可用")).when(audit).appendSuccess(any(), any(), anyLong(), anyLong(), any(), any(), any());
+        assertThatThrownBy(() -> write.apply(9, new MetadataInputs.Update("原名", "采用", null, List.of(3L), 0),
+                "audit", adoption)).isInstanceOf(IllegalStateException.class);
     }
 
     @Test

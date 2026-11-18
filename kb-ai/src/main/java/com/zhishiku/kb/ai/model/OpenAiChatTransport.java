@@ -87,7 +87,8 @@ public class OpenAiChatTransport {
         Scheduler clock = Schedulers.parallel();
         long deadline = clock.now(TimeUnit.MILLISECONDS) + totalTimeout.toMillis();
         byte[] bytes = prepared.encode();
-        CaptureSession capture = CaptureSession.current(context);
+        boolean suggestion = MetadataSuggestionModel.FORMAT.equals(prepared.formatVersion());
+        CaptureSession capture = suggestion ? null : CaptureSession.current(context);
         if (capture != null && context.hasKey(CaptureSession.MATERIALS_KEY)) {
             List<RetrievalClient.Citation> materials = context.get(CaptureSession.MATERIALS_KEY);
             capture.input(prepared, materials, bytes);
@@ -98,7 +99,7 @@ public class OpenAiChatTransport {
                     headers.setContentType(MediaType.APPLICATION_JSON);
                     headers.setAccept(List.of(MediaType.TEXT_EVENT_STREAM));
                 }).cookies(cookies -> cookies.clear()).bodyValue(bytes)
-                .exchangeToFlux(this::readResponse)
+                .exchangeToFlux(responseMessage -> readResponse(responseMessage, suggestion))
                 // 每次活动只重置空闲期限，总期限固定；timeout 同时取消实际上游订阅。
                 .timeout(nextTimeout(clock, deadline), event -> nextTimeout(clock, deadline))
                 .filter(event -> event instanceof ModelEvent.Delta || event instanceof ModelEvent.FinalUsage);
@@ -115,7 +116,7 @@ public class OpenAiChatTransport {
         return Mono.delay(Duration.ofMillis(Math.min(idleTimeout.toMillis(), remaining)), clock);
     }
 
-    private Flux<ModelEvent> readResponse(ClientResponse response) {
+    private Flux<ModelEvent> readResponse(ClientResponse response, boolean suggestion) {
         if (response.statusCode().value() != 200) {
             abortBody(response);
             return Flux.error(new ChatModelFailure(ChatModelFailure.Kind.HTTP_REJECTED));
@@ -140,7 +141,7 @@ public class OpenAiChatTransport {
                 sink.next(buffer);
             }
         }).doOnDiscard(DataBuffer.class, DataBufferUtils::release);
-        return decoder.decode(body);
+        return suggestion ? decoder.decode(body, true) : decoder.decode(body);
     }
 
     private static ClientResponse singleUseBody(ClientResponse response) {
