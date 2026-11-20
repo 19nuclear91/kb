@@ -9,7 +9,7 @@ import { useDocumentOperations } from '../OperationContext';
 import { metadataApi } from './api';
 import MetadataEditor from './MetadataEditor.vue';
 
-const props = defineProps<{ documentId: string; canEdit: boolean }>();
+const props = defineProps<{ documentId: string; canEdit: boolean; sourceVersionId?: string | null; versionNo?: number | null }>();
 const emit = defineEmits<{ title: [title: string]; denied: [status: number] }>();
 const auth = useSession(), documents = useDocumentOperations();
 const query = useResource(signal => metadataApi.get(auth.session, props.documentId, signal), () => props.documentId);
@@ -38,6 +38,6 @@ function receive() {
     <template v-if="query.data"><p style="white-space: pre-wrap">{{ query.data.summary ?? '暂无人工摘要' }}</p><p>分类：{{ query.data.category?.path.map(node => node.name).join(' / ') ?? '未分类' }}</p>
       <p>标签：{{ query.data.tags.map(tag => `${tag.name}${tag.enabled ? '' : '（停用）'}`).join('、') || '无' }}</p></template>
     <ElButton :disabled="!canEdit || documents.state.exclusive || query.loading || !query.data" @click="open = true">编辑资料</ElButton>
-    <MetadataEditor v-if="open" :document-id="documentId" :can-edit="canEdit" @denied="emit('denied', $event)" @close="open = false" @saved="receive" />
+    <MetadataEditor v-if="open && canEdit" :key="`${auth.state.epoch}:${documentId}`" :document-id="documentId" :source-version-id="sourceVersionId" :version-no="versionNo" :can-edit="canEdit" @denied="emit('denied', $event)" @close="open = false" @saved="receive" />
   </section>
 </template>

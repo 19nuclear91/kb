@@ -17,7 +17,7 @@ public class MetadataResponseFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return !(path.startsWith("/api/documents/") || path.startsWith("/api/admin/document-tags")
+        return !(path.startsWith("/api/documents/") || path.startsWith("/internal/metadata-suggestions/") || path.startsWith("/api/admin/document-tags")
                 || path.matches("/api/admin/spaces/[^/]+/categories(?:/[^/]+)?")
                 || path.matches("/api/admin/documents/[^/]+/(?:relocation-context|space)"));
     }

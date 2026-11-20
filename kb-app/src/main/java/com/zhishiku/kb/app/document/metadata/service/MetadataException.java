@@ -11,6 +11,8 @@ public final class MetadataException extends RuntimeException {
         TAG_UNAVAILABLE(409, "标签不可选，请重新选择"),
         NAME_CONFLICT(409, "名称已被占用"), REFERENCE_CONFLICT(409, "存在保留引用，不能删除"),
         REQUEST_MISMATCH(409, "请求标识已用于不同操作"), NO_CHANGE(409, "资料没有变化"),
+        SUGGESTIONS_DISABLED(503, "AI 整理暂未启用"), SOURCE_CHANGED(409, "当前发布版本已变化"),
+        NO_PUBLISHED_VERSION(409, "文档尚无发布版本"), SUGGESTION_EXPIRED(409, "建议已失效"),
         TREE_STRUCTURE_CONFLICT(409, "分类层级无效"), SPACE_ARCHIVED(409, "空间已归档"),
         UNAVAILABLE(503, "服务暂不可用，请稍后核对");
 

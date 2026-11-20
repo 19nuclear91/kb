@@ -136,7 +136,7 @@ public class AuditSummaryProjector {
                     fields("spaceId", Kind.ID, "clearedExceptionCount", Kind.COUNT, "clearanceBlockedPrincipalCount",
                             Kind.COUNT, "categoryId", Kind.NULLABLE_ID, "metadataVersion", Kind.COUNT);
             case DOCUMENT_ADMIN_DELETE -> fields("spaceId", Kind.ID, "spaceArchived", Kind.BOOL);
-            case DOCUMENT_METADATA_UPDATE -> fields("categoryId", Kind.NULLABLE_ID, "tagIds", Kind.IDS,
+            case DOCUMENT_METADATA_UPDATE, DOCUMENT_METADATA_SUGGESTION_APPLY -> fields("categoryId", Kind.NULLABLE_ID, "tagIds", Kind.IDS,
                     "metadataVersion", Kind.COUNT, "changedFields", Kind.CHANGED_FIELDS);
             case DOCUMENT_APPLICABILITY_UPDATE -> fields("documentId", Kind.ID, "versionId", Kind.ID,
                     "effectiveFrom", Kind.DATE, "untilKind", Kind.UNTIL_KIND, "effectiveUntil", Kind.DATE,

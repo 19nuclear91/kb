@@ -49,6 +49,16 @@ public class ChatModelConfiguration {
     }
 
     @Bean
+    @ConditionalOnProperty(prefix = "kb.metadata-suggestions", name = "enabled", havingValue = "true")
+    MetadataSuggestionModel metadataSuggestionModel(OpenAiChatTransport transport, ObjectProvider<ChatTokenBudget> policies) {
+        var identity = new ChatModelIdentity(properties.rootUri(), properties.getModel(), MetadataSuggestionModel.FORMAT);
+        ChatBudgetPolicy budget = "estimated".equals(properties.getBudget().getMode())
+                ? new ConfiguredEstimatedTokenBudget(identity, properties.getBudget())
+                : new ChatBudgetBinding(identity, policies.orderedStream().toList());
+        return new MetadataSuggestionModel(properties, transport, budget, reservationTokens);
+    }
+
+    @Bean
     @ConditionalOnMissingBean(ChatModelClient.class)
     ChatModelClient openAiChatModelClient(ChatPromptRenderer renderer, OpenAiChatTransport transport) {
         return new OpenAiChatModelClient(renderer, transport, properties.getSingleMaxOutputTokens());

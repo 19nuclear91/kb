@@ -18,6 +18,14 @@
 
 JSON 拒绝未知或重复字段、尾随 JSON、非法 Unicode、非整数 ID 和超限输入。写入正文上限 64 KiB，查询正文上限 16 KiB；数字身份和版本必须精确保留，不能经 JavaScript 浮点数截断。
 
+## 整文档资料保存
+
+手工编辑使用 `PUT /api/documents/{id}/metadata`，提交 `title,summary,categoryId,tagIds,expectedMetadataVersion`。采用过 AI 建议时使用 `PUT /api/documents/{id}/metadata-suggestions/{generationId}/metadata`，在相同五字段之外传入非空的 `adoptedFields` 数组，允许 `title`、`summary`、`categoryId`。改写采用过的字段仍保留其来源，标签继续按原规则处理。
+
+辅助保存使用独立的 `X-Request-Id`。首次提交复核固定发布版本、当前编辑资格、目录、资料基线和建议有效期，冲突时整单拒绝。原保存响应丢失后，用原标识和原载荷重试可核对最小回执。
+
+生成、查询、取消及辅助保存的请求和状态码见 [AI 整理建议的公开协议](document-metadata-suggestions.md#公开协议)。
+
 ## 分类目录
 
 `GET /api/admin/spaces/{spaceId}/categories` 读取管理目录；`GET /api/documents/{id}/metadata-options/categories` 读取文档编辑候选。查询字段为 `parentId,limit,cursor`，缺省父节点表示根层。`POST /api/documents/query/categories` 使用相同字段的请求体并要求 `spaceId`，只返回可查看文档使用的节点及必要祖先。

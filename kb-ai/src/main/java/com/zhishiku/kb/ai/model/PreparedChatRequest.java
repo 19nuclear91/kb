@@ -19,15 +19,22 @@ public final class PreparedChatRequest {
     private final String outputTokenField;
     private final boolean requestUsage;
     private final int maxRequestBytes;
+    private final String formatVersion;
 
     PreparedChatRequest(String model, List<Message> messages, int maxOutputTokens,
                         String outputTokenField, boolean requestUsage, int maxRequestBytes) {
+        this(model, messages, maxOutputTokens, outputTokenField, requestUsage, maxRequestBytes, ChatPromptRenderer.FORMAT_VERSION);
+    }
+
+    PreparedChatRequest(String model, List<Message> messages, int maxOutputTokens,
+                        String outputTokenField, boolean requestUsage, int maxRequestBytes, String formatVersion) {
         this.model = model;
         this.messages = List.copyOf(messages);
         this.maxOutputTokens = maxOutputTokens;
         this.outputTokenField = outputTokenField;
         this.requestUsage = requestUsage;
         this.maxRequestBytes = maxRequestBytes;
+        this.formatVersion = formatVersion;
     }
 
     public String model() {
@@ -39,7 +46,7 @@ public final class PreparedChatRequest {
     }
 
     public String formatVersion() {
-        return ChatPromptRenderer.FORMAT_VERSION;
+        return formatVersion;
     }
 
     public int maxOutputTokens() {

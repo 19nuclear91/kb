@@ -68,7 +68,7 @@ class AuditSummaryProjectorTest {
                 case DOCUMENT_SECURITY_LEVEL_CHANGE ->
                         "{\"securityLevel\":4,\"securityVersion\":1,\"expectedSecurityVersion\":0," +
                                 "\"title\":\"private-title\"}";
-                case DOCUMENT_METADATA_UPDATE ->
+                case DOCUMENT_METADATA_UPDATE, DOCUMENT_METADATA_SUGGESTION_APPLY ->
                         "{\"categoryId\":null,\"tagIds\":[1,2],\"metadataVersion\":1,\"changedFields\":[\"title\"],\"title\":\"private-title\"}";
                 case DOCUMENT_APPLICABILITY_UPDATE ->
                         "{\"documentId\":2,\"versionId\":3,\"effectiveFrom\":null,\"untilKind\":\"DATE\",\"effectiveUntil\":\"2026-12-31\","

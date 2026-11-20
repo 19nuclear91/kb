@@ -9,11 +9,11 @@ export interface CategoryBrowserProps {
   disabled?: boolean;
 }
 const props = defineProps<CategoryBrowserProps>();
-const emit = defineEmits<{ select: [category: CategoryItem | null]; ready: [page: CategoryPage | null] }>();
+const emit = defineEmits<{ select: [category: CategoryItem | null]; ready: [page: CategoryPage | null]; denied: [status: number] }>();
 </script>
 
 <template>
-  <CategoryBranch :key="`${context.kind}:${context.id}`" v-bind="props" @select="emit('select', $event)" @ready="emit('ready', $event)">
+  <CategoryBranch :key="`${context.kind}:${context.id}`" v-bind="props" @select="emit('select', $event)" @ready="emit('ready', $event)" @denied="emit('denied', $event)">
     <template #actions="scope"><slot name="actions" v-bind="scope" /></template>
   </CategoryBranch>
 </template>

@@ -15,6 +15,7 @@
 | 文档生命周期 | 原件上传、多版本、处理状态、失败重试、独立操作资格重核、软删除、搬迁、密级调整 | 新版本上传被拒后暂停并重核，不自动重传；用户端删除与管理端删除分别校验编辑和空间管理资格；搬迁会清空文档例外授权。见[用户端说明](kb-web/README.md)、[文档密级管理](docs/document-security-level.md) |
 | 批量文件导入 | 本地多选／拖拽、固定清单、逐项幂等受理、本人持久任务、跨登录人工恢复 | `/imports` 与 `/imports/:importId`；同名同内容不同项允许新建，响应未知先核对，未完成文件需重选匹配。见[导入 API](docs/document-import-api.md)、[导入运维](docs/document-import-operations.md) |
 | 文档资料 | 标题、人工摘要、空间分类树、全局标签，以及文档列表组合筛选 | 分类属于空间，标签可跨空间使用；资料修改作用于整份文档。见[资料与目录](docs/document-metadata-web.md) |
+| AI 辅助整理文档资料 | 编辑者可根据当前发布版本生成标题、摘要和分类建议，逐项采用、修改后保存 | 默认关闭。标签仍由编辑者维护。见[使用与启用说明](docs/document-metadata-suggestions.md) |
 | 审核与协作 | 空间发布策略、固定版本送审/通过/驳回/撤回、个人收藏、版本评论与回复、站内通知 | 解析完成、审核通过和发布是不同状态；评论和审核分别需要对应资格。见[版本审核](docs/document-review.md)、[收藏](docs/document-favorites.md)、[评论](docs/version-comments.md)、[通知](docs/in-app-notifications.md) |
 | 版本差异与说明 | 指定两个版本的结构及表格差异、关键数值变化、人工变更说明与修改历史 | F-03 已实现、同步主规格并归档，未部署；对比依赖新版 Worker 的结构快照。见[版本对比与变更说明](docs/version-diff-and-change-notes.md) |
 | 知识适用期与复审 | 固定版本日期声明与更正历史、文档责任人和周期、本人及空间清单、导航数量、责任人确认 | F-02 首期已实现，九份主规格已同步、[变更已归档](openspec/changes/archive/2026-11-15-knowledge-validity-and-review/)，未部署；适用期届满与复审逾期分别表达，不改变发布、召回或 AI 协议。见[接口与运维](docs/knowledge-validity-review.md)、[最新离线核验与未验证边界](openspec/changes/archive/2026-11-15-knowledge-validity-and-review/verify-report-2.md) |
@@ -497,7 +498,7 @@ E-11 首期 48/48 项任务已完成，已同步 5 份主规格并[归档](opens
 
 ## 开发路线图
 
-[开发路线图与候选功能](docs/development-roadmap.md) 保留 11 项工程完善任务和 14 项产品方向的原编号，区分明确缺口、条件性缺口、真实验收待补与候选增强，并记录最新状态。F-01 知识缺口闭环、F-02 知识有效期及复审、F-03 版本差异与人工变更说明首期均已实现、完成离线核对、同步主规格并归档，未部署。F-03 的 36/36 项任务及核验结果见[归档记录](openspec/changes/archive/2026-11-17-version-diff-and-change-notes/archive-summary.md)。F-04～F-14 仍为候选。真实解析链路及独立验收工程继续按各自范围评估。
+[开发路线图与候选功能](docs/development-roadmap.md) 跟踪 11 项工程任务和 14 项产品方向。F-01 知识缺口闭环、F-02 知识有效期及复审、F-03 版本差异与人工变更说明、F-06 AI 辅助整理文档资料首期均已实现，通过离线核验并归档，尚未部署。F-04、F-05 及 F-07～F-14 仍为候选。可查阅 [F-03 归档记录](openspec/changes/archive/2026-11-17-version-diff-and-change-notes/archive-summary.md)和 [F-06 归档任务](openspec/changes/archive/2026-11-18-ai-assisted-document-metadata/tasks.md)。
 
 路线图的候选条目不是实施授权、排期或工期承诺；已交付条目以各自范围和证据为准，不以归档代替真实环境验收，也不替代当前功能说明及 OpenSpec 正式规格。
 

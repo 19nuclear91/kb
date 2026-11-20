@@ -4,11 +4,11 @@ import { ElButton } from 'element-plus';
 import { useSession } from '../../SessionProvider';
 import { isAbort, messageOf } from '../../api';
 import KbAlert from '../../ui/KbAlert.vue';
-import { metadataApi, type Tag } from './api';
+import { isDocumentAccessDenied, metadataApi, type Tag } from './api';
 import { searchApi, searchOptionsMessage } from '../../search/api';
 
 const props = withDefaults(defineProps<{ kind: 'edit' | 'filter' | 'search'; documentId?: string | null; value: Tag[]; disabled?: boolean }>(), { documentId: null, disabled: false });
-const emit = defineEmits<{ change: [tags: Tag[]] }>();
+const emit = defineEmits<{ change: [tags: Tag[]]; denied: [status: number] }>();
 const auth = useSession();
 const draft = ref(''), search = ref(''), revision = ref(0);
 type State = { key: string; items: Tag[]; cursor: string | null; loading: boolean; error?: string };
@@ -31,6 +31,7 @@ function load(cursor: string | null, items: Tag[]) {
   }, error => {
     if (valid() && !isAbort(error)) {
       state.value = { key: at, items: [], cursor: null, loading: false, error: kind === 'search' ? searchOptionsMessage(error) : messageOf(error) };
+      if (kind === 'edit' && isDocumentAccessDenied(error)) emit('denied', error.status);
     }
   });
 }

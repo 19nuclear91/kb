@@ -113,6 +113,7 @@ public enum AuditScope {
      */
     DOCUMENT_ADMIN_DELETE("document"),
     DOCUMENT_METADATA_UPDATE("document"),
+    DOCUMENT_METADATA_SUGGESTION_APPLY("document"),
     DOCUMENT_APPLICABILITY_UPDATE("document-version"),
     DOCUMENT_CHANGE_NOTE_UPDATE("document-version"),
     DOCUMENT_STEWARDSHIP_UPDATE("document"),

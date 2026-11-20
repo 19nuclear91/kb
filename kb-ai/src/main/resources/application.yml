@@ -25,6 +25,9 @@ spring:
     max-in-memory-size: 4MB
 
 kb:
+  metadata-suggestions:
+    enabled: ${KB_METADATA_SUGGESTIONS_ENABLED:false}
+    secret: ${KB_METADATA_SUGGESTIONS_SECRET:}
   auth:
     internal:
       secret: ${KB_AUTH_INTERNAL_SECRET:}

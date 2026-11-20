@@ -1,6 +1,8 @@
 package com.zhishiku.kb.ai.model;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpHeaders;
@@ -45,6 +47,32 @@ class OpenAiChatTransportTest {
     static ClientResponse response(int status, String contentType, Flux<DataBuffer> body) {
         return ClientResponse.create(HttpStatusCode.valueOf(status))
                 .header(HttpHeaders.CONTENT_TYPE, contentType).body(body).build();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"stop,true,true", "length,true,true", "length,false,true", "length,true,false", "length,false,false"})
+    void suggestionUsageDependsOnCompleteStream(String finish, boolean sameFrame, boolean complete) {
+        var prepared = request();
+        when(prepared.formatVersion()).thenReturn(MetadataSuggestionModel.FORMAT);
+        String counters = "\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":5}";
+        String terminal = "{\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"" + finish + "\"}]";
+        String tail = sameFrame ? OpenAiSseDecoderTest.event(terminal + "," + counters + "}")
+                : OpenAiSseDecoderTest.event(terminal + "}") + OpenAiSseDecoderTest.usage("20", "5");
+        String wire = OpenAiSseDecoderTest.text("前缀") + tail + (complete ? OpenAiSseDecoderTest.event("[DONE]") : "");
+        var client = WebClient.builder().exchangeFunction(req -> Mono.just(response(200, "text/event-stream",
+                Flux.just(OpenAiSseDecoderTest.buffer(wire))))).build();
+        var settings = ChatModelPropertiesTest.configured();
+        var transport = new OpenAiChatTransport(settings, 60, client, new OpenAiSseDecoder(settings));
+        var received = StepVerifier.create(transport.stream(prepared)).expectNext(new ModelEvent.Delta("前缀"));
+        if (complete) {
+            received.expectNext(new ModelEvent.FinalUsage(20, 5));
+        }
+        if ("stop".equals(finish)) {
+            received.verifyComplete();
+        } else {
+            received.expectErrorSatisfies(error -> assertThat(((ChatModelFailure) error).kind()).isEqualTo(
+                    complete ? ChatModelFailure.Kind.OUTPUT_TRUNCATED : ChatModelFailure.Kind.INCOMPLETE_STREAM)).verify();
+        }
     }
 
     @Test

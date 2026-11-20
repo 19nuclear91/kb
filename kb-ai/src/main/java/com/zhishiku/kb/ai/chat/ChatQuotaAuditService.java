@@ -34,7 +34,7 @@ public class ChatQuotaAuditService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatQuotaAuditService.class);
 
-    private static final RedisScript<Long> ACQUIRE_SCRIPT = RedisScript.of("""
+    static final RedisScript<Long> ACQUIRE_SCRIPT = RedisScript.of("""
             local now = tonumber(ARGV[1])
             local request_limit = tonumber(ARGV[2])
             local lease_until = tonumber(ARGV[3])
@@ -44,6 +44,20 @@ public class ChatQuotaAuditService {
             local lease_seconds = tonumber(ARGV[7])
             local token_budget = tonumber(ARGV[8])
             local token_reservation = tonumber(ARGV[9])
+            local function reject(code)
+                if KEYS[6] then redis.call('SET', KEYS[6], 'REJECTED:' .. ARGV[9], 'EX', ARGV[10]) end
+                return code
+            end
+            if KEYS[6] then
+                if now >= tonumber(ARGV[11]) then return -3 end
+                local marker = redis.call('GET', KEYS[6])
+                if marker then
+                    if marker == 'REJECTED:' .. ARGV[9] then return 0 end
+                    local expiry = tonumber(redis.call('ZSCORE', KEYS[2], lease_id) or '0')
+                    if marker == 'RESERVED:' .. ARGV[9] and expiry > now then return 1 end
+                    return -3
+                end
+            end
             
             local expired = redis.call('ZRANGE', KEYS[2], '-inf', now, 'BYSCORE')
             for _, expired_id in ipairs(expired) do
@@ -56,20 +70,21 @@ public class ChatQuotaAuditService {
             end
             redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now)
             if redis.call('ZCARD', KEYS[2]) >= concurrent_limit then
-                return 0
+                return reject(0)
             end
             
             local request_count = tonumber(redis.call('GET', KEYS[1]) or '0')
             if request_count >= request_limit then
-                return 0
+                return reject(0)
             end
             
             local token_used = tonumber(redis.call('GET', KEYS[3]) or '0')
             local token_reserved = tonumber(redis.call('GET', KEYS[4]) or '0')
             if token_used + token_reserved + token_reservation > token_budget then
-                return -2
+                return reject(-2)
             end
             
+            if KEYS[6] then redis.call('SET', KEYS[6], 'ACQUIRING', 'EX', ARGV[10]) end
             request_count = redis.call('INCR', KEYS[1])
             if request_count == 1 then
                 redis.call('EXPIRE', KEYS[1], window_seconds)
@@ -80,6 +95,7 @@ public class ChatQuotaAuditService {
             redis.call('EXPIRE', KEYS[5], lease_seconds)
             redis.call('ZADD', KEYS[2], lease_until, lease_id)
             redis.call('EXPIRE', KEYS[2], lease_seconds)
+            if KEYS[6] then redis.call('SET', KEYS[6], 'RESERVED:' .. ARGV[9], 'EX', ARGV[10]) end
             return 1
             """, Long.class);
 
@@ -101,7 +117,7 @@ public class ChatQuotaAuditService {
             return reserved
             """, Long.class);
 
-    private static final RedisScript<Long> RENEW_SCRIPT = RedisScript.of("""
+    static final RedisScript<Long> RENEW_SCRIPT = RedisScript.of("""
             local lease_id = ARGV[1]
             local lease_until = tonumber(ARGV[2])
             local lease_seconds = tonumber(ARGV[3])

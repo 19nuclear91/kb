@@ -75,6 +75,10 @@ logging:
     com.zhishiku.kb.app.document.imports.mapper: "OFF"
 
 kb:
+  metadata-suggestions:
+    enabled: ${KB_METADATA_SUGGESTIONS_ENABLED:false}
+    ai-base-url: ${KB_AI_BASE_URL:}
+    secret: ${KB_METADATA_SUGGESTIONS_SECRET:}
   validity:
     # 全站业务日期口径；上线后不得修改，只接受地区 ID。
     business-time-zone: ${KB_VALIDITY_BUSINESS_TIME_ZONE:Asia/Shanghai}

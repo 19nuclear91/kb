@@ -4,12 +4,12 @@ import { ElButton } from 'element-plus';
 import { useSession } from '../../SessionProvider';
 import { isAbort, messageOf } from '../../api';
 import KbAlert from '../../ui/KbAlert.vue';
-import { metadataApi, type CategoryItem, type CategoryPage } from './api';
+import { isDocumentAccessDenied, metadataApi, type CategoryItem, type CategoryPage } from './api';
 import { searchApi, searchOptionsMessage } from '../../search/api';
 import type { CategoryBrowserProps } from './CategoryBrowser.vue';
 
 const props = withDefaults(defineProps<CategoryBrowserProps>(), { nullLabel: '未分类', disabled: false });
-const emit = defineEmits<{ select: [category: CategoryItem | null]; ready: [page: CategoryPage | null] }>();
+const emit = defineEmits<{ select: [category: CategoryItem | null]; ready: [page: CategoryPage | null]; denied: [status: number] }>();
 const auth = useSession();
 const parent = shallowRef<CategoryItem | null>(null), revision = ref(0);
 type State = { key: string; page: CategoryPage | null; loading: boolean; error?: string };
@@ -38,6 +38,9 @@ function load(cursor: string | null, previous: CategoryPage | null) {
     if (active() && !isAbort(error)) {
       state.value = { key: at, page: null, loading: false, error: context.kind === 'search' ? searchOptionsMessage(error) : messageOf(error) };
       emit('ready', null);
+      if (context.kind === 'edit' && isDocumentAccessDenied(error)) {
+        emit('denied', error.status);
+      }
     }
   });
 }
