@@ -48,6 +48,7 @@ export const routes: RouteRecordRaw[] = [
       page('/admin/parse/dead-letters', 'ParseDeadLettersPage', { code: perm.deadLetterRead, title: '解析死信' }),
       page('/admin/audits', 'AuditsPage', { code: perm.auditRead, title: '审计查询' }),
       page('/admin/document-tags', 'DocumentTagsPage', { code: perm.tagRead, title: '全局标签' }),
+      page('/admin/search-terms', 'SearchTermsPage', { code: perm.termRead, title: '企业术语词典' }),
       page('/admin/ai/usage', 'AiUsagePage', { code: perm.aiUsageRead, title: 'AI 用量' }),
       page('/admin/reports/operations', 'OperationsReportsPage', { code: perm.operationsReportsRead, title: '运营概览' }),
       page('/admin/ai/audits', 'AiAuditsPage', { code: perm.aiAuditRead, title: 'AI 调用审计' }),

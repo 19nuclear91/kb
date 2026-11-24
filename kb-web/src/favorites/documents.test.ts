@@ -6,6 +6,7 @@ import { mountRouter } from '../test/app';
 import type { Session } from '../session';
 import { deferred, json } from '../test/fixtures';
 import { ApiError } from '../api';
+import { assistedResponse } from '../search/assistedFixtures';
 const context = reactive({ session: {} as Session, state: { phase: 'ready', epoch: 1 } });
 vi.mock('../SessionProvider', () => ({ useSession: () => context }));
 vi.mock('../admin/access', async importOriginal => ({ ...await importOriginal<typeof import('../admin/access')>(), useAdminAccess: () => ({ canManageSpace: () => false, has: () => false }) }));
@@ -60,9 +61,9 @@ it('详情收藏核对确认不可访问后，版本标题与打开的预览被�
 it('同文档搜索分块只查一次收藏，操作后保持原排序和引用版本', async () => {
   const hits = [11, 12].map((chunk, index) => ({ docId: '1', versionId: '22', versionNo: 2, chunkId: String(chunk), docTitle: '引用资料', content: `片段${index}` }));
   vi.mocked(context.session.post).mockResolvedValue({ items: [{ documentId: '1', favorited: false }] });
-  vi.mocked(context.session.send).mockImplementation(async path => json(path === '/api/search' ? hits : { items: [], hasMore: false, nextCursor: null }));
+  vi.mocked(context.session.send).mockImplementation(async path => path === '/api/search/assisted' ? assistedResponse('主题', hits) : json({ items: [], hasMore: false, nextCursor: null }));
   vi.mocked(context.session.json).mockImplementation(async path => (path === '/api/admin/spaces' ? [] : { documentId: '1', favorited: true }) as never);
-  mountRouter(() => h(SearchPage)); await fireEvent.update(screen.getByLabelText('搜索词'), '主题'); await fireEvent.click(screen.getByRole('button', { name: /搜\s*索/ }));
+  mountRouter(() => h(SearchPage)); await fireEvent.update(screen.getByLabelText('搜索词'), '主题'); await fireEvent.click(screen.getByRole('button', { name: /^搜\s*索$/ }));
   const buttons = await screen.findAllByRole('button', { name: '收藏文档' }); await fireEvent.click(buttons[0]);
   await waitFor(() => expect(screen.getAllByRole('button', { name: '取消收藏' })).toHaveLength(2));
   expect(vi.mocked(context.session.post).mock.calls.filter(call => call[0].endsWith('/favorites/status'))).toHaveLength(1);
@@ -75,10 +76,10 @@ it.each(['批量省略', 'PUT 404'])('搜索%s后清理同文档全部旧内容�
   const pending = deferred<unknown>();
   const hits = [11, 12].map(chunk => ({ docId: '1', versionId: '22', versionNo: 2, chunkId: String(chunk), docTitle: '被撤权资料', content: `旧片段${chunk}` }));
   hits.push({ docId: '2', versionId: '33', versionNo: 3, chunkId: '13', docTitle: '仍可查看资料', content: '保留片段' });
-  vi.mocked(context.session.send).mockImplementation(async path => json(path === '/api/search' ? hits : { items: [], hasMore: false, nextCursor: null }));
+  vi.mocked(context.session.send).mockImplementation(async path => path === '/api/search/assisted' ? assistedResponse('主题', hits) : json({ items: [], hasMore: false, nextCursor: null }));
   vi.mocked(context.session.post).mockImplementation(async () => (outcome === '批量省略' ? pending.promise : { items: [{ documentId: '1', favorited: false }, { documentId: '2', favorited: true }] }) as never);
   vi.mocked(context.session.json).mockImplementation(path => (path === '/api/admin/spaces' ? Promise.resolve([]) : pending.promise) as never);
-  mountRouter(() => h(SearchPage)); await fireEvent.update(screen.getByLabelText('搜索词'), '主题'); await fireEvent.click(screen.getByRole('button', { name: /搜\s*索/ }));
+  mountRouter(() => h(SearchPage)); await fireEvent.update(screen.getByLabelText('搜索词'), '主题'); await fireEvent.click(screen.getByRole('button', { name: /^搜\s*索$/ }));
   const titles = await screen.findAllByRole('button', { name: '被撤权资料' }); await fireEvent.click(titles[0]); expect(screen.getByTestId('citation').textContent).toBe('1/22/11');
   if (outcome === 'PUT 404') {
     const buttons = await screen.findAllByRole('button', { name: '收藏文档' }); await fireEvent.click(buttons[0]);

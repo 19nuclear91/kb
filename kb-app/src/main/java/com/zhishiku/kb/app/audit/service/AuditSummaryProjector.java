@@ -46,6 +46,10 @@ public class AuditSummaryProjector {
             AuditScope scope = AuditScope.valueOf(row.getOperationScope());
             Map<String, Kind> rules = rules(scope);
             JsonNode before = object(row.getBeforeState()), after = object(row.getAfterState());
+            if (scope == AuditScope.SEARCH_TERM_CREATE || scope == AuditScope.SEARCH_TERM_UPDATE
+                    || scope == AuditScope.SEARCH_CORRECTION_CREATE || scope == AuditScope.SEARCH_CORRECTION_UPDATE) {
+                validateTerminology(scope, row, before, after, rules);
+            }
             List<Change> changes = new ArrayList<>();
             for (var rule : rules.entrySet()) {
                 Object old = scalar(before.get(rule.getKey()), rule.getValue());
@@ -152,6 +156,10 @@ public class AuditSummaryProjector {
                             "sortOrder", Kind.COUNT, "treeVersion", Kind.COUNT, "nameChanged", Kind.BOOL);
             case DOCUMENT_TAG_CREATE, DOCUMENT_TAG_UPDATE ->
                     fields("tagId", Kind.ID, "enabled", Kind.BOOL, "version", Kind.COUNT, "nameChanged", Kind.BOOL);
+            case SEARCH_TERM_CREATE, SEARCH_TERM_UPDATE -> fields("termId", Kind.ID, "enabled", Kind.BOOL,
+                    "version", Kind.COUNT, "dictionaryRevision", Kind.COUNT, "changedFields", Kind.TERM_FIELDS);
+            case SEARCH_CORRECTION_CREATE, SEARCH_CORRECTION_UPDATE -> fields("correctionId", Kind.ID, "targetTermId", Kind.ID,
+                    "enabled", Kind.BOOL, "version", Kind.COUNT, "dictionaryRevision", Kind.COUNT, "changedFields", Kind.CORRECTION_FIELDS);
             case DOCUMENT_SECURITY_LEVEL_CHANGE ->
                     fields("securityLevel", Kind.LEVEL, "securityVersion", Kind.COUNT, "expectedSecurityVersion",
                             Kind.COUNT);
@@ -172,7 +180,7 @@ public class AuditSummaryProjector {
         if (value == null) {
             return null;
         }
-        if (kind == Kind.IDS || kind == Kind.CHANGED_FIELDS) {
+        if (kind == Kind.IDS || kind == Kind.CHANGED_FIELDS || kind == Kind.TERM_FIELDS || kind == Kind.CORRECTION_FIELDS) {
             if (!value.isArray() || value.size() > (kind == Kind.IDS ? 20 : 4)) {
                 throw new IllegalArgumentException();
             }
@@ -182,8 +190,7 @@ public class AuditSummaryProjector {
                 Object item;
                 if (kind == Kind.IDS && element.isIntegralNumber() && element.canConvertToLong() && element.longValue() > 0) {
                     item = element.longValue();
-                } else if (kind == Kind.CHANGED_FIELDS && element.isTextual()
-                        && Set.of("title", "summary", "categoryId", "tagIds").contains(element.textValue())) {
+                } else if (element.isTextual() && changedFields(kind).contains(element.textValue())) {
                     item = element.textValue();
                 } else {
                     throw new IllegalArgumentException();
@@ -234,6 +241,48 @@ public class AuditSummaryProjector {
         throw new IllegalArgumentException();
     }
 
-    private enum Kind {ID, NULLABLE_ID, IDS, CHANGED_FIELDS, COUNT, LEVEL, BOOL, FUNCTIONAL_PERMISSION, ACL_PERMISSION, PRINCIPAL, DEAD_LETTER_STATUS,
+    private static Set<String> changedFields(Kind kind) {
+        return switch (kind) {
+            case CHANGED_FIELDS -> Set.of("title", "summary", "categoryId", "tagIds");
+            case TERM_FIELDS -> Set.of("canonicalName", "description", "aliases", "enabled");
+            case CORRECTION_FIELDS -> Set.of("wrongExpression", "targetTermId", "enabled");
+            default -> Set.of();
+        };
+    }
+
+    private static void validateTerminology(AuditScope scope, IdentityAuditRecord row, JsonNode before, JsonNode after,
+                                            Map<String, Kind> rules) {
+        boolean create = scope == AuditScope.SEARCH_TERM_CREATE || scope == AuditScope.SEARCH_CORRECTION_CREATE;
+        String idField = scope == AuditScope.SEARCH_TERM_CREATE || scope == AuditScope.SEARCH_TERM_UPDATE ? "termId" : "correctionId";
+        if (!scope.targetType().equals(row.getTargetType()) || row.getTargetId() == null || row.getTargetId() <= 0) {
+            throw new IllegalArgumentException();
+        }
+        for (var rule : rules.entrySet()) {
+            Object value = scalar(after.get(rule.getKey()), rule.getValue());
+            if (value == null || (rule.getKey().equals("changedFields") && ((List<?>) value).isEmpty())) {
+                throw new IllegalArgumentException();
+            }
+            if (!create && !rule.getKey().equals("changedFields") && scalar(before.get(rule.getKey()), rule.getValue()) == null) {
+                throw new IllegalArgumentException();
+            }
+        }
+        if (after.get(idField).longValue() != row.getTargetId() || after.get("dictionaryRevision").longValue() <= 0) {
+            throw new IllegalArgumentException();
+        }
+        if (create) {
+            if (after.get("version").longValue() != 0) {
+                throw new IllegalArgumentException();
+            }
+        } else {
+            long version = before.get("version").longValue();
+            long revision = before.get("dictionaryRevision").longValue();
+            if (before.get(idField).longValue() != row.getTargetId() || version == Long.MAX_VALUE || revision == Long.MAX_VALUE
+                    || after.get("version").longValue() != version + 1 || after.get("dictionaryRevision").longValue() != revision + 1) {
+                throw new IllegalArgumentException();
+            }
+        }
+    }
+
+    private enum Kind {ID, NULLABLE_ID, IDS, CHANGED_FIELDS, TERM_FIELDS, CORRECTION_FIELDS, COUNT, LEVEL, BOOL, FUNCTIONAL_PERMISSION, ACL_PERMISSION, PRINCIPAL, DEAD_LETTER_STATUS,
         SSO_PLATFORM, SSO_RESULT, PUBLICATION_POLICY, DATE, UNTIL_KIND, CYCLE}
 }

@@ -24,6 +24,7 @@ export const routes = {
   deadLetters: ['src/admin/ParseDeadLettersPage.vue'], audits: ['src/admin/AuditsPage.vue'],
   aiUsage: ['src/admin/AiUsagePage.vue'], aiAudits: ['src/admin/AiAuditsPage.vue'],
   operations: ['src/admin/OperationsReportsPage.vue'], tags: ['src/admin/DocumentTagsPage.vue'],
+  searchTerms: ['src/admin/SearchTermsPage.vue'],
 };
 export const compression = { gzipLevel: 9, brotliQuality: 11, basis: '逐文件压缩后求和，字节' };
 const fail = message => { throw new Error(message); };
@@ -114,6 +115,7 @@ export function checkIsolation(report) {
     fail('入口、登录或文档列表提前包含知识问题实现');
   }
   const adminPages = Object.values(routes).flat().filter(id => id.startsWith('src/admin/'));
+  if (report.scenarios.search && [...modules('search')].some(id => id.startsWith('src/searchTerms/'))) fail('普通搜索提前包含词典管理实现');
   const userPages = Object.values(routes).flat().filter(id => !id.startsWith('src/admin/') && !['login', 'password', 'sso'].some(name => routes[name].includes(id)));
   for (const [name, ids] of Object.entries(routes)) {
     if (!report.scenarios[name]) continue;

@@ -32,3 +32,4 @@ export const AiUsagePage = lazyPage(() => import('../admin/AiUsagePage.vue'));
 export const AiAuditsPage = lazyPage(() => import('../admin/AiAuditsPage.vue'));
 export const OperationsReportsPage = lazyPage(() => import('../admin/OperationsReportsPage.vue'));
 export const DocumentTagsPage = lazyPage(() => import('../admin/DocumentTagsPage.vue'));
+export const SearchTermsPage = lazyPage(() => import('../admin/SearchTermsPage.vue'));

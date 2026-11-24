@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zhishiku.kb.app.search.model.SearchFilters;
 
 import java.io.IOException;
@@ -13,13 +14,17 @@ import java.util.Set;
 
 /** 按实际 JSON 类型读取筛选条件，拒绝歧义与静默类型转换。 */
 public final class SearchRequestDeserializer extends JsonDeserializer<SearchRequest> {
-    private static final Set<String> FIELDS = Set.of("query", "candidates", "topK", "spaceId", "categoryId",
+    static final Set<String> FIELDS = Set.of("query", "candidates", "topK", "spaceId", "categoryId",
             "uncategorized", "tagIds", "fileType", "updatedFrom", "updatedTo");
 
     @Override
     public SearchRequest deserialize(JsonParser parser, DeserializationContext context) throws IOException {
         var root = SearchJson.object(parser);
         SearchJson.fields(root, FIELDS);
+        return base(root);
+    }
+
+    static SearchRequest base(ObjectNode root) {
         return new SearchRequest(SearchJson.text(root.get("query")), amount(root.get("candidates")),
                 amount(root.get("topK")), SearchJson.nullableId(root.get("spaceId")),
                 SearchJson.nullableId(root.get("categoryId")), SearchJson.bool(root.get("uncategorized")),

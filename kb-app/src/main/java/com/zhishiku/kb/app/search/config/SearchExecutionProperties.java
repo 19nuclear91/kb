@@ -2,6 +2,7 @@ package com.zhishiku.kb.app.search.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 /**
  * 搜索执行预算与实例级容量，时间单位为毫秒。
@@ -24,23 +25,31 @@ public record SearchExecutionProperties(
         @DefaultValue("500") long responseReserveMs,
         @DefaultValue("8") int maxConcurrent,
         @DefaultValue("2") int maxConcurrentPerUser,
-        @DefaultValue("1") int retryAfterSeconds) {
+         @DefaultValue("1") int retryAfterSeconds,
+         @DefaultValue("1000") long terminologyTimeoutMs) {
 
+    @ConstructorBinding
     public SearchExecutionProperties {
         for (long millis : new long[]{totalTimeoutMs, embeddingTimeoutMs, retrievalTimeoutMs,
-                rerankTimeoutMs, responseReserveMs}) {
+                rerankTimeoutMs, responseReserveMs, terminologyTimeoutMs}) {
             if (millis <= 0 || millis > Long.MAX_VALUE / 1_000_000L) {
                 throw new IllegalArgumentException("kb.search.execution 时间配置无效");
             }
         }
         long work = totalTimeoutMs - responseReserveMs;
-        if (work <= 0 || embeddingTimeoutMs > work || retrievalTimeoutMs > work || rerankTimeoutMs > work) {
+        if (work <= 0 || embeddingTimeoutMs > work || retrievalTimeoutMs > work || rerankTimeoutMs > work || terminologyTimeoutMs > work) {
             throw new IllegalArgumentException("kb.search.execution 阶段预算或响应预留无效");
         }
         if (maxConcurrent <= 0 || maxConcurrentPerUser <= 0 || maxConcurrentPerUser > maxConcurrent
                 || retryAfterSeconds <= 0) {
             throw new IllegalArgumentException("kb.search.execution 容量或重试配置无效");
         }
+    }
+
+    public SearchExecutionProperties(long totalTimeoutMs, long embeddingTimeoutMs, long retrievalTimeoutMs, long rerankTimeoutMs,
+                                      long responseReserveMs, int maxConcurrent, int maxConcurrentPerUser, int retryAfterSeconds) {
+        this(totalTimeoutMs, embeddingTimeoutMs, retrievalTimeoutMs, rerankTimeoutMs, responseReserveMs, maxConcurrent,
+                maxConcurrentPerUser, retryAfterSeconds, Math.min(1000, totalTimeoutMs - responseReserveMs));
     }
 
     public static SearchExecutionProperties defaults() {

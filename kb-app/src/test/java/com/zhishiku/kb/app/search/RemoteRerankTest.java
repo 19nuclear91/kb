@@ -24,8 +24,25 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.eq;
 
 class RemoteRerankTest {
+    @Test
+    void onlyExecutionTextAndAuthorizedCandidateContentEnterOutboundPayload() {
+        String text = "OA 报消 PM\n办公自动化";
+        var transport = mock(SearchHttpTransport.class);
+        var authorized = hit(1);
+        when(transport.post(any(), any(), any(), any(), anyInt(), anyInt()))
+                .thenReturn(Map.of("results", List.of(item(0, 1))));
+        try (var current = mockStatic(SearchContext.class)) {
+            current.when(SearchContext::current).thenReturn(mock(SearchContext.class));
+            assertThat(client(transport).rerank(text, List.of(authorized), 1)).containsExactly(authorized);
+        }
+        verify(transport).post(any(), any(), eq(Map.of("model", "rank", "query", text, "documents", List.of(authorized.content()), "top_n", 1)),
+                any(), eq(SearchLimitsProperties.defaults().maxRerankRequestBytes()), eq(30));
+    }
+
     static Stream<Object> invalidResults() {
         return Stream.of(List.of(), List.of(item(0, 1)), List.of(item(0, 1), item(1, 2), item(2, 3)),
                 List.of(item(0, 1), item(0, 2)), List.of(item(-1, 1), item(1, 2)),

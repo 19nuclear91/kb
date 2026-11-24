@@ -8,6 +8,7 @@ import com.zhishiku.kb.app.search.execution.SearchExecutor;
 import com.zhishiku.kb.app.search.execution.SearchMetrics;
 import com.zhishiku.kb.app.search.execution.SearchStageFailure;
 import com.zhishiku.kb.app.search.model.SearchFailure;
+import com.zhishiku.kb.app.search.expansion.SearchQueryPlan;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
@@ -19,6 +20,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SearchMetricsTest {
+    @Test
+    void assistanceUsesOnlyFixedModesOutcomesAndExistingSearchAggregate() {
+        var registry = new SimpleMeterRegistry();
+        var metrics = new SearchMetrics(registry);
+        for (var mode : SearchQueryPlan.Mode.values()) {
+            for (var outcome : SearchMetrics.AssistanceOutcome.values()) {
+                metrics.assistance(mode, outcome);
+            }
+        }
+        var properties = SearchExecutionProperties.defaults();
+        try (var executor = new SearchExecutor(properties, new SearchAdmission(properties), metrics)) {
+            executor.execute(7, state -> executor.required(state, SearchBudget.Stage.TERMINOLOGY, () -> "prepared"));
+            assertThat(registry.get("kb.search.requests").tag("outcome", "SUCCESS").counter().count()).isOne();
+            assertThat(registry.get("kb.search.stage.duration").tag("stage", "TERMINOLOGY").timer().count()).isOne();
+            assertThat(registry.find("kb.search.options.requests").counter()).isNull();
+            registry.getMeters().forEach(meter -> assertThat(meter.getId().getTags()).allSatisfy(tag -> {
+                assertThat(tag.getKey()).isIn("mode", "outcome", "stage");
+                assertThat(tag.getValue()).doesNotContain("7", "query", "context", "revision");
+            }));
+        }
+    }
+
     @Test
     void fallbackIsSuccessfulButCapacityRemainsOccupiedUntilCancellationWorkAlsoExits() throws Exception {
         var properties = new SearchExecutionProperties(2000, 100, 500, 100, 100, 1, 1, 1);

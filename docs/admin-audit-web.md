@@ -65,3 +65,13 @@ npm run build
 修复两项 403 边界问题后，最终白名单测试为 7 个文件、141 项通过，0 失败。新增回归覆盖慢身份／资格核对、错误体取消等待、取消与身份代次隔离，以及权限先返回、空间目录后返回或故障时的拒绝保持和正常查询保留。前期定向执行结果与最终结果存在重叠，不累计为独立用例数。TypeScript 类型检查通过；Vite 静态构建成功。测试使用 jsdom 与替身，没有运行完整应用或真实浏览器。
 
 版本变更说明成功写入使用 DOCUMENT_CHANGE_NOTE_UPDATE，目标类型 document-version。投影字段仅为 documentId、versionId、baseVersionId、hasNote、noteVersion、visibleToReaders、reasonProvided 的前后值；说明正文、原因和标题不进入审计投影。匹配重放不重复记成功事件，读取和对比不写审计。
+
+## 企业术语维护审计
+
+新增 `SEARCH_TERM_CREATE`／`SEARCH_TERM_UPDATE`（目标 `search-term`）和 `SEARCH_CORRECTION_CREATE`／`SEARCH_CORRECTION_UPDATE`（目标 `search-correction`），独立启停归入对应 UPDATE。首次成功维护与词条、词典修订和命令回执由同一事务承载一条事件，匹配重放不重复追加。管理 HTTP 和前端已知域筛选／固定摘要展示已接入；仅完成离线核对，不表示真实环境验收。
+
+术语摘要仅投影 termId、enabled、version、dictionaryRevision 和 changedFields；纠错另投影 correctionId 及前后 targetTermId。changedFields 按实体分别限制为 canonicalName／description／aliases／enabled，或 wrongExpression／targetTermId／enabled。这些仅是字段名称，不携带标准名称、释义、别名或错误表达正文，也不回显查询、selectionContext、输入摘要或原始回执。已知字段损坏时保留事件元数据并标记摘要不可用，不补查当前词典或文档。
+
+仍要求当前精确 `audit:read`，词典 read／write 不代替审计资格。停用或目标当前不可用不会删除存储的历史事件。现有未知但合法操作域／目标类型查询保持兼容，白名单仅约束摘要投影，不新增查询拒绝规则。普通搜索、建议采用、管理读取和被拒维护不产生成功词典维护审计。
+
+词典变更已于 2026-11-24 同步主规格并归档。本次证据仅为独立审计生产／投影／查询测试、事务调用替身和编译后依赖检查；真实数据库审计提交、锁与回滚未验证。执行记录见[归档验证记录](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verification.md)；搜索混合表达的 W4 警告保留在[核验报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)，归档不表示无问题验收通过。

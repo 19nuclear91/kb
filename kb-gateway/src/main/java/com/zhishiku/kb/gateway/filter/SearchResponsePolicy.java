@@ -1,5 +1,7 @@
 package com.zhishiku.kb.gateway.filter;
 
+import com.zhishiku.kb.common.security.SearchTermEndpoints;
+
 import org.springframework.core.Ordered;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
@@ -13,7 +15,7 @@ public class SearchResponsePolicy implements WebFilter, Ordered {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String path = exchange.getRequest().getPath().value();
-        if (path.equals("/api/search") || path.startsWith("/api/search/")) {
+        if (path.equals("/api/search") || path.startsWith("/api/search/") || SearchTermEndpoints.matches(path)) {
             exchange.getResponse().getHeaders().setCacheControl("no-store");
             exchange.getResponse().beforeCommit(() -> {
                 exchange.getResponse().getHeaders().setCacheControl("no-store");

@@ -83,10 +83,23 @@ class AuditSummaryProjectorTest {
                         "{\"categoryId\":1,\"spaceId\":2,\"parentId\":null,\"sortOrder\":0,\"treeVersion\":1,\"nameChanged\":true,\"name\":\"private-name\"}";
                 case DOCUMENT_TAG_CREATE, DOCUMENT_TAG_UPDATE ->
                         "{\"tagId\":1,\"version\":0,\"enabled\":true,\"nameChanged\":true,\"name\":\"private-name\"}";
+                case SEARCH_TERM_CREATE ->
+                        "{\"termId\":1,\"version\":0,\"enabled\":true,\"dictionaryRevision\":1,\"changedFields\":[\"canonicalName\",\"aliases\"],\"name\":\"private-name\"}";
+                case SEARCH_TERM_UPDATE ->
+                        "{\"termId\":1,\"version\":1,\"enabled\":false,\"dictionaryRevision\":2,\"changedFields\":[\"enabled\"],\"name\":\"private-name\"}";
+                case SEARCH_CORRECTION_CREATE ->
+                        "{\"correctionId\":1,\"targetTermId\":2,\"version\":0,\"enabled\":true,\"dictionaryRevision\":1,\"changedFields\":[\"wrongExpression\"],\"wrongExpression\":\"private-expression\"}";
+                case SEARCH_CORRECTION_UPDATE ->
+                        "{\"correctionId\":1,\"targetTermId\":2,\"version\":1,\"enabled\":false,\"dictionaryRevision\":2,\"changedFields\":[\"enabled\"],\"wrongExpression\":\"private-expression\"}";
                 case PARSE_DEAD_LETTER_QUERY, PARSE_DEAD_LETTER_REPLAY ->
                         "{\"status\":\"REPLAYED\",\"reason\":\"private-reason\"}";
             };
-            var row = row(scope.name(), "{}", after);
+            String before = switch (scope) {
+                case SEARCH_TERM_UPDATE -> "{\"termId\":1,\"version\":0,\"enabled\":true,\"dictionaryRevision\":1}";
+                case SEARCH_CORRECTION_UPDATE -> "{\"correctionId\":1,\"targetTermId\":2,\"version\":0,\"enabled\":true,\"dictionaryRevision\":1}";
+                default -> "{}";
+            };
+            var row = row(scope.name(), before, after);
             var detail = projector.detail(row);
             assertThat(detail.summaryAvailable()).as(scope.name()).isTrue();
             String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(detail);
@@ -162,6 +175,11 @@ class AuditSummaryProjectorTest {
     }
 
     private static IdentityAuditRecord row(String scope, String before, String after) {
+        if (scope.startsWith("SEARCH_TERM_") || scope.startsWith("SEARCH_CORRECTION_")) {
+            return new IdentityAuditRecord(1L, UUID.randomUUID(), scope, "request", 7L,
+                    scope.startsWith("SEARCH_TERM_") ? "search-term" : "search-correction", 1L,
+                    "update", "SUCCESS", before, after, null, Instant.EPOCH);
+        }
         return new IdentityAuditRecord(1L, UUID.randomUUID(), scope, "request", null, "user", null,
                 "operation", "SUCCESS", before, after, "private-reason", Instant.EPOCH);
     }

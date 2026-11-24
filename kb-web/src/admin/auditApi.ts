@@ -101,12 +101,14 @@ function scalar(value: unknown): AuditScalar {
   if (typeof value === 'bigint' && value >= -maxLong - 1n && value <= maxLong) return value;
   throw broken();
 }
-function changeValue(field: string, value: unknown): AuditValue {
+function changeValue(field: string, value: unknown, scope = ''): AuditValue {
   if (!Array.isArray(value)) return scalar(value);
-  if (!['tagIds', 'changedFields'].includes(field) || value.length > (field === 'tagIds' ? 20 : 4)) throw broken();
+  if (!['tagIds', 'changedFields'].includes(field) || value.length > (field === 'tagIds' ? 20 : 6)) throw broken();
   const items = value.map(item => {
     if (field === 'changedFields') {
-      if (typeof item !== 'string' || !['title', 'summary', 'categoryId', 'tagIds'].includes(item)) throw broken();
+      const allowed = scope.startsWith('SEARCH_TERM_') ? ['canonicalName', 'description', 'aliases', 'enabled']
+        : scope.startsWith('SEARCH_CORRECTION_') ? ['wrongExpression', 'targetTermId', 'enabled'] : ['title', 'summary', 'categoryId', 'tagIds'];
+      if (typeof item !== 'string' || !allowed.includes(item)) throw broken();
       return item;
     }
     if (typeof item !== 'bigint' && !(typeof item === 'number' && Number.isSafeInteger(item))) throw broken();
@@ -141,10 +143,38 @@ export async function auditDetail(session: Session, eventId: string, signal: Abo
   if (!uuidPattern.test(eventId)) throw invalid();
   const row = object(await auditJson(session, `${base}/${eventId}`, signal)), meta = metadata(row.metadata);
   if (meta.eventId !== eventId.toLowerCase() || typeof row.summaryAvailable !== 'boolean' || !Array.isArray(row.changes)) throw broken();
-  const changes = row.summaryAvailable ? row.changes.map(value => {
-    const change = object(value), field = text(change.field); return { field, before: changeValue(field, change.before), after: changeValue(field, change.after) };
-  }) : [];
-  return { metadata: meta, changes, summaryAvailable: row.summaryAvailable };
+  const term = ['SEARCH_TERM_CREATE', 'SEARCH_TERM_UPDATE', 'SEARCH_CORRECTION_CREATE', 'SEARCH_CORRECTION_UPDATE'].includes(meta.operationScope);
+  let summaryAvailable = row.summaryAvailable;
+  let changes: AuditChange[] = [];
+  try {
+    if (term && summaryAvailable && meta.targetType !== (meta.operationScope.startsWith('SEARCH_CORRECTION_') ? 'search-correction' : 'search-term')) throw broken();
+    changes = summaryAvailable ? row.changes.map(value => {
+      const change = object(value), field = text(change.field);
+      if (term) {
+        const correction = meta.operationScope.startsWith('SEARCH_CORRECTION_');
+        const fields = correction ? ['correctionId', 'targetTermId', 'enabled', 'version', 'dictionaryRevision', 'changedFields'] : ['termId', 'enabled', 'version', 'dictionaryRevision', 'changedFields'];
+        if (!fields.includes(field)) throw broken();
+        for (const value of [change.before, change.after]) {
+          if (field === 'changedFields') {
+            if (!Array.isArray(value)) throw broken();
+            continue;
+          }
+          if (value === null) continue;
+          if (field === 'enabled') { if (typeof value !== 'boolean') throw broken(); }
+          else {
+            if (typeof value !== 'bigint' && typeof value !== 'string' && !(typeof value === 'number' && Number.isSafeInteger(value))) throw broken();
+            if (!/^(0|[1-9]\d{0,18})$/.test(String(value)) || BigInt(value) > maxLong || (field.endsWith('Id') && BigInt(value) === 0n)) throw broken();
+          }
+        }
+      }
+      return { field, before: changeValue(field, change.before, meta.operationScope), after: changeValue(field, change.after, meta.operationScope) };
+    }) : [];
+    if (term && new Set(changes.map(change => change.field)).size !== changes.length) throw broken();
+  } catch (error) {
+    if (!term) throw error;
+    changes = []; summaryAvailable = false;
+  }
+  return { metadata: meta, changes, summaryAvailable };
 }
 export function auditValue(value: AuditValue, field?: string): string {
   if (Array.isArray(value)) return value.length ? value.join('、') : '空集合';

@@ -43,7 +43,8 @@ class SearchRouteTest {
             }
             var binder = Binder.get(env);
             var definitions = binder.bind("spring.cloud.gateway", GatewayProperties.class).get().getRoutes();
-            for (String searchPath : new String[]{"/api/search", "/api/search/categories", "/api/search/tags"}) {
+            for (String searchPath : new String[]{"/api/search", "/api/search/assisted", "/api/search/categories", "/api/search/tags",
+                    "/api/admin/search-terms/terms/query", "/api/admin/search-terms/corrections/1/enabled", "/api/admin/search-terms/commands/query"}) {
                 var search = MockServerWebExchange.from(MockServerHttpRequest.post(searchPath));
                 int matches = 0;
                 for (var definition : definitions) {
@@ -59,8 +60,13 @@ class SearchRouteTest {
                     }
                     if (Boolean.TRUE.equals(Mono.from(route.getPredicate().apply(search)).block())) {
                         matches++;
-                        assertThat(route.getId()).isEqualTo("kb-search");
-                        assertThat(route.getMetadata().get("response-timeout").toString()).isEqualTo("10000");
+                        if (searchPath.startsWith("/api/search")) {
+                            assertThat(route.getId()).isEqualTo("kb-search");
+                            assertThat(route.getMetadata().get("response-timeout").toString()).isEqualTo("10000");
+                        } else {
+                            assertThat(route.getId()).isEqualTo("kb-app");
+                        }
+                        assertThat(route.getUri().getHost()).isIn("app.invalid", "localhost");
                     }
                     if (route.getId().equals("kb-ai-stream")) {
                         assertThat(Mono.from(route.getPredicate().apply(MockServerWebExchange.from(MockServerHttpRequest.post("/api/ai/chat")))).block()).isTrue();
@@ -72,13 +78,14 @@ class SearchRouteTest {
             var cors = binder.bind("spring.cloud.gateway.globalcors", GlobalCorsProperties.class).get().getCorsConfigurations().get("/**");
             var exchange = MockServerWebExchange.from(MockServerHttpRequest.post("http://gateway/api/search").header("Origin", "https://kb.example.com"));
             assertThat(new DefaultCorsProcessor().process(cors, exchange)).isTrue();
-            assertThat(exchange.getResponse().getHeaders().getAccessControlExposeHeaders()).contains("Retry-After", "X-Turn-Id", "X-Search-Filter-Version");
+            assertThat(exchange.getResponse().getHeaders().getAccessControlExposeHeaders()).contains("Retry-After", "X-Turn-Id", "X-Search-Filter-Version", "X-Search-Assistance-Version");
         }
     }
 
     @Test
     void candidateDenialsAreUncacheableAndVersionHeaderIsOnlyPassedThrough() {
-        for (String path : new String[]{"/api/search", "/api/search/categories", "/api/search/tags"}) {
+        for (String path : new String[]{"/api/search", "/api/search/assisted", "/api/search/categories", "/api/search/tags",
+                "/api/admin/search-terms/terms/query", "/api/admin/search-terms/commands/query"}) {
             for (var status : new HttpStatus[]{HttpStatus.OK, HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN}) {
                 for (String version : new String[]{"", "1", "2"}) {
                     var exchange = MockServerWebExchange.from(MockServerHttpRequest.post(path));
@@ -86,6 +93,7 @@ class SearchRouteTest {
                         current.getResponse().setStatusCode(status);
                         if (!version.isEmpty()) {
                             current.getResponse().getHeaders().set("X-Search-Filter-Version", version);
+                            current.getResponse().getHeaders().set("X-Search-Assistance-Version", version);
                         }
                         current.getResponse().getHeaders().setCacheControl("public");
                         return current.getResponse().setComplete();
@@ -93,6 +101,8 @@ class SearchRouteTest {
                     assertThat(exchange.getResponse().getStatusCode()).isEqualTo(status);
                     assertThat(exchange.getResponse().getHeaders().getCacheControl()).isEqualTo("no-store");
                     assertThat(exchange.getResponse().getHeaders().getFirst("X-Search-Filter-Version"))
+                            .isEqualTo(version.isEmpty() ? null : version);
+                    assertThat(exchange.getResponse().getHeaders().getFirst("X-Search-Assistance-Version"))
                             .isEqualTo(version.isEmpty() ? null : version);
                 }
             }

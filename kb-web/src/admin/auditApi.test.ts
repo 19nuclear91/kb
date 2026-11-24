@@ -14,6 +14,37 @@ function client(value: unknown) {
   return { read, state, session: { send: read, getSnapshot: () => state } as unknown as Session };
 }
 describe('审计输入输出单元', () => {
+  it('词典审计仅消费固定字段名和版本，不接受词条正文混入', async () => {
+    const metadata = { ...meta, operationScope: 'SEARCH_TERM_UPDATE', targetType: 'search-term', targetId: '9' };
+    const c = client({ metadata, summaryAvailable: true, changes: [
+      { field: 'changedFields', before: [], after: ['canonicalName', 'description', 'aliases'] },
+      { field: 'dictionaryRevision', before: 9007199254740993n, after: 9007199254740994n },
+    ] });
+    const detail = await auditDetail(c.session, eventId, signal); expect(detail.changes[1].before).toBe(9007199254740993n);
+    expect(await auditDetail(client({ metadata, summaryAvailable: true, changes: [{ field: 'description', before: '私有旧词', after: '私有新词' }] }).session, eventId, signal)).toEqual({ metadata, changes: [], summaryAvailable: false });
+    expect(auditPath({ limit: 20, operationScope: 'SEARCH_CORRECTION_UPDATE', targetType: 'search-correction', targetId: '9223372036854775807' })).toContain('targetId=9223372036854775807');
+  });
+
+  it('词典损坏摘要保留事件元数据，不显示错用实体字段、非布尔开关或正文冒充字段集合', async () => {
+    const metadata = { ...meta, operationScope: 'SEARCH_CORRECTION_UPDATE', targetType: 'search-correction', targetId: '9' };
+    for (const changes of [
+      [{ field: 'termId', before: null, after: '9' }],
+      [{ field: 'enabled', before: true, after: 1 }],
+      [{ field: 'version', before: '0', after: 'PRIVATE' }],
+      [{ field: 'changedFields', before: [], after: 'PRIVATE' }],
+      [{ field: 'changedFields', before: [], after: ['canonicalName'] }],
+      [{ field: 'changedFields', before: [], after: ['enabled', 'enabled'] }],
+      [{ field: 'version', before: 0, after: 1 }, { field: 'version', before: 0, after: 1 }],
+    ]) {
+      expect(await auditDetail(client({ metadata, summaryAvailable: true, changes }).session, eventId, signal)).toEqual({ metadata, summaryAvailable: false, changes: [] });
+    }
+    const wrongTarget = { ...metadata, targetType: 'search-term' };
+    expect(await auditDetail(client({ metadata: wrongTarget, summaryAvailable: true, changes: [] }).session, eventId, signal)).toEqual({ metadata: wrongTarget, summaryAvailable: false, changes: [] });
+    const changes = [{ field: 'targetTermId', before: '9007199254740993', after: '9223372036854775807' },
+      { field: 'changedFields', before: [], after: ['wrongExpression', 'targetTermId'] }];
+    expect(await auditDetail(client({ metadata, summaryAvailable: true, changes }).session, eventId, signal)).toEqual({ metadata, summaryAvailable: true, changes });
+  });
+
   it('有限集合保留精确 ID，空集合和显式未分类独立显示', async () => {
     const c = client({ metadata: meta, summaryAvailable: true, changes: [
       { field: 'tagIds', before: [9223372036854775807n], after: [] },

@@ -22,6 +22,7 @@
 | 知识问题闭环 | 主动分享需求、本人/被分派问题、统一受理、人工分派、说明/固定资料方案、本人确认及站内提醒 | 只分享用户确认的描述，不复制回答/会话；四项资格独立，撤回不删除，关闭不等于解决。首期实现及离线验证完成，主规格已同步、[变更已归档](openspec/changes/archive/2026-11-14-knowledge-gap-feedback-loop/)，未部署，不代表真实环境验收通过。见[问题 API](docs/knowledge-gap-api.md)、[受理运维](docs/knowledge-gap-operations.md)、[协调发布](docs/knowledge-gap-rollout.md) |
 | 文件阅读 | PDF、UTF-8 TXT/Markdown 预览，以及独立授权的原件下载 | 下载拒绝不等于阅读拒绝，重核保持原版本且不自动打开文件；docx/xlsx/pptx 原生只读预览通过可选 ONLYOFFICE 服务提供，默认关闭；doc/xls/ppt 不进入该预览流程。见[Office 预览](docs/office-preview.md) |
 | 混合检索 | BM25、向量召回、SQL 内 RRF 融合、rerank、top-k，支持空间/分类/标签/类型/时间组合筛选 | 权限、密级与发布状态在召回时过滤；支持超时、并发与响应大小限制及降级。见[搜索筛选](docs/search-filtering-api.md)、[检索韧性](docs/search-resilience.md) |
+| 搜索纠错与企业术语 | 公司公开人工词典、唯一同义扩展、错词／歧义点击确认、原词恢复及独立管理页 | F-05 已实现、同步 10 份主规格并[归档](openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)，未部署；核验保留 1 项未修复警告 W4，不接入 AI、不自动学习或猜测错词。见[使用说明](docs/search-terminology.md)、[管理 API](docs/search-terminology-api.md)、[运维](docs/search-terminology-operations.md)、[核验报告](openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md) |
 | 引用与会话 | 固定文档/版本/分块引用，SSE 单轮接口，私有多轮会话与历史、停止生成、额度结算 | 多轮会话及真实模型调用默认关闭；历史回答读取会重新校验来源权限。见[引用溯源](docs/citation-provenance.md)、[会话历史](docs/conversation-history.md)、[模型接入](docs/chat-model-adapter.md) |
 | 解析与索引运维 | 数据库任务队列、领取租约、心跳、退避重试、死信重放、结构化分块、Embedding profile 与重建、有界调用与失租取消 | 解析／重建共享业务槽位，探测独立限时；**第三方解析适配器尚未提供**，缺少时不领取普通解析任务。见[解析接入](docs/third-party-document-parsing.md)、[索引运维页面](docs/embedding-parse-operations-web.md)、[Embedding 调用限界](docs/embedding-rebuild-operations.md) |
 | 审计与运营 | 管理/登录审计查询、AI 用量与调用审计、知识库运营报表、对象存储对账 | AI 用量采集默认关闭，对象存储对账默认只报告、不删除。见[审计页面](docs/admin-audit-web.md)、[AI 用量](docs/admin-ai-usage-web.md)、[运营报表](docs/knowledge-operations-reports.md) |
@@ -99,7 +100,7 @@ mvn -pl kb-app spring-boot:run '-Dspring-boot.run.profiles=dev'
 
 第一条命令安装模块间依赖并打包，跳过测试；成功后再运行第二条。等待 `kb-app` 完成 Flyway 迁移和 Embedding profile 登记，再启动 Worker。
 
-正式迁移位于 [db/migration](kb-app/src/main/resources/db/migration)，当前最高版本为 **V39**，包含 V18.1；V29–V35 引入人工启用状态、认证代次、生命周期登记/事件/权限、轮次代次及输出停止证据，V36 新增批量导入任务、文件项和上传尝试账本，V37/V38 新增知识问题及独立问题通知来源、共享收件箱扩展，V39 新增版本适用期、修改历史、文档复审和命令回执四张表（本轮未执行迁移）。V3/V6 位于 [db/dev](kb-app/src/main/resources/db/dev)，仅 `dev` profile 加载。不要在已有生产库上切换到 `dev` 来补种子，也不要用 Flyway repair 跳过迁移问题；存量系统升级须遵守[生命周期协调发布](docs/lifecycle-rollout.md)、[导入升级与回退](docs/document-import-operations.md#对账升级与回退)、[问题协调发布](docs/knowledge-gap-rollout.md)及[适用期与复审上线说明](docs/knowledge-validity-review.md#上线与回退)。
+正式迁移位于 [db/migration](kb-app/src/main/resources/db/migration)，当前最高版本为 **V42**，包含 V18.1；V29–V35 引入人工启用状态、认证代次、生命周期登记/事件/权限、轮次代次及输出停止证据，V36 新增批量导入任务、文件项和上传尝试账本，V37/V38 新增知识问题及独立问题通知来源、共享收件箱扩展，V39 新增版本适用期、修改历史、文档复审和命令回执，V40 新增结构快照、版本块、变更说明及历史／回执，V41 新增 AI 资料建议与结算事实，V42 新增术语词典五表与两项精确权限（本轮未执行迁移）。V3/V6 位于 [db/dev](kb-app/src/main/resources/db/dev)，仅 `dev` profile 加载。不要在已有生产库上切换到 `dev` 来补种子，也不要用 Flyway repair 跳过迁移问题；升级须遵守[生命周期协调发布](docs/lifecycle-rollout.md)、[导入升级与回退](docs/document-import-operations.md#对账升级与回退)、[问题协调发布](docs/knowledge-gap-rollout.md)、[适用期与复审上线说明](docs/knowledge-validity-review.md#上线与回退)及各专项兼容方案。词典新增权限入库前先排空旧 app，回退保留数据、回执及识别新权限的业务版本，见[词典运维](docs/search-terminology-operations.md)。
 
 ### 3. 分别启动其他服务
 
@@ -343,9 +344,10 @@ app / Worker / AI / gateway 管理端口
 | 空间、文档管理、全局标签 | `/admin/spaces`、`/admin/documents`、`/admin/document-tags` |
 | 向量重建、解析死信 | `/admin/embedding`、`/admin/parse/dead-letters` |
 | 管理与登录审计 | `/admin/audits` |
+| 企业术语与错词词典 | `/admin/search-terms`（读取及维护分别要求 `search:term:read`／`search:term:write`） |
 | AI 用量、调用审计、运营概览 | `/admin/ai/usage`、`/admin/ai/audits`、`/admin/reports/operations` |
 
-业务 API 统一经网关 `http://localhost:8080/api/**` 访问。搜索使用 `POST /api/search` 的 JSON 请求体，不使用 URL 查询参数。文档上传使用 `POST /api/documents` 的 multipart 请求体。管理写入通常需要 `X-Request-Id`，有版本前置条件的操作还需读取最新版本值。
+业务 API 统一经网关 `http://localhost:8080/api/**` 访问。知识搜索页使用 `POST /api/search/assisted`，完整成功核对增强及筛选双版本头；旧 `POST /api/search` 保持数组与原查询行为，供 AI 和既有工具使用。搜索与建议采用只经 JSON 正文，不使用 URL 查询参数或浏览器持久存储，增强故障不自动转旧接口。文档上传使用 `POST /api/documents` 的 multipart 请求体。管理写入通常需要 `X-Request-Id`，有版本前置条件的操作还需读取最新版本值。
 
 批量导入使用 `POST /api/document-imports` 创建固定 JSON 清单，再逐项上传文件。发布顺序为全实例暂停对象删除 → app 迁移与升级 → 恢复清理配置 → gateway → web；旧 app 删除扫描不可与新导入混跑。回退保留账本和受理历史，并在回退旧 app 期间保持删除关闭。
 
@@ -498,7 +500,7 @@ E-11 首期 48/48 项任务已完成，已同步 5 份主规格并[归档](opens
 
 ## 开发路线图
 
-[开发路线图与候选功能](docs/development-roadmap.md) 跟踪 11 项工程任务和 14 项产品方向。F-01 知识缺口闭环、F-02 知识有效期及复审、F-03 版本差异与人工变更说明、F-06 AI 辅助整理文档资料首期均已实现，通过离线核验并归档，尚未部署。F-04、F-05 及 F-07～F-14 仍为候选。可查阅 [F-03 归档记录](openspec/changes/archive/2026-11-17-version-diff-and-change-notes/archive-summary.md)和 [F-06 归档任务](openspec/changes/archive/2026-11-18-ai-assisted-document-metadata/tasks.md)。
+[开发路线图与候选功能](docs/development-roadmap.md) 跟踪 11 项工程任务和 14 项产品方向。F-01 知识缺口闭环、F-02 知识有效期及复审、F-03 版本差异与人工变更说明、F-06 AI 辅助整理文档资料首期均已实现，通过离线核验并归档，尚未部署。F-05 搜索纠错与企业术语词典首期已实现，51/51 项任务完成，2026-11-24 同步 10 份主规格并归档，保留未修复警告 W4，未部署；见[归档记录](openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)与[最新核验](openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)。F-04 及 F-07～F-14 仍为候选。可查阅 [F-03 归档记录](openspec/changes/archive/2026-11-17-version-diff-and-change-notes/archive-summary.md)和 [F-06 归档任务](openspec/changes/archive/2026-11-18-ai-assisted-document-metadata/tasks.md)。
 
 路线图的候选条目不是实施授权、排期或工期承诺；已交付条目以各自范围和证据为准，不以归档代替真实环境验收，也不替代当前功能说明及 OpenSpec 正式规格。
 

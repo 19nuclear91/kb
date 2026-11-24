@@ -14,6 +14,7 @@ export const navigation = [
 ] as const;
 
 export function safeReturnPath(value: unknown): string {
+  if (value === '/admin/search-terms') return value;
   if (typeof value === 'string' && /^\/documents\/[1-9]\d*\/compare\/[1-9]\d*\/[1-9]\d*$/.test(value)) return value;
   if (gapRouteKind(value) || adminGapRouteKind(value)) return value as string;
   return typeof value === 'string' && /^\/(?:documents(?:\/[1-9]\d*)?|imports(?:\/[1-9]\d*)?|favorites|reviews|notifications|stewardship|search|assistant(?:\/[1-9]\d*)?|account|admin\/(?:users|departments|roles|identity\/lifecycle|spaces(?:\/[1-9]\d*)?|documents(?:\/[1-9]\d*)?|document-tags|embedding|parse\/dead-letters|audits|reports\/operations|ai\/(?:usage|audits)))$/.test(value)

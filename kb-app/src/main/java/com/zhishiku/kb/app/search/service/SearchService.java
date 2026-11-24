@@ -10,6 +10,11 @@ import com.zhishiku.kb.app.search.execution.SearchContext;
 import com.zhishiku.kb.app.search.execution.SearchExecutor;
 import com.zhishiku.kb.app.search.execution.SearchResponseEncoder;
 import com.zhishiku.kb.app.search.execution.SearchStageFailure;
+import com.zhishiku.kb.app.search.execution.SearchMetrics;
+import com.zhishiku.kb.app.search.assistance.AssistedCaller;
+import com.zhishiku.kb.app.search.expansion.SearchQueryPlan;
+import com.zhishiku.kb.app.search.expansion.SearchQueryPlanner;
+import com.zhishiku.kb.app.search.web.AssistedSearchRequest;
 import com.zhishiku.kb.app.search.model.ChunkHit;
 import com.zhishiku.kb.app.search.model.SearchFailure;
 import com.zhishiku.kb.app.search.model.SearchFilters;
@@ -25,6 +30,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.TransactionException;
 import org.springframework.transaction.TransactionSystemException;
@@ -59,11 +65,21 @@ public class SearchService {
     private final SearchExecutor executor;
     private final SearchResponseEncoder encoder;
     private final SearchLimitsProperties limits;
+    private final SearchAssistanceService assistance;
+    private final SearchMetrics metrics;
 
     public SearchService(PermissionService permissionService, EmbeddingClientRegistry clients,
                          EmbeddingControlService control, QueryRetrievalService retrieval, RerankClient rerankClient,
                           EmbeddingInstanceReadiness instanceReadiness, SearchExecutor executor,
-                          SearchResponseEncoder encoder, SearchLimitsProperties limits) {
+                           SearchResponseEncoder encoder, SearchLimitsProperties limits) {
+        this(permissionService, clients, control, retrieval, rerankClient, instanceReadiness, executor, encoder, limits, null, new SearchMetrics(null));
+    }
+
+    @Autowired
+    public SearchService(PermissionService permissionService, EmbeddingClientRegistry clients,
+                          EmbeddingControlService control, QueryRetrievalService retrieval, RerankClient rerankClient,
+                          EmbeddingInstanceReadiness instanceReadiness, SearchExecutor executor,
+                          SearchResponseEncoder encoder, SearchLimitsProperties limits, SearchAssistanceService assistance, SearchMetrics metrics) {
         this.permissionService = permissionService;
         this.clients = clients;
         this.control = control;
@@ -73,6 +89,8 @@ public class SearchService {
         this.executor = executor;
         this.encoder = encoder;
         this.limits = limits;
+        this.assistance = assistance;
+        this.metrics = metrics;
     }
 
     /**
@@ -129,7 +147,9 @@ public class SearchService {
         SearchInput.validate(queryText, candidates, topK, limits.maxQueryCodepoints());
         return executor.execute(userId, execution -> {
             try {
-                List<ChunkHit> hits = List.copyOf(retrieve(execution, userId, queryText, candidates, topK, filters));
+                PermissionScope scope = executor.required(execution, SearchBudget.Stage.AUTHORIZATION,
+                        () -> permissionService.resolve(userId, PermissionService.PERM_VIEW));
+                List<ChunkHit> hits = List.copyOf(retrieve(execution, queryText, scope, candidates, topK, filters));
                 execution.resultCount(hits.size());
                 byte[] bytes = executor.required(execution, SearchBudget.Stage.RESPONSE, () -> encoder.encode(hits));
                 return new Result(hits, bytes);
@@ -137,6 +157,81 @@ public class SearchService {
                 throw databaseFailure(unavailable);
             }
         });
+    }
+
+    /** 成功版本只由已完成完整编码的增强服务结果提供。 */
+    public record AssistedResponse(byte[] json) {
+        public AssistedResponse {
+            json = json.clone();
+        }
+
+        @Override
+        public byte[] json() {
+            return json.clone();
+        }
+
+        public String filterVersion() {
+            return "1";
+        }
+
+        public String assistanceVersion() {
+            return "1";
+        }
+
+        @Override
+        public String toString() {
+            return "AssistedSearchResponse[redacted]";
+        }
+    }
+
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public AssistedResponse assistedResponse(AssistedCaller caller, AssistedSearchRequest body) {
+        var outcome = new java.util.concurrent.atomic.AtomicReference<>(SearchMetrics.AssistanceOutcome.FAILED);
+        try {
+            body.validate(limits.maxQueryCodepoints());
+            return executor.execute(caller.userId(), execution -> {
+                try {
+                    PermissionScope scope = executor.required(execution, SearchBudget.Stage.AUTHORIZATION,
+                            () -> permissionService.resolve(caller.userId(), PermissionService.PERM_VIEW));
+                    SearchAssistanceService.Prepared prepared;
+                    if (body.mode() == SearchQueryPlan.Mode.ORIGINAL) {
+                        caller.discardToken();
+                        var plan = new SearchQueryPlanner().plan(body.mode(), body.base().query(), limits.maxQueryCodepoints(), List.of(), null, execution::check);
+                        prepared = new SearchAssistanceService.Prepared(plan, plan.assistance(null));
+                    } else {
+                        prepared = executor.required(execution, SearchBudget.Stage.TERMINOLOGY, () -> {
+                            if (assistance == null) {
+                                throw new SearchFailure(SearchFailure.Kind.ASSISTANCE_UNAVAILABLE);
+                            }
+                            return assistance.prepare(caller, body, limits.maxQueryCodepoints());
+                        });
+                    }
+                    List<ChunkHit> hits = List.copyOf(retrieve(execution, prepared.plan().executionText(), scope, body.candidates(), body.topK(), body.base().filters()));
+                    execution.resultCount(hits.size());
+                    byte[] json = executor.required(execution, SearchBudget.Stage.RESPONSE, () -> encoder.encodeAssisted(hits, prepared.assistance()));
+                    var plan = prepared.plan();
+                    outcome.set(plan.mode() == SearchQueryPlan.Mode.ORIGINAL ? SearchMetrics.AssistanceOutcome.ORIGINAL
+                            : plan.appliedTerms().isEmpty() ? plan.suggestions().isEmpty() ? SearchMetrics.AssistanceOutcome.NO_TERMS : SearchMetrics.AssistanceOutcome.SUGGESTIONS
+                            : plan.suggestions().isEmpty() ? SearchMetrics.AssistanceOutcome.APPLIED : SearchMetrics.AssistanceOutcome.MIXED);
+                    return new AssistedResponse(json);
+                } catch (DataAccessException | TransactionException failure) {
+                    throw databaseFailure(failure);
+                }
+            });
+        } catch (SearchFailure failure) {
+            outcome.set(switch (failure.kind()) {
+                case ASSISTANCE_LIMIT_EXCEEDED -> SearchMetrics.AssistanceOutcome.LIMIT_EXCEEDED;
+                case ASSISTANCE_STALE -> SearchMetrics.AssistanceOutcome.STALE;
+                case ASSISTANCE_UNAVAILABLE -> SearchMetrics.AssistanceOutcome.UNAVAILABLE;
+                case USER_LIMIT, CAPACITY -> SearchMetrics.AssistanceOutcome.REJECTED;
+                case CANCELLED -> SearchMetrics.AssistanceOutcome.CANCELLED;
+                default -> SearchMetrics.AssistanceOutcome.FAILED;
+            });
+            throw failure;
+        } finally {
+            caller.discardToken();
+            metrics.assistance(body.mode(), outcome.get());
+        }
     }
 
     static RuntimeException databaseFailure(RuntimeException failure) {
@@ -160,10 +255,8 @@ public class SearchService {
         return failure;
     }
 
-    private List<ChunkHit> retrieve(SearchExecutor.Execution execution, long userId, String queryText,
+    private List<ChunkHit> retrieve(SearchExecutor.Execution execution, String queryText, PermissionScope scope,
                                    int candidates, int topK, SearchFilters filters) {
-        PermissionScope scope = executor.required(execution, SearchBudget.Stage.AUTHORIZATION,
-                () -> permissionService.resolve(userId, PermissionService.PERM_VIEW));
 
         // 没有任何可见范围时直接短路，省一次必然返回空的数据库往返。
         // 注意：这是性能优化，不是安全边界——安全边界在 SQL 的 aclPredicate 里。

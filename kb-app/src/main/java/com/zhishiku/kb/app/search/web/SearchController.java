@@ -4,6 +4,12 @@ import cn.dev33.satoken.stp.StpUtil;
 import com.zhishiku.kb.app.search.config.SearchLimitsProperties;
 import com.zhishiku.kb.app.search.model.SearchInput;
 import com.zhishiku.kb.app.search.service.SearchService;
+import com.zhishiku.kb.app.search.assistance.AssistedCaller;
+import com.zhishiku.kb.app.search.expansion.SearchQueryPlan;
+import com.zhishiku.kb.app.auth.service.EpochSessionService;
+import com.zhishiku.kb.app.config.EpochAuthenticationInterceptor;
+import com.zhishiku.kb.common.security.IdentityException;
+import com.zhishiku.kb.app.search.model.SearchFailure;
 import com.zhishiku.kb.common.api.R;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -68,5 +74,40 @@ public class SearchController {
         return ResponseEntity.ok().header("Cache-Control", "no-store").header("X-Search-Filter-Version", "1")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result);
+    }
+
+    @PostMapping(value = "/assisted", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<byte[]> assisted(@RequestBody AssistedSearchRequest body, HttpServletRequest request) {
+        try {
+            if (request.getQueryString() != null) {
+                throw new SearchFailure(SearchFailure.Kind.INVALID_INPUT);
+            }
+            body.validate(limits.maxQueryCodepoints());
+            if (!(request.getAttribute(EpochAuthenticationInterceptor.VERIFIED) instanceof EpochSessionService.Session session)) {
+                throw IdentityException.unauthorized("登录状态无效");
+            }
+            if (session.mustChangePassword()) {
+                throw IdentityException.passwordChangeRequired("必须先完成密码修改");
+            }
+            var caller = verifiedCaller(session, body.mode(), request);
+            try {
+                var result = searchService.assistedResponse(caller, body);
+                return ResponseEntity.ok().header("Cache-Control", "no-store").header("X-Search-Filter-Version", result.filterVersion())
+                        .header("X-Search-Assistance-Version", result.assistanceVersion()).contentType(MediaType.APPLICATION_JSON).body(result.json());
+            } finally {
+                caller.discardToken();
+            }
+        } finally {
+            request.removeAttribute(EpochAuthenticationInterceptor.VERIFIED_TOKEN);
+        }
+    }
+
+    private static AssistedCaller verifiedCaller(EpochSessionService.Session session, SearchQueryPlan.Mode mode, HttpServletRequest request) {
+        try {
+            Object token = request.getAttribute(EpochAuthenticationInterceptor.VERIFIED_TOKEN);
+            return new AssistedCaller(session.userId(), session.authEpoch(), mode == SearchQueryPlan.Mode.ASSISTED && token instanceof String value ? value : null);
+        } finally {
+            request.removeAttribute(EpochAuthenticationInterceptor.VERIFIED_TOKEN);
+        }
     }
 }

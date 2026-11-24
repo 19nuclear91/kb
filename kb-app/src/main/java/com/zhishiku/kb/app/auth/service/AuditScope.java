@@ -123,6 +123,10 @@ public enum AuditScope {
     DOCUMENT_CATEGORY_DELETE("document-category"),
     DOCUMENT_TAG_CREATE("document-tag"),
     DOCUMENT_TAG_UPDATE("document-tag"),
+    SEARCH_TERM_CREATE("search-term"),
+    SEARCH_TERM_UPDATE("search-term"),
+    SEARCH_CORRECTION_CREATE("search-correction"),
+    SEARCH_CORRECTION_UPDATE("search-correction"),
     DOCUMENT_SECURITY_LEVEL_CHANGE("document"),
 
     PARSE_DEAD_LETTER_QUERY("PARSE_DEAD_LETTER"),

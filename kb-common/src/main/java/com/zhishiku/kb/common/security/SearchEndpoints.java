@@ -6,6 +6,7 @@ public final class SearchEndpoints {
     }
 
     public static boolean matches(String path) {
-        return "/api/search".equals(path) || "/api/search/categories".equals(path) || "/api/search/tags".equals(path);
+        return "/api/search".equals(path) || "/api/search/assisted".equals(path)
+                || "/api/search/categories".equals(path) || "/api/search/tags".equals(path);
     }
 }

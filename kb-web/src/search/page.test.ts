@@ -7,6 +7,7 @@ import userEvent from '@testing-library/user-event';
 import type { Session } from '../session';
 import { deferred, json, me } from '../test/fixtures';
 import SearchPage from '../pages/SearchPage.vue';
+import { assistedResponse, assistedResult } from './assistedFixtures';
 
 const context = reactive({ session: {} as Session, state: { phase: 'ready', epoch: 1, me: null as typeof me | null } });
 vi.mock('../SessionProvider', () => ({ useSession: () => context }));
@@ -17,10 +18,12 @@ vi.mock('../CitationDrawer.vue', async () => {
 const tags = [{ id: '9223372036854775807', name: '全局停用', enabled: false }];
 const category = { id: '7', name: '制度', parentId: null, sortOrder: 0, path: [{ id: '7', name: '制度' }] };
 const hit = (content: string) => ({ docId: '99', spaceId: '999', versionId: '22', chunkId: '33', docTitle: '例外文档', content });
-function response(content = '可见正文', version: string | null = '1') {
-  const result = json([hit(content)]);
+function response(content = '可见正文', version: string | null = '1', query = '问题') {
+  const result = assistedResponse(query, [hit(content)]);
   if (version !== null) {
     result.headers.set('X-Search-Filter-Version', version);
+  } else {
+    result.headers.delete('X-Search-Filter-Version');
   }
   return result;
 }
@@ -29,11 +32,11 @@ beforeEach(() => {
   context.state = { phase: 'ready', epoch: 1, me };
   context.session = { getSnapshot: () => context.state, subscribe: () => () => {},
     json: vi.fn().mockResolvedValue([{ spaceId: '1', name: '空间A', viewable: true, archived: false }, { spaceId: '2', name: '空间B', viewable: true, archived: false }]),
-    send: vi.fn().mockImplementation(async (path: string) => path === '/api/search' ? response() : directory(path)),
+    send: vi.fn().mockImplementation(async (path: string, init: RequestInit) => path === '/api/search/assisted' ? response('可见正文', '1', JSON.parse(init.body as string).query) : directory(path)),
     post: vi.fn().mockResolvedValue({ items: [{ documentId: '99', favorited: false }] }),
   } as unknown as Session;
 });
-const searches = () => vi.mocked(context.session.send).mock.calls.filter(([path]) => path === '/api/search');
+const searches = () => vi.mocked(context.session.send).mock.calls.filter(([path]) => path === '/api/search/assisted');
 const tagReads = () => vi.mocked(context.session.send).mock.calls.filter(([path]) => path === '/api/search/tags');
 const change = (label: string, value: string) => fireEvent.update(screen.getByLabelText(label), value);
 const submit = async (query = '问题') => { await change('搜索词', query); await fireEvent.submit(screen.getByLabelText('搜索词').closest('form')!); };
@@ -59,7 +62,7 @@ it('五类草稿统一提交，摘要绑定旧快照，清除不自动搜索，�
   expect(searches()).toHaveLength(1); expect(screen.getByLabelText('已提交条件').textContent).toBe(summary);
   expect(tagReads()).toHaveLength(1); expect(screen.queryByRole('option', { name: 'UNPUBLISHED' })).toBeNull();
   await submit('全部搜索'); await waitFor(() => expect(searches()).toHaveLength(2));
-  expect(JSON.parse(searches()[1][1]!.body as string)).toEqual({ query: '全部搜索', candidates: 50, topK: 20 });
+   expect(JSON.parse(searches()[1][1]!.body as string)).toEqual({ query: '全部搜索', candidates: 50, topK: 20, mode: 'ASSISTED' });
   await fireEvent.click(await screen.findByRole('button', { name: '例外文档' })); expect(screen.getByTestId('citation').textContent).toBe('99/22/33');
 });
 it('换空间清分类及未分类、保留全局标签，不发正文请求', async () => {
@@ -78,7 +81,7 @@ it('无关键词及反向时间阻止请求，不删除或交换条件', async (
 });
 it('新提交清理引用并隔离旧条件的迟到结果', async () => {
   const pending = deferred<Response>(); let count = 0;
-  vi.mocked(context.session.send).mockImplementation(async path => path === '/api/search' ? (++count === 2 ? pending.promise : response(count === 1 ? '首次正文' : '最新正文')) : directory(path));
+  vi.mocked(context.session.send).mockImplementation(async (path, init) => path === '/api/search/assisted' ? (++count === 2 ? pending.promise : response(count === 1 ? '首次正文' : '最新正文', '1', JSON.parse(init!.body as string).query)) : directory(path));
   mount(); await submit(); await screen.findByText('首次正文'); await fireEvent.click(screen.getByRole('button', { name: '例外文档' }));
   await change('文件类型', 'PDF'); await submit('旧在途'); await waitFor(() => expect(searches()).toHaveLength(2)); expect(screen.getByTestId('citation').textContent).toBe('closed');
   await change('文件类型', 'WORD'); await submit('新请求'); await screen.findByText('最新正文');
@@ -87,7 +90,7 @@ it('新提交清理引用并隔离旧条件的迟到结果', async () => {
 });
 it.each(['hidden', 'unmount', 'identity', 'logout', 'password'])('%s 使搜索和候选失效，清空私有草稿，恢复仅读目录', async mode => {
   const search = deferred<Response>(), options = deferred<Response>();
-  vi.mocked(context.session.send).mockImplementation(path => path === '/api/search' ? search.promise : options.promise);
+  vi.mocked(context.session.send).mockImplementation(path => path === '/api/search/assisted' ? search.promise : options.promise);
   const view = mount(); await change('文件类型', 'PDF'); await submit('私有问题'); await waitFor(() => expect(searches()).toHaveLength(1));
   const signals = vi.mocked(context.session.send).mock.calls.map(([, init]) => init!.signal!);
   if (mode === 'hidden') {
@@ -108,18 +111,18 @@ it.each(['hidden', 'unmount', 'identity', 'logout', 'password'])('%s 使搜索�
   }
 });
 it.each([null, '2', '1, 2'])('未经版本 %s 确认的材料不进入收藏或引用，输入保留', async version => {
-  vi.mocked(context.session.send).mockImplementation(async path => path === '/api/search' ? response('不可消费正文', version) : directory(path));
-  mount(); await change('文件类型', 'PDF'); await submit(); await screen.findByText(/无法确认服务端筛选支持/);
+  vi.mocked(context.session.send).mockImplementation(async path => path === '/api/search/assisted' ? response('不可消费正文', version) : directory(path));
+  mount(); await change('文件类型', 'PDF'); await submit(); await screen.findByText(/无法确认辅助搜索支持/);
   expect(context.session.post).not.toHaveBeenCalled(); expect(screen.queryByText('不可消费正文')).toBeNull(); expect(screen.getByTestId('citation').textContent).toBe('closed');
   expect(screen.queryByText('当前条件下未找到可用结果')).toBeNull(); expect(searches()).toHaveLength(1); expect((screen.getByLabelText('文件类型') as HTMLSelectElement).value).toBe('PDF');
 });
 it('候选 404 保留已选标签，合法空结果不重试或移除条件', async () => {
   mount(); await fireEvent.click(await screen.findByRole('button', { name: '全局停用（停用）' }));
   vi.mocked(context.session.send).mockImplementation(async path => {
-    if (path !== '/api/search') {
+    if (path !== '/api/search/assisted') {
       return new Response(null, { status: 404 });
     }
-    const result = json([]); result.headers.set('X-Search-Filter-Version', '1'); return result;
+    return assistedResponse('问题');
   });
   await fireEvent.click(screen.getByRole('button', { name: '重新读取标签' })); await screen.findByText('搜索候选暂不可用，请主动重新读取。');
   expect(screen.getByRole('button', { name: '移除 全局停用' })).toBeTruthy(); await submit(); await screen.findByText('当前条件下未找到可用结果');
@@ -131,8 +134,8 @@ const validityBadge = { documentId: '99', versionId: '22', state: 'EXPIRED', eff
 it('适用期标识保持搜索结果顺序，503 不移除结果或重发搜索', async () => {
   vi.mocked(context.session.send).mockImplementation(async path => {
     if (path === validityPath) return new Response(null, { status: 503 });
-    if (path !== '/api/search') return directory(path);
-    const value = json([hit('第一正文'), { ...hit('第二正文'), chunkId: '34' }]); value.headers.set('X-Search-Filter-Version', '1'); return value;
+    if (path !== '/api/search/assisted') return directory(path);
+    return assistedResponse('问题', [hit('第一正文'), { ...hit('第二正文'), chunkId: '34' }]);
   });
   const view = mount(); await submit(); await screen.findByText('第二正文'); await screen.findByText('适用期暂不可确认');
   expect([...view.container.querySelectorAll('.search-hit')].map(item => item.textContent)).toEqual([expect.stringContaining('第一正文'), expect.stringContaining('第二正文')]);
@@ -140,12 +143,12 @@ it('适用期标识保持搜索结果顺序，503 不移除结果或重发搜索
 });
 it('新搜索丢弃旧标识，缺少版本身份不发请求', async () => {
   const pending = deferred<Response>(); let batchCount = 0;
-  vi.mocked(context.session.send).mockImplementation(async path => path === validityPath ? (++batchCount === 1 ? pending.promise : json({ items: [], asOfDate: '2027-01-01' }))
-    : path === '/api/search' ? response('最新正文') : directory(path));
+  vi.mocked(context.session.send).mockImplementation(async (path, init) => path === validityPath ? (++batchCount === 1 ? pending.promise : json({ items: [], asOfDate: '2027-01-01' }))
+    : path === '/api/search/assisted' ? response('最新正文', '1', JSON.parse(init!.body as string).query) : directory(path));
   mount(); await submit(); await screen.findByText('最新正文'); await waitFor(() => expect(batchCount).toBe(1));
   await submit('新搜索'); await waitFor(() => expect(batchCount).toBe(2)); pending.resolve(json({ items: [validityBadge], asOfDate: '2027-01-01' })); await flushPromises();
   expect(screen.queryByText(/已届满 ·/)).toBeNull();
-  vi.mocked(context.session.send).mockImplementation(async path => { if (path !== '/api/search') return directory(path);
-    const value = json([{ ...hit('版本身份未知正文'), versionId: null }]); value.headers.set('X-Search-Filter-Version', '1'); return value; });
-  await submit('未知版本'); await screen.findByText('版本身份未知正文'); expect(batchCount).toBe(2);
+  vi.mocked(context.session.send).mockImplementation(async path => { if (path !== '/api/search/assisted') return directory(path);
+    const value = json(assistedResult('未知版本', 'ASSISTED', [{ ...hit('版本身份未知正文'), versionId: null }])); value.headers.set('X-Search-Filter-Version', '1'); value.headers.set('X-Search-Assistance-Version', '1'); return value; });
+  await submit('未知版本'); await screen.findByText(/无法确认辅助搜索支持/); expect(screen.queryByText('版本身份未知正文')).toBeNull(); expect(batchCount).toBe(2);
 });

@@ -1,5 +1,8 @@
 package com.zhishiku.kb.gateway.filter;
 
+import com.zhishiku.kb.common.security.SearchEndpoints;
+import com.zhishiku.kb.common.security.SearchTermEndpoints;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -60,8 +63,12 @@ public class InboundHeaderSanitizeFilter implements GlobalFilter, Ordered {
 
         // 外部带着身份头进来，要么是前端写错了，要么是有人在探测越权。
         // 两种都值得留痕，但只记头名称，不记值——值本身可能是攻击者构造的注入内容。
-        log.warn("剥离客户端自带的身份请求头 headers={} path={} remote={}",
-                present, original.getPath().value(), original.getRemoteAddress());
+        if (SearchEndpoints.matches(original.getPath().value()) || SearchTermEndpoints.matches(original.getPath().value())) {
+            log.warn("剥离客户端自带的身份请求头 headers={} category=SEARCH", present);
+        } else {
+            log.warn("剥离客户端自带的身份请求头 headers={} path={} remote={}",
+                    present, original.getPath().value(), original.getRemoteAddress());
+        }
 
         ServerHttpRequest sanitized = original.mutate()
                 .headers(h -> STRIPPED.forEach(h::remove))

@@ -20,12 +20,14 @@ export const perm = {
   aiUsageRead: 'ai:usage:read', aiAuditRead: 'ai:audit:read',
   operationsReportsRead: 'operations:reports:read',
   tagRead: 'document:tag:read', tagWrite: 'document:tag:write',
+  termRead: 'search:term:read', termWrite: 'search:term:write',
   gapRead: 'knowledge:gap:read', gapAssign: 'knowledge:gap:assign', gapHandle: 'knowledge:gap:handle', gapClose: 'knowledge:gap:close',
 } as const;
 export const canOpenSpaces = (access: AdminAccess) => (access.spaceStatus === 'ready' && access.spaces.length > 0) || access.has(perm.spaceCreate) || access.has(perm.spaceManageAll);
 /** 文档管理面板入口：知识空间条件之外再加密级调整权限；入口显示不代表任何文档可管理，面板各区块独立判定。 */
 export const canOpenDocuments = (access: AdminAccess) => canOpenSpaces(access) || access.has(perm.securityLevelWrite);
 export const adminNavigation = [
+  { path: '/admin/search-terms', label: '企业术语词典', mark: 'A15', visible: (access: AdminAccess) => access.has(perm.termRead) },
   { path: '/admin/identity/lifecycle', label: '员工生命周期', mark: 'A13', visible: (access: AdminAccess) => access.has(perm.lifecycleRead) },
   { path: '/admin/users', label: '账号管理', mark: 'A1', visible: (access: AdminAccess) => access.has(perm.userRead) },
   { path: '/admin/departments', label: '部门管理', mark: 'A2', visible: (access: AdminAccess) => access.has(perm.deptRead) },

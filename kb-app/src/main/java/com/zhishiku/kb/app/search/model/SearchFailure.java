@@ -3,7 +3,8 @@ package com.zhishiku.kb.app.search.model;
 /** 搜索的固定失败类别；消息中不接受用户或上游内容。 */
 public final class SearchFailure extends RuntimeException {
     public enum Kind {
-        INVALID_INPUT, REQUEST_TOO_LARGE, USER_LIMIT, CAPACITY, TIMEOUT, CANCELLED, DEPENDENCY, RESPONSE_TOO_LARGE
+        INVALID_INPUT, REQUEST_TOO_LARGE, USER_LIMIT, CAPACITY, TIMEOUT, CANCELLED, DEPENDENCY, RESPONSE_TOO_LARGE,
+        ASSISTANCE_UNAVAILABLE, ASSISTANCE_LIMIT_EXCEEDED, ASSISTANCE_STALE
     }
 
     private final Kind kind;
@@ -29,7 +30,8 @@ public final class SearchFailure extends RuntimeException {
 
     public int status() {
         return switch (kind) {
-            case INVALID_INPUT -> 400;
+            case INVALID_INPUT, ASSISTANCE_LIMIT_EXCEEDED -> 400;
+            case ASSISTANCE_STALE -> 409;
             case REQUEST_TOO_LARGE -> 413;
             case USER_LIMIT -> 429;
             default -> 503;
@@ -39,6 +41,8 @@ public final class SearchFailure extends RuntimeException {
     public String safeMessage() {
         return switch (kind) {
             case INVALID_INPUT -> "搜索输入不符合要求";
+            case ASSISTANCE_LIMIT_EXCEEDED -> "术语辅助处理超出限制";
+            case ASSISTANCE_STALE -> "术语建议已过期或词典已变化";
             case REQUEST_TOO_LARGE -> "搜索请求过大";
             case USER_LIMIT -> "搜索请求过于频繁，请稍后重试";
             default -> "检索暂不可用，请稍后重试";

@@ -39,6 +39,8 @@ public enum Permission {
     DOCUMENT_SECURITY_LEVEL_WRITE("document:security-level:write", "查询和调整文档密级"),
     DOCUMENT_TAG_READ("document:tag:read", "读取全局标签管理目录"),
     DOCUMENT_TAG_WRITE("document:tag:write", "创建、改名和启停全局标签"),
+    SEARCH_TERM_READ("search:term:read", "读取企业术语与人工错词管理目录"),
+    SEARCH_TERM_WRITE("search:term:write", "创建、编辑和启停企业术语与人工错词"),
     EMBEDDING_READ("embedding:read", "查询向量配置与重建状态"),
     EMBEDDING_REBUILD("embedding:rebuild", "发起与恢复向量重建");
 

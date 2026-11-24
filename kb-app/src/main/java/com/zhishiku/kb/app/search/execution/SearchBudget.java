@@ -8,7 +8,7 @@ import java.util.function.LongSupplier;
 /** 一次搜索的单调总期限与固定阶段窗口。 */
 public final class SearchBudget {
     public enum Stage {
-        AUTHORIZATION, CONTROL, EMBEDDING, RETRIEVAL, RERANK, RESPONSE
+        AUTHORIZATION, TERMINOLOGY, CONTROL, EMBEDDING, RETRIEVAL, RERANK, RESPONSE
     }
 
     private final SearchExecutionProperties properties;
@@ -35,6 +35,7 @@ public final class SearchBudget {
     public long available(Stage stage) {
         long left = work.remainingNanos();
         return switch (stage) {
+            case TERMINOLOGY -> Math.min(left, nanos(properties.terminologyTimeoutMs()));
             case EMBEDDING -> Math.max(0, Math.min(nanos(properties.embeddingTimeoutMs()),
                     left - nanos(properties.retrievalTimeoutMs())));
             case RETRIEVAL -> Math.min(left, nanos(properties.retrievalTimeoutMs()));

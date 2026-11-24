@@ -33,6 +33,16 @@ function fixture(graph) {
   return { manifest, analysis: { schema: 1, chunks, assets }, html: '<script type="module" src="/entry.js"></script>',
     readAsset: file => data[file] ?? assert.fail(`资源不存在 ${file}`), routeModules: { documents: ['list'], detail: ['detail'] } };
 }
+test('普通搜索与词典管理路由分别统计，管理实现不得进入搜索静态集合', () => {
+  const input = fixture({ 'entry.js': { modules: ['src/main.ts'], dynamicImports: ['list.js', 'search.js', 'terms.js'] },
+    'list.js': { modules: ['src/pages/DocumentsPage.vue'] }, 'search.js': { modules: ['src/pages/SearchPage.vue'] },
+    'terms.js': { modules: ['src/admin/SearchTermsPage.vue', 'src/searchTerms/api.ts'] } });
+  input.routeModules = { documents: ['src/pages/DocumentsPage.vue'], search: ['src/pages/SearchPage.vue'], searchTerms: ['src/admin/SearchTermsPage.vue'] };
+  const report = bundleReport(input); report.scenarios.login = report.scenarios.entry; checkIsolation(report);
+  assert.deepEqual(report.scenarios.search.incremental.files, ['search.js']);
+  report.files['search.js'].modules.push('src/searchTerms/api.ts');
+  assert.throws(() => checkIsolation(report), /普通搜索提前包含词典管理实现/);
+});
 test('旧单包路由计入入口，JS/CSS 分开且按文件压缩', () => {
   const report = bundleReport(fixture({ 'entry.js': { modules: ['list', 'detail'], css: ['style.css'] } }));
   assert.deepEqual(report.scenarios.documents.files, ['entry.js', 'style.css']);

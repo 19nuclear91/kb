@@ -4,6 +4,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/vue';
 import { ApiError } from './api';
 import { mountRouter } from './test/app';
 import { json, me, turn } from './test/fixtures';
+import { assistedResponse, assistedResult } from './search/assistedFixtures';
+import AssistancePanel from './search/AssistancePanel.vue';
 import type { Session } from './session';
 const context = reactive({ session: {} as Session, state: { phase: 'ready', me: null as typeof me | null, epoch: 1 } });
 vi.mock('./SessionProvider', () => ({ useSession: () => context }));
@@ -23,6 +25,21 @@ beforeEach(() => {
 it('正文作为文本/代码呈现，不生成 HTML、危险链接或远程资源节点', () => {
   const text = '<img src="https://evil.test/a" onerror="alert(1)"><script>alert(1)</script> [点击](javascript:alert(1))\n```js\nalert(1)\n```';
   const { container } = render(SafeText, { props: { text } }); expect(container.textContent).toBe(text); expect(container.querySelector('script,img,a,iframe')).toBeNull(); expect(fetch).not.toHaveBeenCalled();
+});
+it('辅助面板按原文 code point 定位，词条标记只作为文本，等待时不能采用', async () => {
+  const value = assistedResult('😀PM').assistance, adopt = vi.fn();
+  const suggestion = { kind: 'DISAMBIGUATION' as const, start: 1, end: 3, sourceText: 'PM', options: [
+    { termId: '9223372036854775807', termVersion: '0', canonicalName: '<img src="https://invalid.test/x">', description: '<script>x</script>' },
+    { termId: '9007199254740993', termVersion: '0', canonicalName: '另一含义', description: '说明' },
+  ] };
+  value.suggestions = [suggestion]; value.selectionContext = 'opaque';
+  const view = render(AssistancePanel, { props: { value, busy: true, onAdopt: adopt } });
+  expect(screen.getByText('PM').textContent).toBe('PM'); expect(screen.getByText('<script>x</script>')).toBeTruthy();
+  expect(view.container.querySelector('img,script,a,iframe')).toBeNull(); expect(fetch).not.toHaveBeenCalled();
+  const button = screen.getByRole('button', { name: suggestion.options[0].canonicalName });
+  await fireEvent.click(button); expect(adopt).not.toHaveBeenCalled();
+  await view.rerender({ value, busy: false, onAdopt: adopt }); await fireEvent.click(button);
+  expect(adopt).toHaveBeenCalledExactlyOnceWith(suggestion, '9223372036854775807');
 });
 it('BLOCKED 替换旧助手文本与引用，本人问题保留；用量和生成分开显示', async () => {
   const visible = { ...turn, status: 'COMPLETED', citations: [{ documentId: '1', versionId: '2', chunkId: '3', title: '旧来源' }] };
@@ -57,16 +74,16 @@ it('搜索仅 POST 支持字段，结果有序；503 不伪装成功空结果', 
   vi.mocked(context.session.json).mockResolvedValue([]);
   vi.mocked(context.session.post).mockResolvedValue({ items: [{ documentId: '1', favorited: false }] });
   vi.mocked(context.session.send).mockImplementation(async path => {
-    if (path === '/api/search') {
+    if (path === '/api/search/assisted') {
       if (searches++) {
         throw new ApiError(503);
       }
-      return json([{ docId: '1', versionId: '2', chunkId: '3', content: '第一片段' }, { docId: '1', versionId: '2', chunkId: '4', content: '第二片段' }]);
+      return assistedResponse('秘密搜索词', [{ docId: '1', versionId: '2', chunkId: '3', content: '第一片段' }, { docId: '1', versionId: '2', chunkId: '4', content: '第二片段' }]);
     }
     return json({ items: [], hasMore: false, nextCursor: null });
   });
   render(SearchPage); await fireEvent.update(screen.getByLabelText('搜索词'), '秘密搜索词'); await fireEvent.click(screen.getByRole('button', { name: /^搜\s*索$/ }));
-  await screen.findByText('第一片段'); expect(context.session.send).toHaveBeenCalledWith('/api/search', expect.objectContaining({ method: 'POST', body: '{"query":"秘密搜索词","candidates":50,"topK":20}', signal: expect.any(AbortSignal) }));
+  await screen.findByText('第一片段'); expect(context.session.send).toHaveBeenCalledWith('/api/search/assisted', expect.objectContaining({ method: 'POST', body: '{"query":"秘密搜索词","candidates":50,"topK":20,"mode":"ASSISTED"}', signal: expect.any(AbortSignal) }));
   expect(screen.getAllByText(/第[一二]片段/).map(node => node.textContent)).toEqual(['第一片段', '第二片段']);
   await fireEvent.click(screen.getByRole('button', { name: /^搜\s*索$/ })); await screen.findByText('检索暂不可用，请稍后重试。');
   expect(screen.queryByText('当前条件下未找到可用结果')).toBeNull(); expect(screen.queryByText('第一片段')).toBeNull();

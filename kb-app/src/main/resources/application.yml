@@ -64,6 +64,7 @@ logging:
     com.dingtalk.open: "OFF"
     com.zhishiku.kb: INFO
     com.zhishiku.kb.app.search.mapper: "OFF"
+    com.zhishiku.kb.app.search.term.mapper: "OFF"
     com.zhishiku.kb.app.conversation.mapper: "OFF"
     com.zhishiku.kb.app.knowledgegap.mapper: "OFF"
     com.zhishiku.kb.app.auth.mapper.IdentityQueryMapper: "OFF"
@@ -214,6 +215,14 @@ kb:
     pairing-max-cells: ${KB_DOCUMENT_DIFF_PAIRING_MAX_CELLS:250000}
     min-similarity: ${KB_DOCUMENT_DIFF_MIN_SIMILARITY:0.3}
   search:
+    execution:
+      terminology-timeout-ms: ${KB_SEARCH_TERMINOLOGY_TIMEOUT_MS:1000}
+    assistance:
+      context:
+        key-id: ${KB_SEARCH_ASSISTANCE_CONTEXT_KEY_ID:}
+        secret: ${KB_SEARCH_ASSISTANCE_CONTEXT_SECRET:}
+        previous-key-id: ${KB_SEARCH_ASSISTANCE_CONTEXT_PREVIOUS_KEY_ID:}
+        previous-secret: ${KB_SEARCH_ASSISTANCE_CONTEXT_PREVIOUS_SECRET:}
     rerank:
       # 本地规则是确定性兜底；生产可切到任意兼容 /rerank 的服务。
       provider: ${KB_RERANK_PROVIDER:local}

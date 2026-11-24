@@ -8,6 +8,9 @@ import com.zhishiku.kb.common.embedding.CallBudget;
 import com.zhishiku.kb.common.embedding.EmbeddingConnection;
 import com.zhishiku.kb.common.embedding.EmbeddingProfile;
 import com.zhishiku.kb.common.embedding.EmbeddingProfileDefinition;
+import com.zhishiku.kb.common.embedding.EmbeddingRole;
+import com.zhishiku.kb.common.embedding.RemoteEmbeddingTransport;
+import com.zhishiku.kb.common.embedding.RemoteProfileEmbeddingClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -30,8 +33,23 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.eq;
 
 class EmbeddingSupplierIsolationTest {
+    @Test
+    void queryPayloadContainsOneExecutionTextNotDictionaryOrIdentity() {
+        var profile = new EmbeddingProfile("remote-v1", "remote", "vendor/model", "model", "1", 1024,
+                "cosine", "identity-v1", "identity-v1", "query", "document", "embeddings-v1");
+        var definition = new EmbeddingProfileDefinition(profile, new EmbeddingConnection("https://supplier.invalid", "key", 7, 16));
+        var transport = mock(RemoteEmbeddingTransport.class);
+        when(transport.post(any(), any())).thenReturn(Map.of("data", List.of(Map.of("index", 0, "embedding", Collections.nCopies(1024, 1)))));
+        var budget = mock(CallBudget.class);
+        String execution = "OA 报消 PM\n办公自动化";
+        var result = new RemoteProfileEmbeddingClient(definition, EmbeddingRole.QUERY, transport).embed(List.of(execution), budget);
+        assertThat(result.size()).isOne();
+        verify(transport).post(eq(Map.of("model", "model", "input", List.of(execution), "dimensions", 1024)), eq(budget));
+    }
+
     @Test
     void defaultAndBudgetPathsIgnoreInjectedHeadersAndKeepTimeouts() throws Exception {
         byte[] response = new ObjectMapper().writeValueAsBytes(Map.of("data", List.of(Map.of("index", 0,
@@ -77,7 +95,8 @@ class EmbeddingSupplierIsolationTest {
             var budget = mock(CallBudget.class);
             when(budget.remainingNanos()).thenReturn(Duration.ofSeconds(5).toNanos());
             when(budget.maxResponseBytes()).thenReturn(8192);
-            client.embed(List.of("query"), budget);
+            String execution = "OA 报消 PM\n办公自动化";
+            client.embed(List.of(execution), budget);
             assertThat(sent).hasSize(2);
             for (var request : sent) {
                 assertThat(request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION)).isEqualTo("Bearer key");

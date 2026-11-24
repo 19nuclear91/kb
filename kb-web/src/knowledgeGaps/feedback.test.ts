@@ -8,6 +8,7 @@ import { mountRouter } from '../test/app';
 import { deferred, turn } from '../test/fixtures';
 import { savedFeedbackQuestion } from './feedback';
 import { ready, receipt, response } from './testSupport';
+import { assistedResponse, assistedResult } from '../search/assistedFixtures';
 
 const context = shallowReactive({ session: {} as Session, state: { phase: 'anonymous', me: null, epoch: 0 } as SessionState });
 vi.mock('../SessionProvider', () => ({ useSession: () => context }));
@@ -43,7 +44,7 @@ async function share(dialog: HTMLElement) {
 const writes = (transport: ReturnType<typeof vi.fn>) => transport.mock.calls.filter(([path]) => path === '/api/knowledge-gaps');
 
 it('搜索仅预填实际已提交的本人词，不取未提交编辑或片段；取消零创建、重开不恢复草稿', async () => {
-  const { transport, saved } = await connect(path => response(path === '/api/search' ? [{ chunkId: '7', versionId: null, content: '检索片段不可自动分享' }] : []));
+  const { transport, saved } = await connect(path => path === '/api/search/assisted' ? assistedResponse('本人已提交搜索词', [{ chunkId: '7', versionId: null, content: '检索片段不可自动分享' }]) : response([]));
   const view = mountRouter(() => h(SearchWorkspace, { maximum: 8000 }), { path: '/search' });
   await search('本人已提交搜索词'); await screen.findByText('检索片段不可自动分享');
   await fireEvent.update(screen.getByLabelText('搜索词'), '未提交的新词');
@@ -61,8 +62,29 @@ it('搜索仅预填实际已提交的本人词，不取未提交编辑或片段�
   expect((within(dialog).getByRole('textbox', { name: '明确分享的描述' }) as HTMLTextAreaElement).value).toBe('本人已提交搜索词');
 });
 
+it('同义扩展及确认错词后的反馈仍只预填最初用户输入，不附带词典释义', async () => {
+  const original = 'OA 报消';
+  await connect((path, options) => {
+    if (path !== '/api/search/assisted') return response([]);
+    const input = JSON.parse(options.body as string), value = assistedResult(original), assistance = value.assistance;
+    assistance.dictionaryRevision = '1';
+    assistance.appliedTerms = [{ start: 0, end: 2, matchedText: 'OA', termId: '1', termVersion: '0', canonicalName: '办公自动化', expressions: ['办公自动化'] }];
+    if (input.selections?.length) {
+      assistance.selections = input.selections.map((item: any) => ({ ...item, termId: String(item.termId) })); assistance.effectiveQuery = 'OA 报销';
+      assistance.appliedTerms.push({ start: 3, end: 5, matchedText: '报消', termId: '2', termVersion: '0', canonicalName: '报销', expressions: [] });
+    } else {
+      assistance.selectionContext = 'opaque'; assistance.suggestions = [{ kind: 'CORRECTION', start: 3, end: 5, sourceText: '报消', options: [{ termId: '2', termVersion: '0', canonicalName: '报销', description: '不能自动分享的词典释义' }] }];
+    }
+    const result = response(value); result.headers.set('X-Search-Filter-Version', '1'); result.headers.set('X-Search-Assistance-Version', '1'); return result;
+  });
+  mountRouter(() => h(SearchWorkspace, { maximum: 8000 }), { path: '/search' }); await search(original);
+  await fireEvent.click(await screen.findByRole('button', { name: '报销' })); await waitFor(() => expect(screen.queryByRole('button', { name: '报销' })).toBeNull());
+  await fireEvent.update(screen.getByLabelText('搜索词'), '未提交草稿');
+  const dialog = await openSearchFeedback(); expect((within(dialog).getByRole('textbox', { name: '明确分享的描述' }) as HTMLTextAreaElement).value).toBe(original);
+});
+
 it('检索故障仍保持真实错误，用户明确分享后才创建；不把故障断言为知识缺失', async () => {
-  const { transport } = await connect(path => path === '/api/search' ? new Response(null, { status: 503 })
+  const { transport } = await connect(path => path === '/api/search/assisted' ? new Response(null, { status: 503 })
     : path === '/api/knowledge-gaps' ? response(receipt(), 201) : response([]));
   mountRouter(() => h(SearchWorkspace, { maximum: 8000 }), { path: '/search' });
   await search('故障时的本人输入'); await screen.findByText('检索暂不可用，请稍后重试。');

@@ -22,6 +22,16 @@ app 与 AI 的 `kb.conversation.enabled` 应先统一，再对齐前端开关。
 
 ## 同源路由与响应边界
 
+### 企业术语辅助与词典管理发布
+
+知识搜索增强使用固定 `POST /api/search/assisted`，原 `/api/search` 保留 AI／旧客户端数组契约。新页面仅在完整对象和双头 `X-Search-Filter-Version: 1`、`X-Search-Assistance-Version: 1` 均通过时展示结果；缺失或未知协议不自动回退旧端点。管理页面固定 `/admin/search-terms`，API `/api/admin/search-terms/**`，全部查询正文不进入 URL。
+
+发布按 app → gateway → web，先排空不认识新权限的 app，受控新版迁移 V42 并注入一致独立 HMAC 密钥，然后发布 no-store、CORS 头暴露及透传策略，最后发布页面。轮换与保留数据止损见[词典运维](search-terminology-operations.md)。不要向 VITE 配置注入上下文秘密，也不要删新权限或回执以强行降级 app。
+
+上线环境前置代理需人工核查原始查询串、正文、令牌与建议凭据不进访问日志、追踪属性或指标。成功及提前认证／解析拒绝都 no-store，版本头只能由实际搜索服务产生。本文只交付方案；未部署、未执行代理网络或真实浏览器验收，离线过滤器测试不证明端到端保密。
+
+该变更已于 2026-11-24 同步 10 份主规格并[归档](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)，尚未部署。前端保留 W4：已替换片段与另一处合法补充表达混合时可能错误拒绝成功响应；不能把它当作版本头缺失、词典故障或无命中。归档未修复此问题，详情及用户主动原词恢复见[企业术语说明](search-terminology.md#已知未修复问题-w4)。
+
 ### 搜索限界与 SSE 检索错误
 
 构建变量 `VITE_SEARCH_MAX_QUERY_CODEPOINTS` 默认 8000，可设正整数收紧搜索词上限；非法配置回落默认值。客户端按 code point 检查且不截断，NUL/孤立代理项禁止发送；app 实际限制仍为最终判定。搜索专用 400/413/429/503 提示与文件上传、部门 AI 配额分开，保留真实状态和 `Retry-After`，不自动重试。

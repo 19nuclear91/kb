@@ -14,7 +14,7 @@
 | fileType | PDF、TXT、MARKDOWN、WORD、EXCEL、POWERPOINT、OTHER；省略不限，null 或 UNPUBLISHED 非法 |
 | updatedFrom / updatedTo | 带时区时间，含起点、不含终点；省略不限，null 非法；双边存在时起点早于终点 |
 
-条件按 AND 组合。成功结果仍为 `R` 包装的有序分块数组，保持版本化引用，不提供 total 或结果分页。知识搜索页面固定请求 candidates=50、topK=20。
+条件按 AND 组合。旧入口成功结果仍为 `R` 包装的有序分块数组，保持版本化引用，不提供 total 或结果分页。知识搜索页面固定请求 candidates=50、topK=20，新增页面使用下述增强入口；AI 与旧采集工具仍使用原入口。
 
 ```json
 {"query":"报销流程","candidates":50,"topK":20,"spaceId":12,"categoryId":34,"tagIds":[56,78],"fileType":"PDF","updatedFrom":"2026-10-01T00:00:00+08:00"}
@@ -23,6 +23,20 @@
 合法无筛选请求 `{"query":"报销流程"}` 保持原默认值。分类包含其后代，分类 ID 可以独立提交；合法但无可见匹配的空间、分类或标签得到空结果，不能去掉条件重试。停用标签的已有文档关联继续可筛选。
 
 ## 召回与版本
+
+### 企业术语增强入口
+
+`POST /api/search/assisted` 复用全部基础字段，另接受 `mode`（省略为 ASSISTED，显式 null 非法）、`selectionContext`（省略或 null 表示无）和 `selections`（省略为空，null 非法）。旧 `/api/search` 拒绝这些新增字段。ORIGINAL 不访问词典或上下文密钥，使用最初原词及完整筛选。
+
+非空选择需携带有效上下文，每项 `{kind,start,end,termId}` 仅允许 CORRECTION／DISAMBIGUATION、原文 code point 整数半开区间和精确正整数 termId；累计至多 8 项，重复、重叠或越界整批拒绝。空选择不得携带上下文。上下文绑定本次已核验身份、令牌指纹、精确原文、完整规范化筛选与最终数量，有效 600 秒。
+
+增强成功 data 为 `{hits,assistance}`，全部 ID、版本及修订采用十进制字符串；每次完整成功同时带 `X-Search-Filter-Version: 1` 和 `X-Search-Assistance-Version: 1`。assistance 字段与采用请求见[词典 API](search-terminology-api.md)。两个头缺失、冲突、未知版本或旧数组不能解释为增强成功，网关只透传，不补写头。
+
+增强错误 data=null，固定 reasonCode；辅助规模超限为 400 ASSISTANCE_LIMIT_EXCEEDED，可信到期／修订变化为 409 ASSISTANCE_STALE，词典或密钥不可用为 503 ASSISTANCE_UNAVAILABLE，其他检索依赖为 SEARCH_UNAVAILABLE。损坏签名或条件不匹配为 400 INVALID_INPUT，未知程序错误为 500 INTERNAL_ERROR；容量拒绝保留 Retry-After。不自动重发或切换原词。
+
+术语增强已于 2026-11-24 同步主规格并归档；当前仍有 W4：已替换原片段与另一处合法新增表达混合时，前端错误拒绝完整成功，而非服务端按规模或凭据规则拒绝。契约未缩减，归档不表示该问题解决。见[已知问题与主动原词恢复](search-terminology.md#已知未修复问题-w4)及[归档核验报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)。
+
+### 统一召回
 
 全部条件和权限谓词在 BM25、向量各自的候选截取前生效，随后按原 RRF、rerank 和 topK 处理；不会先取全局结果再在前端筛选。分类后代在同一召回语句计算，标签使用逐项 EXISTS，避免关联重复污染排名。
 

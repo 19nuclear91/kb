@@ -19,6 +19,22 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class EpochAuthenticationInterceptorTest {
+    @Test
+    void assistedRequestReceivesOnlyVerifiedIdentityAndTokenIsRemovedOnCompletion() {
+        var request = new MockHttpServletRequest("POST", "/api/search/assisted");
+        request.addHeader("X-User-Id", "999");
+        var verified = new EpochSessionService.Session(7, 3, EpochSessionService.Method.LOCAL, false);
+        when(sessions.check("verified-token")).thenReturn(verified);
+        try (var stp = mockStatic(StpUtil.class)) {
+            stp.when(StpUtil::getTokenValue).thenReturn("verified-token");
+            assertThat(interceptor.preHandle(request, new MockHttpServletResponse(), new Object())).isTrue();
+        }
+        assertThat(request.getAttribute(EpochAuthenticationInterceptor.VERIFIED)).isSameAs(verified);
+        assertThat(request.getAttribute(EpochAuthenticationInterceptor.VERIFIED_TOKEN)).isEqualTo("verified-token");
+        interceptor.afterCompletion(request, new MockHttpServletResponse(), new Object(), null);
+        assertThat(request.getAttribute(EpochAuthenticationInterceptor.VERIFIED_TOKEN)).isNull();
+    }
+
     private final EpochSessionService sessions = mock(EpochSessionService.class);
     private final EpochAuthenticationInterceptor interceptor = new EpochAuthenticationInterceptor(sessions);
 

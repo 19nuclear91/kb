@@ -26,6 +26,7 @@ app 通过 Spring 配置绑定以下键；未设置时采用表内默认值，�
 | 配置键 | 默认值 |
 | --- | --- |
 | `kb.search.execution.total-timeout-ms` | 8000 |
+| `kb.search.execution.terminology-timeout-ms` | 1000（环境变量 `KB_SEARCH_TERMINOLOGY_TIMEOUT_MS`） |
 | `kb.search.execution.embedding-timeout-ms` | 2000 |
 | `kb.search.execution.retrieval-timeout-ms` | 3000 |
 | `kb.search.execution.rerank-timeout-ms` | 1500 |
@@ -43,6 +44,12 @@ app 通过 Spring 配置绑定以下键；未设置时采用表内默认值，�
 所有值必须为可安全换算的正值；响应预留小于总预算，每个阶段上限不超过可执行总预算，用户并发上限不超过实例上限。部署初值不是已实测的吞吐或延迟承诺。
 
 ## 预算与实际容量
+
+企业术语入口 `POST /api/search/assisted` 与旧入口共用一次准入和原 SEARCH 聚合。ASSISTED 在授权后使用必要阶段 TERMINOLOGY，默认 `min(1000ms, 工作剩余预算)`，覆盖凭据 HMAC、Unicode 规范化、同一词典快照全部批次与计划生成；不为每批重置预算。词典事务结束后才进行控制、单个 QUERY 向量、关键词召回及 rerank，三个阶段共用 `literal-append-v1` executionText。ORIGINAL 与旧入口绕过词典及密钥。
+
+固定上限为 8 个不重叠匹配、每处 8 个含义、8 项选择、32 个新增表达及含换行的 2048 个新增 code point，最终文本仍满足实际查询长度上限。超限在模型／召回前明确失败。无文档范围仍可返回公开辅助与空 hits，不调用模型；词典故障不能伪装成功空建议。所有辅助及 hits 共同受 4 MiB 完整编码上限约束，超限不交付部分结果。
+
+术语变更已同步主规格并于 2026-11-24 归档，保留未修复 W4（混合替换／扩展的前端响应校验偏差）。这类错误不能解释为预算耗尽、辅助超限或真实零匹配；不自动改搜原词。范围和证据见[归档核验报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)，真实时延、容量及网络取消仍未验证。
 
 预算从合法输入进入搜索门面开始，包含权限解析、控制读取、连接/锁等待、外部调用、召回和 JSON 准备。上传请求、前置会话门禁与网络发送时间不计入这 8 秒。内部 List 入口也执行准入与响应编码限界。
 
@@ -99,6 +106,7 @@ prod/dev 的 `kb-search` 路由单独匹配 `/api/search`，默认等待 10000 �
 | 指标 | 标签及含义 |
 | --- | --- |
 | `kb.search.requests` | `outcome=SUCCESS/EMPTY/FAILED/REJECTED/CANCELLED`；每次门面调用结束记录一次 |
+| `kb.search.assistance.requests` | `mode=ASSISTED/ORIGINAL`；固定 outcome=ORIGINAL/NO_TERMS/APPLIED/SUGGESTIONS/MIXED/LIMIT_EXCEEDED/STALE/UNAVAILABLE/REJECTED/CANCELLED/FAILED |
 | `kb.search.stage.duration` | 固定 stage 和 outcome；阶段响应等待耗时，失败原因来自固定枚举 |
 | `kb.search.degradation` | 固定 stage、reason；成功降级仍是 SUCCESS 或 EMPTY |
 | `kb.search.rejections` | `reason=USER_LIMIT/CAPACITY`，区分两层拒绝 |

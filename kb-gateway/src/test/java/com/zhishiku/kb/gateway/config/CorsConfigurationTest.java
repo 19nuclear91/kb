@@ -30,7 +30,7 @@ class CorsConfigurationTest {
                             .bind("spring.cloud.gateway.globalcors", GlobalCorsProperties.class).get();
                     var config = properties.getCorsConfigurations().get("/**");
                     assertThat(config.getExposedHeaders()).containsExactly("X-Conversation-Id", "X-Turn-Id",
-                            "Retry-After", "X-Search-Filter-Version");
+                            "Retry-After", "X-Search-Filter-Version", "X-Search-Assistance-Version");
                     var valid = exchange("https://kb.example.com");
                     assertThat(new DefaultCorsProcessor().process(config, valid)).isTrue();
                     assertThat(valid.getResponse().getHeaders().getAccessControlAllowMethods())

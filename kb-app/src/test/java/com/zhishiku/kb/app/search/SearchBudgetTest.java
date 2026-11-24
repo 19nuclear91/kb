@@ -12,6 +12,33 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SearchBudgetTest {
     @Test
+    void terminologyUsesOneWindowAndReducesLaterEmbeddingBudget() {
+        var clock = new AtomicLong();
+        var budget = new SearchBudget(SearchExecutionProperties.defaults(), clock::get);
+        assertThat(SearchExecutionProperties.defaults().terminologyTimeoutMs()).isEqualTo(1000);
+        clock.set(3_700_000_000L);
+        var terms = budget.begin(SearchBudget.Stage.TERMINOLOGY);
+        clock.set(4_600_000_000L);
+        assertThat(terms.remainingNanos()).isEqualTo(100_000_000L);
+        clock.set(4_700_000_000L);
+        assertThatThrownBy(terms::check).isInstanceOf(SearchFailure.class);
+        assertThat(budget.available(SearchBudget.Stage.EMBEDDING)).isZero();
+        assertThat(budget.available(SearchBudget.Stage.RETRIEVAL)).isEqualTo(2_800_000_000L);
+        clock.set(7_300_000_000L);
+        assertThat(budget.available(SearchBudget.Stage.TERMINOLOGY)).isEqualTo(200_000_000L);
+        clock.set(7_500_000_000L);
+        assertThatThrownBy(() -> budget.begin(SearchBudget.Stage.TERMINOLOGY).check()).isInstanceOf(SearchFailure.class);
+    }
+
+    @Test
+    void terminologyConfigurationMustBePositiveAndFitWorkWindow() {
+        for (long value : new long[]{0, -1, 7501, Long.MAX_VALUE}) {
+            assertThatThrownBy(() -> new SearchExecutionProperties(8000, 2000, 3000, 1500, 500, 8, 2, 1, value))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
     void earlierWorkReducesLaterWindowsAndReservesDatabaseTime() {
         var clock = new AtomicLong();
         var budget = new SearchBudget(SearchExecutionProperties.defaults(), clock::get);

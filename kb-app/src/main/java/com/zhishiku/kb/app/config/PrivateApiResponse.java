@@ -9,7 +9,7 @@ import org.springframework.web.util.UriUtils;
 
 import java.nio.charset.StandardCharsets;
 
-/** 仅用于问题/通知私有响应；不读取正文，不提供身份或动作资格。 */
+/** 私有 API 的响应边界；不读取正文，不提供身份或动作资格。 */
 final class PrivateApiResponse {
     private PrivateApiResponse() {
     }

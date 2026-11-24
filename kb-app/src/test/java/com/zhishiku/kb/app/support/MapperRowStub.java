@@ -12,6 +12,7 @@ import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.UUID;
@@ -55,7 +56,8 @@ public final class MapperRowStub {
                     : value instanceof Integer ? Types.INTEGER
                     : value instanceof Short ? Types.SMALLINT
                     : value instanceof Double ? Types.DOUBLE : value instanceof Boolean ? Types.BOOLEAN
-                    : value instanceof Instant ? Types.TIMESTAMP : value instanceof UUID ? Types.OTHER : Types.VARCHAR;
+                    : value instanceof Instant ? Types.TIMESTAMP : value instanceof OffsetDateTime ? Types.TIMESTAMP_WITH_TIMEZONE
+                    : value instanceof UUID ? Types.OTHER : Types.VARCHAR;
             when(metadata.getColumnLabel(index + 1)).thenReturn(column);
             when(metadata.getColumnName(index + 1)).thenReturn(column);
             when(metadata.getColumnType(index + 1)).thenReturn(sqlType);
@@ -92,6 +94,8 @@ public final class MapperRowStub {
             return value == null ? null : Timestamp.from(value);
         });
         when(rows.getObject(anyString(), eq(UUID.class))).thenAnswer(call -> columnValue(row, call.getArgument(0),
+                wasNull));
+        when(rows.getObject(anyString(), eq(OffsetDateTime.class))).thenAnswer(call -> columnValue(row, call.getArgument(0),
                 wasNull));
         when(rows.wasNull()).thenAnswer(call -> wasNull.get());
         when(rows.getMetaData()).thenReturn(metadata);

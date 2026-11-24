@@ -26,7 +26,7 @@ public class SearchInputAdvice extends RequestBodyAdviceAdapter {
     @Override
     public boolean supports(MethodParameter parameter, Type type,
                             Class<? extends HttpMessageConverter<?>> converter) {
-        return type == SearchRequest.class;
+        return type == SearchRequest.class || type == AssistedSearchRequest.class;
     }
 
     @Override

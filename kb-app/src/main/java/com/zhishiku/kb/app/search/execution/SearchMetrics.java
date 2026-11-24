@@ -1,6 +1,7 @@
 package com.zhishiku.kb.app.search.execution;
 
 import com.zhishiku.kb.app.search.model.SearchFailure;
+import com.zhishiku.kb.app.search.expansion.SearchQueryPlan;
 import com.zhishiku.kb.common.embedding.EmbeddingProtocolFailure;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
@@ -16,6 +17,16 @@ public class SearchMetrics {
 
     public enum Outcome {
         SUCCESS, EMPTY, FAILED, REJECTED, CANCELLED
+    }
+
+    public enum AssistanceOutcome {
+        ORIGINAL, NO_TERMS, APPLIED, SUGGESTIONS, MIXED, LIMIT_EXCEEDED, STALE, UNAVAILABLE, REJECTED, CANCELLED, FAILED
+    }
+
+    public void assistance(SearchQueryPlan.Mode mode, AssistanceOutcome outcome) {
+        if (registry != null) {
+            registry.counter("kb.search.assistance.requests", "mode", mode.name(), "outcome", outcome.name()).increment();
+        }
     }
 
     private final MeterRegistry registry;

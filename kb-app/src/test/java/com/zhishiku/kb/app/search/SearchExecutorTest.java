@@ -130,7 +130,7 @@ class SearchExecutorTest {
         try (var executor = new SearchExecutor(properties(), admission)) {
             assertThatThrownBy(() -> executor.execute(1, state -> {
                 execution.set(state);
-                return executor.required(state, SearchBudget.Stage.RETRIEVAL, () -> {
+                return executor.required(state, SearchBudget.Stage.TERMINOLOGY, () -> {
                     awaitIgnoringInterrupt(release);
                     return "late rows";
                 });

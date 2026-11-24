@@ -3,11 +3,14 @@ package com.zhishiku.kb.app.config;
 import cn.dev33.satoken.exception.SaTokenException;
 import com.zhishiku.kb.app.search.model.SearchFailure;
 import com.zhishiku.kb.app.knowledgegap.web.KnowledgeGapAdvice;
+import com.zhishiku.kb.app.search.term.web.TermAdminAdvice;
+import com.zhishiku.kb.app.search.web.AssistedSearchFailure;
 import com.zhishiku.kb.common.api.ApiException;
 import com.zhishiku.kb.common.api.R;
 import com.zhishiku.kb.common.security.IdentityException;
 import com.zhishiku.kb.common.security.KnowledgeGapEndpoints;
 import com.zhishiku.kb.common.security.SearchEndpoints;
+import com.zhishiku.kb.common.security.SearchTermEndpoints;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -40,7 +43,54 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    @ExceptionHandler(SearchFailure.class)
+    /** 全局入口先处理受保护路径；下列既有方法保留各接口的原响应及诊断行为。 */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<?> handle(Exception error) {
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes
+                && "/api/search/assisted".equals(PrivateApiResponse.path(attributes.getRequest()))) {
+            return AssistedSearchFailure.project(error);
+        }
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes
+                && SearchTermEndpoints.matches(PrivateApiResponse.path(attributes.getRequest()))) {
+            return TermAdminAdvice.project(error);
+        }
+        if (error instanceof SearchFailure failure) {
+            return handleSearch(failure);
+        }
+        if (error instanceof IdentityException identity) {
+            return handleIdentity(identity);
+        }
+        if (error instanceof ApiException api) {
+            return handleApi(api);
+        }
+        if (error instanceof MethodArgumentNotValidException || error instanceof BindException
+                || error instanceof ConstraintViolationException || error instanceof HandlerMethodValidationException
+                || error instanceof MethodArgumentTypeMismatchException || error instanceof HttpMessageNotReadableException
+                || error instanceof MissingServletRequestParameterException || error instanceof MissingRequestHeaderException
+                || error instanceof MissingServletRequestPartException) {
+            return handleInvalidRequest(error);
+        }
+        if (error instanceof MaxUploadSizeExceededException) {
+            return handleUploadTooLarge(error);
+        }
+        if (error instanceof HttpRequestMethodNotSupportedException) {
+            return handleMethodNotAllowed(error);
+        }
+        if (error instanceof HttpMediaTypeNotSupportedException) {
+            return handleUnsupportedMediaType(error);
+        }
+        if (error instanceof NoResourceFoundException || error instanceof NoHandlerFoundException) {
+            return handleNotFound(error);
+        }
+        if (error instanceof SaTokenException token) {
+            return handleAuth(token);
+        }
+        if (error instanceof ResponseStatusException status) {
+            return handleStatus(status);
+        }
+        return handleOther(error);
+    }
+
     public ResponseEntity<R<Void>> handleSearch(SearchFailure failure) {
         if (isKnowledgeGapRequest()) {
             return KnowledgeGapAdvice.project(failure);
@@ -53,7 +103,6 @@ public class GlobalExceptionHandler {
         return response.body(R.fail(failure.safeMessage()));
     }
 
-    @ExceptionHandler(IdentityException.class)
     public ResponseEntity<R<Void>> handleIdentity(IdentityException e) {
         if (isKnowledgeGapRequest()) {
             return KnowledgeGapAdvice.project(e);
@@ -66,7 +115,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(e.httpStatus()).body(R.fail(e.getMessage()));
     }
 
-    @ExceptionHandler(ApiException.class)
     public ResponseEntity<R<Void>> handleApi(ApiException e) {
         if (isKnowledgeGapRequest()) {
             return KnowledgeGapAdvice.project(e);
@@ -78,15 +126,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(e.httpStatus()).body(R.fail(e.getMessage()));
     }
 
-    @ExceptionHandler({MethodArgumentNotValidException.class,
-            BindException.class,
-            ConstraintViolationException.class,
-            HandlerMethodValidationException.class,
-            MethodArgumentTypeMismatchException.class,
-            HttpMessageNotReadableException.class,
-            MissingServletRequestParameterException.class,
-            MissingRequestHeaderException.class,
-            MissingServletRequestPartException.class})
     public ResponseEntity<R<Void>> handleInvalidRequest(Exception e) {
         if (isKnowledgeGapRequest()) {
             return KnowledgeGapAdvice.project(ApiException.badRequest("知识问题单请求无效"));
@@ -95,7 +134,6 @@ public class GlobalExceptionHandler {
         return response(400).body(R.fail("请求参数或请求体无效"));
     }
 
-    @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<R<Void>> handleUploadTooLarge(Exception e) {
         if (isKnowledgeGapRequest()) {
             return KnowledgeGapAdvice.project(new MaxUploadSizeExceededException(0));
@@ -103,7 +141,6 @@ public class GlobalExceptionHandler {
         return response(413).body(R.fail(isSearchRequest() ? "搜索请求过大" : "文件超过上传大小限制"));
     }
 
-    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<R<Void>> handleMethodNotAllowed(Exception e) {
         if (isKnowledgeGapRequest()) {
             return KnowledgeGapAdvice.project(e);
@@ -111,7 +148,6 @@ public class GlobalExceptionHandler {
         return response(405).body(R.fail("不支持该请求方法"));
     }
 
-    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<R<Void>> handleUnsupportedMediaType(Exception e) {
         if (isKnowledgeGapRequest()) {
             return KnowledgeGapAdvice.project(e);
@@ -119,8 +155,6 @@ public class GlobalExceptionHandler {
         return response(415).body(R.fail("不支持该媒体类型"));
     }
 
-    @ExceptionHandler({NoResourceFoundException.class,
-            NoHandlerFoundException.class})
     public ResponseEntity<R<Void>> handleNotFound(Exception e) {
         if (isKnowledgeGapRequest()) {
             return KnowledgeGapAdvice.project(e);
@@ -128,7 +162,6 @@ public class GlobalExceptionHandler {
         return response(404).body(R.fail("请求的资源不存在"));
     }
 
-    @ExceptionHandler(SaTokenException.class)
     public ResponseEntity<R<Void>> handleAuth(SaTokenException e) {
         if (isKnowledgeGapRequest()) {
             return KnowledgeGapAdvice.project(e);
@@ -145,7 +178,6 @@ public class GlobalExceptionHandler {
                 .body(R.fail("登录状态无效或已过期"));
     }
 
-    @ExceptionHandler(Exception.class)
     public ResponseEntity<R<Void>> handleOther(Exception e) {
         if (isKnowledgeGapRequest()) {
             return KnowledgeGapAdvice.project(e);
@@ -162,7 +194,7 @@ public class GlobalExceptionHandler {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
             HttpServletRequest request = attributes.getRequest();
             String path = request.getRequestURI();
-            return SearchEndpoints.matches(path) || path.startsWith("/api/conversations")
+            return SearchEndpoints.matches(path) || SearchTermEndpoints.matches(path) || path.startsWith("/api/conversations")
                     || path.startsWith("/internal/conversations");
         }
         return false;
@@ -173,7 +205,6 @@ public class GlobalExceptionHandler {
                 && KnowledgeGapEndpoints.matches(PrivateApiResponse.path(attributes.getRequest()));
     }
 
-    @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<R<Void>> handleStatus(ResponseStatusException error) {
         if (isKnowledgeGapRequest()) {
             return KnowledgeGapAdvice.project(error);

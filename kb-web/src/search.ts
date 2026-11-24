@@ -1,8 +1,9 @@
 import { ApiError, messageOf } from './api';
 import { SearchProtocolError } from './search/api';
+import { AssistanceError, AssistanceProtocolError } from './search/assistedApi';
+import { searchMaxQueryCodepoints } from './search/limits';
 
-const configured = Number(import.meta.env.VITE_SEARCH_MAX_QUERY_CODEPOINTS ?? 8000);
-export const searchMaxQueryCodepoints = Number.isSafeInteger(configured) && configured > 0 ? configured : 8000;
+export { searchMaxQueryCodepoints } from './search/limits';
 
 export function searchInputError(query: string, maximum = searchMaxQueryCodepoints): string | undefined {
   if (!query?.trim()) return '请输入搜索词';
@@ -15,6 +16,15 @@ export function searchInputError(query: string, maximum = searchMaxQueryCodepoin
 }
 
 export function searchErrorMessage(error: unknown): string {
+  if (error instanceof AssistanceProtocolError) return error.message;
+  if (error instanceof AssistanceError) {
+    const reasons: Partial<Record<NonNullable<AssistanceError['reason']>, string>> = {
+      ASSISTANCE_LIMIT_EXCEEDED: '术语辅助处理超限，请缩短输入或主动选择仅搜原词。',
+      ASSISTANCE_STALE: '词典已变化或建议已过期，请重新搜索后确认。',
+      ASSISTANCE_UNAVAILABLE: '术语辅助暂不可用，可稍后重试或主动选择仅搜原词。',
+    };
+    if (error.reason && reasons[error.reason]) return reasons[error.reason]!;
+  }
   if (error instanceof SearchProtocolError) return error.message;
   const messages: Record<number, string> = {
     400: '搜索输入不符合要求，请修改后重试。', 413: '搜索请求过大，请缩短后重试。',

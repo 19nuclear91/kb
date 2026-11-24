@@ -18,13 +18,28 @@ import java.io.IOException;
 public class SearchResponseFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !SearchEndpoints.matches(request.getRequestURI());
+        return !SearchEndpoints.matches(PrivateApiResponse.path(request));
+    }
+
+    @Override
+    protected boolean shouldNotFilterErrorDispatch() {
+        return false;
+    }
+
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return false;
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        response.setHeader("Cache-Control", "no-store");
-        chain.doFilter(request, response);
+        chain.doFilter(request, PrivateApiResponse.wrap(response));
+    }
+
+    @Override
+    protected void doFilterNestedErrorDispatch(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+        doFilterInternal(request, response, chain);
     }
 }
