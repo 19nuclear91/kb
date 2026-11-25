@@ -116,8 +116,12 @@ export function decodeAssisted(value: unknown, input: AssistedInput): AssistedRe
     groups.set(term.termId, term);
     term.expressions.forEach(expression => { const key = expressionKey(expression); if (!expressions.has(key)) expressions.set(key, expression); });
   }
-  const used = new Set([...appliedTerms.map(term => expressionKey(term.matchedText)), ...suggestions.map(term => expressionKey(term.sourceText)),
-    ...selections.map(chosen => expressionKey(appliedTerms.find(term => term.start === chosen.start)!.canonicalName))]);
+  // 已选择的位置只保留替换后的标准名称，旧片段仍可由其他位置合法补充。
+  const selectedStarts = new Set(selections.map(chosen => chosen.start));
+  const used = new Set([
+    ...appliedTerms.map(term => expressionKey(selectedStarts.has(term.start) ? term.canonicalName : term.matchedText)),
+    ...suggestions.map(term => expressionKey(term.sourceText)),
+  ]);
   if ([...expressions.keys()].some(key => used.has(key))) throw broken();
   const added = [...expressions.values()].reduce((count, value) => count + Array.from(value).length + 1, 0);
   if (expressions.size > 32 || added > 2048 || Array.from(effectiveQuery).length + added > maximum) throw broken();

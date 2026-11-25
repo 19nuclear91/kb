@@ -4,9 +4,9 @@
 
 2026-11-24 已交付数据迁移、词条输入规则、独立权限、管理 HTTP／页面、本人回执及安全审计、匹配计划、共享增强搜索编排、入口保护和搜索页交互；本说明不表示功能已上线。
 
-同日经用户要求同步 10 份主规格并[归档](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)，任务 51/51 完成；主规格严格校验 76/76 通过。第二轮[完整核验](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)保留 **1 项未修复 WARNING（W4）**，不是无问题通过；本次归档没有执行发布、回退、迁移或缺陷修复。
+同日经用户要求同步 10 份主规格并[归档](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)，任务 51/51 完成；主规格严格校验 76/76 通过。归档时第二轮[完整核验](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)保留 W4，随后于 2026-11-25 完成修复，见[定向验证](search-terminology-w4-fix.md)。功能尚未部署。
 
-W4 使某处歧义替换后、另一处术语合法补充同一旧表达的完整成功被前端错误拒绝。独立纯计划／解码探针已复现，不是部署配置、密钥失效或空结果；临时恢复仅由用户主动选择 ORIGINAL，不自动放宽筛选或重放。细节见[使用说明](search-terminology.md#已知未修复问题-w4)，不能通过调整数据库回执、重置修订或删权限规避。
+W4 修复位于前端响应解码：已选择位置按所选标准名称判重，接受另一处术语合法补充被替换的旧表达。更新前端构建即可交付该修复，无需更改词典数据或重置修订；初次上线仍遵守下述完整发布顺序。细节见[使用说明](search-terminology.md#w4-修复混合替换与扩展)。
 
 本次没有运行数据库迁移，没有连接 PostgreSQL、Redis、对象存储或模型服务，也没有启动应用、容器、独立 HTTP 测试服务器或真实浏览器。只执行明确白名单内的独立单测、模拟 DOM、类型检查、编译与静态构建；迁移与本说明以人工审阅交付，不对 SQL 或文档内容建立测试断言。
 

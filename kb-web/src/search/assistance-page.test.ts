@@ -69,6 +69,42 @@ it('页面非默认上限传入已提交快照，模式切换不改用默认 800
   await fireEvent.click(screen.getByRole('button', { name: '重新启用辅助' })); await screen.findByRole('button', { name: '报销' });
   expect(vi.mocked(assistedApi.search).mock.calls.map(call => call[1].maxQueryCodepoints)).toEqual([9000, 9000, 9000, 9000]);
 });
+it('歧义替换与另一处合法扩展混合时，实际解码后仍展示搜索结果', async () => {
+  vi.mocked(assistedApi.search).mockRestore();
+  vi.mocked(context.session.send).mockImplementation(async (path, init) => {
+    if (path !== '/api/search/assisted') return json({ items: [], hasMore: false, nextCursor: null });
+    const body = JSON.parse(init!.body as string), adopted = Boolean(body.selections?.length);
+    const value = assistedResult('PM 项目');
+    value.assistance.appliedTerms = [{ start: 3, end: 5, matchedText: '项目', termId: '1', termVersion: '0', canonicalName: 'PM', expressions: adopted ? ['PM'] : [] }];
+    if (adopted) {
+      value.assistance.effectiveQuery = '产品 项目';
+      value.assistance.selections = [{ kind: 'DISAMBIGUATION', start: 0, end: 2, termId: '2' }];
+      value.assistance.appliedTerms.unshift({ start: 0, end: 2, matchedText: 'PM', termId: '2', termVersion: '0', canonicalName: '产品', expressions: [] });
+    } else {
+      value.assistance.selectionContext = 'opaque';
+      value.assistance.suggestions = [{ kind: 'DISAMBIGUATION', start: 0, end: 2, sourceText: 'PM', options: [
+        { termId: '1', termVersion: '0', canonicalName: 'PM', description: '项目' },
+        { termId: '2', termVersion: '0', canonicalName: '产品', description: '产品' },
+      ] }];
+    }
+    const hits = adopted ? [{ chunkId: '1', docId: '10', versionId: '20', versionNo: '1', spaceId: '3', securityLevel: 1,
+      chunkIdx: 0, docTitle: '项目说明', content: '混合扩展后的搜索结果', score: 0.1 }] : [];
+    const response = json({ ...value, hits });
+    response.headers.set('X-Search-Filter-Version', '1'); response.headers.set('X-Search-Assistance-Version', '1');
+    return response;
+  });
+  mountRouter(() => h(SearchPage));
+  await fireEvent.update(screen.getByLabelText('搜索词'), 'PM 项目');
+  await fireEvent.submit(screen.getByLabelText('搜索词').closest('form')!);
+  await fireEvent.click(await screen.findByRole('button', { name: '产品' }));
+  await screen.findByText('混合扩展后的搜索结果');
+  expect(screen.getByText('产品 项目')).toBeTruthy();
+  expect(screen.queryByText(/无法确认辅助搜索支持/)).toBeNull();
+  const searches = vi.mocked(context.session.send).mock.calls.filter(call => call[0] === '/api/search/assisted');
+  expect(searches).toHaveLength(2);
+  expect(JSON.parse(searches[1][1]!.body as string)).toMatchObject({ query: 'PM 项目', mode: 'ASSISTED', selectionContext: 'opaque',
+    selections: [{ kind: 'DISAMBIGUATION', start: 0, end: 2, termId: 2 }] });
+});
 it.each(['ASSISTED', 'ORIGINAL'] as const)('页面允许的 8001 个补充字符在 %s 完整解码后正常显示，原文不截断', async mode => {
   vi.mocked(assistedApi.search).mockRestore();
   const query = '😀'.repeat(8001);

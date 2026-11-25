@@ -30,7 +30,7 @@ app 与 AI 的 `kb.conversation.enabled` 应先统一，再对齐前端开关。
 
 上线环境前置代理需人工核查原始查询串、正文、令牌与建议凭据不进访问日志、追踪属性或指标。成功及提前认证／解析拒绝都 no-store，版本头只能由实际搜索服务产生。本文只交付方案；未部署、未执行代理网络或真实浏览器验收，离线过滤器测试不证明端到端保密。
 
-该变更已于 2026-11-24 同步 10 份主规格并[归档](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)，尚未部署。前端保留 W4：已替换片段与另一处合法补充表达混合时可能错误拒绝成功响应；不能把它当作版本头缺失、词典故障或无命中。归档未修复此问题，详情及用户主动原词恢复见[企业术语说明](search-terminology.md#已知未修复问题-w4)。
+该变更已于 2026-11-24 同步 10 份主规格并[归档](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)，尚未部署。归档时的前端 W4 已于 2026-11-25 修复：混合替换与合法补充表达的完整响应可正常解码。修复通过更新前端构建交付，验证范围见[W4 修复记录](search-terminology-w4-fix.md)。
 
 ### 搜索限界与 SSE 检索错误
 

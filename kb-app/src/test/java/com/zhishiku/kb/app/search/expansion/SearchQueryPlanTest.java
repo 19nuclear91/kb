@@ -169,6 +169,45 @@ class SearchQueryPlanTest {
     }
 
     @Test
+    void replacedExpressionCanBeAddedByAnotherAutomaticMatch() {
+        var dictionary = new SyntheticTermDictionary().group(1, "PM", "项目", synonym("项目"))
+                .group(2, "产品", "产品", abbreviation("PM"));
+        var selection = new SearchQueryPlan.Selection(DISAMBIGUATION, 0, 2, 2);
+        var result = plan("PM 项目", dictionary, selection);
+        assertThat(result.effectiveQuery()).isEqualTo("产品 项目");
+        assertThat(result.executionText()).isEqualTo("产品 项目\nPM");
+        assertThat(result.appliedTerms()).extracting(SearchQueryPlan.AppliedTerm::termId).containsExactly(2L, 1L);
+        assertThat(result.appliedTerms().getFirst().expressions()).isEmpty();
+        assertThat(result.appliedTerms().getLast().expressions()).containsExactly("PM");
+        assertThat(result.selections()).containsExactly(selection);
+        assertThat(result.suggestions()).isEmpty();
+
+        var reordered = plan("项目 😀pm", dictionary, new SearchQueryPlan.Selection(DISAMBIGUATION, 4, 6, 2));
+        assertThat(reordered.effectiveQuery()).isEqualTo("项目 😀产品");
+        assertThat(reordered.executionText()).isEqualTo("项目 😀产品\nPM");
+        assertThat(reordered.appliedTerms().getFirst().expressions()).containsExactly("PM");
+        assertThat(reordered.appliedTerms().getLast().matchedText()).isEqualTo("pm");
+        assertThat(reordered.appliedTerms().getLast().expressions()).isEmpty();
+    }
+
+    @Test
+    void unchangedOccurrencePreventsExpansionUntilEveryOccurrenceIsReplaced() {
+        var dictionary = new SyntheticTermDictionary().group(1, "PM", "项目", synonym("项目"))
+                .group(2, "产品", "产品", abbreviation("PM"));
+        var first = new SearchQueryPlan.Selection(DISAMBIGUATION, 0, 2, 2);
+        var partial = plan("PM 项目 pm", dictionary, first);
+        assertThat(partial.effectiveQuery()).isEqualTo("产品 项目 pm");
+        assertThat(partial.executionText()).isEqualTo("产品 项目 pm");
+        assertThat(partial.appliedTerms().getLast().expressions()).isEmpty();
+        assertThat(partial.suggestions()).extracting(SearchQueryPlan.Suggestion::start).containsExactly(6);
+
+        var complete = plan("PM 项目 pm", dictionary, first, new SearchQueryPlan.Selection(DISAMBIGUATION, 6, 8, 2));
+        assertThat(complete.executionText()).isEqualTo("产品 项目 产品\nPM");
+        assertThat(complete.appliedTerms().get(1).expressions()).containsExactly("PM");
+        assertThat(complete.suggestions()).isEmpty();
+    }
+
+    @Test
     void disabledGroupsAndMappingsDoNotProduceExpansionOrSuggestions() {
         assertThat(plan("OA", SyntheticTermDictionary.examples().disabled(1)).appliedTerms()).isEmpty();
         assertThat(plan("报消", SyntheticTermDictionary.examples().disabled(2)).suggestions()).isEmpty();

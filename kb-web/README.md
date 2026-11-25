@@ -224,7 +224,7 @@ SSE error 可选 `code=SEARCH_UNAVAILABLE` 显示固定检索不可用提示；�
 
 本变更仅运行显式白名单的独立单测、模拟 DOM、类型检查和静态构建，未运行真实浏览器或部署。包体报告增加 `searchTerms` 场景，隔离检查禁止普通搜索静态依赖 `src/searchTerms/`。
 
-`search-correction-and-enterprise-terminology` 已于 2026-11-24 同步 10 份主规格并[归档](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)，51/51 项任务完成。第二轮前端 **30 文件／419 项**、类型检查、生产构建、包体工具 **13 项**和隔离通过；完整核验仍保留 **1 项未修复警告 W4**，已替换旧片段与另一处合法扩展混合时会错误拒绝完整响应。原 W1～W3 已关闭，本次归档不改实现；用户可主动原词恢复，但不自动切换。见[已知问题](../docs/search-terminology.md#已知未修复问题-w4)与[核验报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)，真实浏览器、网络与排序效果仍未验证。
+`search-correction-and-enterprise-terminology` 已于 2026-11-24 同步 10 份主规格并[归档](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)，51/51 项任务完成。归档时第二轮前端 **30 文件／419 项**、类型检查、生产构建、包体工具 **13 项**和隔离通过，完整核验保留 W4。2026-11-25 已修复混合替换／扩展的误拒绝：已选择位置按标准名称判重，其他位置保留原片段。新增实际 API 解码及页面回归的结果见[W4 修复验证](../docs/search-terminology-w4-fix.md)，原 W1～W3 与 W4 历史证据见[核验报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)。真实浏览器、网络与排序效果仍未验证。
 
 审计查询入口为 `/admin/audits`，独立要求当前 `audit:read`；支持管理、本地登录及企业 SSO 事件的精确筛选、固定时间窗口续页与安全详情。默认最近 7 天，自定义最长 31 天，筛选和结果只保留在当前页面内存。使用、权限、恢复与验证边界见[审计查询管理页面](../docs/admin-audit-web.md)。
 

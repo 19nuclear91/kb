@@ -7,6 +7,18 @@ import { assistedResult, assistedResponse } from './assistedFixtures';
 
 const input = (): AssistedInput => ({ originalQuery: '😀PM', mode: 'ASSISTED', filters: {}, candidates: 50, topK: 20, selections: [], selectionContext: null });
 const client = (response: Response) => ({ send: vi.fn().mockResolvedValue(response), getSnapshot: () => ({ epoch: 1 }) }) as unknown as Session;
+function replacementExpansion() {
+  const submitted: AssistedInput = { ...input(), originalQuery: 'PM 项目', selectionContext: 'opaque',
+    selections: [{ kind: 'DISAMBIGUATION', start: 0, end: 2, termId: '2' }] };
+  const value = assistedResult(submitted.originalQuery);
+  value.assistance.selections = [...submitted.selections];
+  value.assistance.effectiveQuery = '产品 项目';
+  value.assistance.appliedTerms = [
+    { start: 0, end: 2, matchedText: 'PM', termId: '2', termVersion: '0', canonicalName: '产品', expressions: [] },
+    { start: 3, end: 5, matchedText: '项目', termId: '1', termVersion: '0', canonicalName: 'PM', expressions: ['PM'] },
+  ];
+  return { submitted, value };
+}
 it('完整双版本、原文位置、空命中建议和大整数保持精确', async () => {
   const value = assistedResult('😀PM');
   value.assistance.dictionaryRevision = '9223372036854775807'; value.assistance.selectionContext = 'opaque';
@@ -42,6 +54,58 @@ it('选择与有效表达同源且建议位置必须属于原文', () => {
   value.assistance.appliedTerms = [{ start: 1, end: 3, matchedText: 'PM', termId: '3', termVersion: '0', canonicalName: '项目管理', expressions: [] }];
   expect(decodeAssisted(value, selected).assistance.effectiveQuery).toBe('😀项目管理');
   value.assistance.appliedTerms[0].end = 4; expect(() => decodeAssisted(value, selected)).toThrow(AssistanceProtocolError);
+});
+it.each([
+  { query: 'PM 项目', selectedStart: 0, automaticStart: 3, matchedText: 'PM', effectiveQuery: '产品 项目' },
+  { query: '😀pm 项目', selectedStart: 1, automaticStart: 4, matchedText: 'pm', effectiveQuery: '😀产品 项目' },
+  { query: '项目 PM', selectedStart: 3, automaticStart: 0, matchedText: 'PM', effectiveQuery: '项目 产品' },
+])('替换后的旧表达可由另一处术语补充，完整响应保留命中：$query', async ({ query, selectedStart, automaticStart, matchedText, effectiveQuery }) => {
+  const { submitted, value } = replacementExpansion();
+  submitted.originalQuery = query;
+  submitted.selections = [{ kind: 'DISAMBIGUATION', start: selectedStart, end: selectedStart + 2, termId: '2' }];
+  value.assistance.originalQuery = query;
+  value.assistance.effectiveQuery = effectiveQuery;
+  value.assistance.selections = [...submitted.selections];
+  Object.assign(value.assistance.appliedTerms[0], { start: selectedStart, end: selectedStart + 2, matchedText });
+  Object.assign(value.assistance.appliedTerms[1], { start: automaticStart, end: automaticStart + 2 });
+  value.assistance.appliedTerms.sort((a, b) => a.start - b.start);
+  const hit = { chunkId: '1', docId: '10', versionId: '20', versionNo: '1', spaceId: '3', securityLevel: 1,
+    chunkIdx: 0, docTitle: '项目说明', content: '匹配 PM 的资料', score: 0.1 };
+  const response = json({ ...value, hits: [hit] });
+  response.headers.set('X-Search-Filter-Version', '1'); response.headers.set('X-Search-Assistance-Version', '1');
+  const session = client(response), result = await assistedApi.search(session, submitted);
+  expect(result.assistance).toEqual(value.assistance);
+  expect(result.hits).toEqual([{ chunkId: '1', docId: '10', versionId: '20', versionNo: 1, docTitle: '项目说明', content: '匹配 PM 的资料' }]);
+  expect(session.send).toHaveBeenCalledOnce();
+});
+it.each(['产品', '项目'])('替换与扩展混合时仍拒绝有效查询中已存在的表达：%s', expression => {
+  const { submitted, value } = replacementExpansion();
+  value.assistance.appliedTerms[1].expressions = [expression];
+  expect(() => decodeAssisted(value, submitted)).toThrow(AssistanceProtocolError);
+});
+it.each(['PM', 'pm'])('其他位置仍待选择时，相同旧表达不能重复补充：%s', expression => {
+  const { submitted, value } = replacementExpansion();
+  submitted.originalQuery = 'PM 项目 pm';
+  value.assistance.originalQuery = submitted.originalQuery; value.assistance.effectiveQuery = '产品 项目 pm';
+  value.assistance.selectionContext = 'next-context';
+  value.assistance.suggestions = [{ kind: 'DISAMBIGUATION', start: 6, end: 8, sourceText: 'pm', options: [
+    { termId: '1', termVersion: '0', canonicalName: 'PM', description: '项目' },
+    { termId: '2', termVersion: '0', canonicalName: '产品', description: '产品' },
+  ] }];
+  value.assistance.appliedTerms[1].expressions = [];
+  expect(decodeAssisted(value, submitted).assistance).toEqual(value.assistance);
+  value.assistance.appliedTerms[1].expressions = [expression];
+  expect(() => decodeAssisted(value, submitted)).toThrow(AssistanceProtocolError);
+});
+it('混合替换时同组重复位置共享扩展并集，组内规范等价重复仍拒绝', () => {
+  const { submitted, value } = replacementExpansion();
+  submitted.originalQuery = 'PM 项目 项目'; submitted.maxQueryCodepoints = 11;
+  value.assistance.originalQuery = submitted.originalQuery; value.assistance.effectiveQuery = '产品 项目 项目';
+  value.assistance.appliedTerms.push({ ...value.assistance.appliedTerms[1], start: 6, end: 8 });
+  expect(decodeAssisted(value, submitted).assistance).toEqual(value.assistance);
+  value.assistance.appliedTerms[1].expressions = ['PM', 'pm'];
+  value.assistance.appliedTerms[2].expressions = ['PM', 'pm'];
+  expect(() => decodeAssisted(value, submitted)).toThrow(AssistanceProtocolError);
 });
 it('ORIGINAL 必须恒等且实际命中固定版本，不接受数值型身份', async () => {
   const original = { ...input(), mode: 'ORIGINAL' as const };

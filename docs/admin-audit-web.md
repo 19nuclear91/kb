@@ -74,4 +74,4 @@ npm run build
 
 仍要求当前精确 `audit:read`，词典 read／write 不代替审计资格。停用或目标当前不可用不会删除存储的历史事件。现有未知但合法操作域／目标类型查询保持兼容，白名单仅约束摘要投影，不新增查询拒绝规则。普通搜索、建议采用、管理读取和被拒维护不产生成功词典维护审计。
 
-词典变更已于 2026-11-24 同步主规格并归档。本次证据仅为独立审计生产／投影／查询测试、事务调用替身和编译后依赖检查；真实数据库审计提交、锁与回滚未验证。执行记录见[归档验证记录](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verification.md)；搜索混合表达的 W4 警告保留在[核验报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)，归档不表示无问题验收通过。
+词典变更已于 2026-11-24 同步主规格并归档。本次证据仅为独立审计生产／投影／查询测试、事务调用替身和编译后依赖检查；真实数据库审计提交、锁与回滚未验证。执行记录见[归档验证记录](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verification.md)；搜索混合表达的 W4 历史警告保留在[核验报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)，后续[修复记录](search-terminology-w4-fix.md)单独说明前端定向验证。

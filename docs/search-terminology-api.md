@@ -6,7 +6,7 @@
 
 本次只验证独立单测、Mock／内存替身及无连接映射，迁移未执行。真实数据库约束、锁、快照隔离、提交、回滚和网络效果未验证；不以离线测试代替这些事实。
 
-2026-11-24 已同步主规格并[归档](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)。最新[核验报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)保留 1 项未修复警告 W4：混合位置的明确替换与合法自动扩展可能被前端错误拒绝；该警告不改变管理输入、回执或本文契约，也未在归档时修复。
+2026-11-24 已同步主规格并[归档](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)。[归档核验报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)记录的 W4 已于 2026-11-25 修复：前端可接受明确替换与另一处合法扩展混合的完整响应。见[修复验证](search-terminology-w4-fix.md)；管理输入、回执及本文契约未变。
 
 ## 身份与输入边界
 

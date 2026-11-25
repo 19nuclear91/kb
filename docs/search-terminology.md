@@ -4,17 +4,17 @@
 
 2026-11-24，已交付词典管理 API 与页面、独立权限和维护回执、签名上下文、不可变字面计划、共享增强搜索编排及知识搜索页交互。**功能未部署，真实环境行为未验收**。`/api/search` 和 AI 问答保持原有查询行为，不使用词典。
 
-同日经用户要求同步 10 份主规格并[归档](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)，51/51 项任务完成。第二轮完整核验为 **0 CRITICAL / 1 WARNING / 0 SUGGESTION**；原 W1～W3 已关闭，W4 仍未修复。正式契约见[术语词典](../openspec/specs/enterprise-terminology/spec.md)、[搜索辅助](../openspec/specs/search-query-assistance/spec.md)和[管理页面](../openspec/specs/admin-web-terminology/spec.md)，实际证据见[核验报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)。归档不等于无问题或上线验收通过。
+同日经用户要求同步 10 份主规格并[归档](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)，51/51 项任务完成。归档时第二轮完整核验为 **0 CRITICAL / 1 WARNING / 0 SUGGESTION**；原 W1～W3 已关闭，W4 随后于 2026-11-25 修复，见[修复验证](search-terminology-w4-fix.md)。正式契约见[术语词典](../openspec/specs/enterprise-terminology/spec.md)、[搜索辅助](../openspec/specs/search-query-assistance/spec.md)和[管理页面](../openspec/specs/admin-web-terminology/spec.md)，历史证据见[核验报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)。归档不等于上线验收通过。
 
 本文按当前实现与模拟 DOM 交互说明使用方式。示例来自固定合成词典，不是生产资料；真实数据约束、快照、网络、浏览器和排序效果均未验证。
 
 维护输入与回执见 [管理 API 契约](search-terminology-api.md)，初始化、密钥轮换与升级边界见 [运维说明](search-terminology-operations.md)。
 
-### 已知未修复问题 W4
+### W4 修复：混合替换与扩展
 
-歧义选择替换某处原词后，另一处已采纳术语可能合法补充该表达；当前前端仍把已删除的原片段计为“已存在”，错误拒绝整个成功响应。合成例：组 1 标准名 `PM`、别名 `项目`；组 2 标准名 `产品`、别名 `PM`。查询 `PM 项目` 并把第一处 PM 选为产品时，服务端计划为 `产品 项目\nPM`，前端却拒绝第二处实际新增的 PM。
+歧义选择替换某处原词后，另一处已采纳术语可能合法补充该表达。2026-11-25 已修正前端校验：已选择位置只按替换后的标准名称判断是否存在；未替换位置及待确认建议继续按原片段判断。合成例：组 1 标准名 `PM`、别名 `项目`；组 2 标准名 `产品`、别名 `PM`。查询 `PM 项目` 并把第一处 PM 选为产品时，服务端计划为 `产品 项目\nPM`，前端现在接受第二处合法新增的 PM 及完整搜索结果。
 
-这是响应校验与实际计划不一致，不是词典关系非法，也不是无命中。遇到此类拒绝可由用户主动选择“仅搜原词”，沿用最初输入和完整已提交条件；不会自动重发或切换模式，原词搜索也不表示 W4 已修复。定位与独立复现见[完整报告 W4](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)。
+仍在有效查询中的重复表达继续拒绝，同组重复位置的扩展按并集计量，字符及表达数量上限继续生效。修复范围、回归命令和实际结果见[W4 修复验证](search-terminology-w4-fix.md)，原复现保留在[归档报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)。
 
 ## 公开范围与关系维护
 

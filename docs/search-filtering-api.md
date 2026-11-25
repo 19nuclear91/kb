@@ -34,7 +34,7 @@
 
 增强错误 data=null，固定 reasonCode；辅助规模超限为 400 ASSISTANCE_LIMIT_EXCEEDED，可信到期／修订变化为 409 ASSISTANCE_STALE，词典或密钥不可用为 503 ASSISTANCE_UNAVAILABLE，其他检索依赖为 SEARCH_UNAVAILABLE。损坏签名或条件不匹配为 400 INVALID_INPUT，未知程序错误为 500 INTERNAL_ERROR；容量拒绝保留 Retry-After。不自动重发或切换原词。
 
-术语增强已于 2026-11-24 同步主规格并归档；当前仍有 W4：已替换原片段与另一处合法新增表达混合时，前端错误拒绝完整成功，而非服务端按规模或凭据规则拒绝。契约未缩减，归档不表示该问题解决。见[已知问题与主动原词恢复](search-terminology.md#已知未修复问题-w4)及[归档核验报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)。
+术语增强已于 2026-11-24 同步主规格并归档；归档时的 W4 已于 2026-11-25 修复。前端按替换后的标准名称识别已选择位置，接受其他位置合法补充旧表达的完整成功；仍拒绝真实重复表达。见[修复验证](search-terminology-w4-fix.md)及[归档核验报告](../openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/verify-report.md)。
 
 ### 统一召回
 
