@@ -14,7 +14,7 @@ import com.zhishiku.kb.app.search.execution.SearchMetrics;
 import com.zhishiku.kb.app.search.assistance.AssistedCaller;
 import com.zhishiku.kb.app.search.expansion.SearchQueryPlan;
 import com.zhishiku.kb.app.search.expansion.SearchQueryPlanner;
-import com.zhishiku.kb.app.search.web.AssistedSearchRequest;
+import com.zhishiku.kb.app.search.model.AssistedSearchInput;
 import com.zhishiku.kb.app.search.model.ChunkHit;
 import com.zhishiku.kb.app.search.model.SearchFailure;
 import com.zhishiku.kb.app.search.model.SearchFilters;
@@ -160,7 +160,9 @@ public class SearchService {
     }
 
     /** 成功版本只由已完成完整编码的增强服务结果提供。 */
-    public record AssistedResponse(byte[] json) {
+    public record AssistedResponse(
+            byte[] json
+    ) {
         public AssistedResponse {
             json = json.clone();
         }
@@ -185,7 +187,7 @@ public class SearchService {
     }
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public AssistedResponse assistedResponse(AssistedCaller caller, AssistedSearchRequest body) {
+    public AssistedResponse assistedResponse(AssistedCaller caller, AssistedSearchInput body) {
         var outcome = new java.util.concurrent.atomic.AtomicReference<>(SearchMetrics.AssistanceOutcome.FAILED);
         try {
             body.validate(limits.maxQueryCodepoints());
@@ -196,7 +198,7 @@ public class SearchService {
                     SearchAssistanceService.Prepared prepared;
                     if (body.mode() == SearchQueryPlan.Mode.ORIGINAL) {
                         caller.discardToken();
-                        var plan = new SearchQueryPlanner().plan(body.mode(), body.base().query(), limits.maxQueryCodepoints(), List.of(), null, execution::check);
+                        var plan = new SearchQueryPlanner().plan(body.mode(), body.query(), limits.maxQueryCodepoints(), List.of(), null, execution::check);
                         prepared = new SearchAssistanceService.Prepared(plan, plan.assistance(null));
                     } else {
                         prepared = executor.required(execution, SearchBudget.Stage.TERMINOLOGY, () -> {
@@ -206,7 +208,7 @@ public class SearchService {
                             return assistance.prepare(caller, body, limits.maxQueryCodepoints());
                         });
                     }
-                    List<ChunkHit> hits = List.copyOf(retrieve(execution, prepared.plan().executionText(), scope, body.candidates(), body.topK(), body.base().filters()));
+                    List<ChunkHit> hits = List.copyOf(retrieve(execution, prepared.plan().executionText(), scope, body.candidates(), body.topK(), body.filters()));
                     execution.resultCount(hits.size());
                     byte[] json = executor.required(execution, SearchBudget.Stage.RESPONSE, () -> encoder.encodeAssisted(hits, prepared.assistance()));
                     var plan = prepared.plan();
@@ -330,6 +332,9 @@ public class SearchService {
      * @param hits 已授权的分块
      * @param json 已完成限界编码的响应字节
      */
-    private record Result(List<ChunkHit> hits, byte[] json) {
+    private record Result(
+            List<ChunkHit> hits,
+            byte[] json
+    ) {
     }
 }

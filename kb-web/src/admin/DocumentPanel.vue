@@ -19,6 +19,7 @@ import RelocationBox from './RelocationBox.vue';
 import SecurityBox from './SecurityBox.vue';
 import DeletionBox from './DeletionBox.vue';
 import StewardshipBox from './StewardshipBox.vue';
+import { provideAclFormRecovery } from './aclRecovery';
 
 const props = defineProps<{ id: string }>();
 const auth = useSession(), access = useAdminAccess(), acl = shallowRef<Acl[] | undefined>(), revision = ref(0);
@@ -30,6 +31,8 @@ const deleting = ref(false), probe = ref(false), receipt = useResourceReceipt(()
 const membership = useAdminResource<QueryPage<ManagedDocument>>(signal => auth.session.json(spacePaths.documents({ documentId: props.id }), { signal }), () => `document-owner:${props.id}`);
 const title = useAdminResource<DocumentSummary>(signal => auth.session.json(`/api/documents/${props.id}`, { signal }), () => `document-title:${props.id}`);
 const owner = computed(() => !membership.loading && !membership.error ? membership.data?.items[0] : undefined), securityAllowed = computed(() => access.has(perm.securityLevelWrite));
+provideAclFormRecovery(() => ({ identity: `${auth.state.epoch}:documents:${props.id}`, spaceId: owner.value?.spaceId ?? null,
+  checking: membership.loading || access.checking, allowed: auth.state.phase === 'ready' && access.status === 'ready' && access.spaceStatus === 'ready' && !!owner.value }));
 function refreshBlocks() {
   title.reload(); acl.value = undefined; revision.value++;
 }
@@ -90,7 +93,7 @@ function relocationConflict(message: string) {
   <p v-if="operationState.validityUncertain">复审结果未确认，删除已禁用。<button @click="operations.abandonValidityUncertainties()">放弃复审结果核对（不会撤回写入）</button></p>
   <template v-if="owner"><p>当前空间 {{ owner.spaceId }} · {{ owner.spaceArchived ? '已归档' : '未归档' }}</p>
     <StewardshipBox :key="`stewardship:${id}:${owner.spaceId}`" :id="id" :archived="owner.spaceArchived" @changed="receipt = '责任人与复审设置已保存。'" @recheck="refresh" />
-    <AclPanel :key="`acl:${id}:${owner.spaceId}`" kind="documents" :resource-id="id" :archived="owner.spaceArchived" @data="acl = $event" />
+    <AclPanel :key="`acl:${id}:${owner.spaceId}`" kind="documents" :resource-id="id" :space-id="owner.spaceId" :archived="owner.spaceArchived" @data="acl = $event" @recheck="refresh" />
     <RelocationBox :key="`relocate:${id}:${owner.spaceId}`" :id="id" :source="owner.spaceId" :acl="acl" :refresh="refresh" :done="relocated" :on-conflict="relocationConflict" />
   </template><SecurityBox v-if="securityAllowed" :key="`${id}:${revision}`" :id="id" />
   <DeletionBox v-if="owner || deleting" :id="id" :owner="owner" :title="title.data?.title" :operations="operations" :open="deleting" :refresh="refresh" :on-done="deleted" :on-rejected="rejected" @open="openDeletion" @close="closeDeletion" />

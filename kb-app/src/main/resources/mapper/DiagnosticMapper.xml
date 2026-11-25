@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.auth.mapper.diagnostics.DiagnosticMapper">
+    <!-- 仅对输入精确条目核对存在性，不枚举角色／部门成员，也不创建临时业务表。 -->
+    <select id="existingEntries" resultType="string">
+        WITH entries(source_kind, principal_key, permission) AS (
+            VALUES <foreach collection="entries" item="entry" separator=",">
+                (CAST(#{entry.sourceKind} AS text), CAST(#{entry.principalKey} AS text), CAST(#{entry.permission} AS text))
+            </foreach>
+        )
+        SELECT e.source_kind || ':' || e.principal_key || ':' || e.permission FROM entries e
+        WHERE (e.source_kind = 'SPACE' AND EXISTS (SELECT 1 FROM kb_space_acl a WHERE a.space_id = #{spaceId}
+            AND a.principal_key = e.principal_key AND a.permission = e.permission))
+        OR (e.source_kind = 'DOCUMENT' AND EXISTS (SELECT 1 FROM kb_document_acl a WHERE a.doc_id = #{documentId,jdbcType=BIGINT}
+            AND a.principal_key = e.principal_key AND a.permission = e.permission))
+    </select>
+    <!-- 单资源、单用户匹配来源读取至上限加一；显示名连接仅作用于命中行。 -->
+    <select id="sources" resultType="com.zhishiku.kb.app.auth.model.diagnostics.DiagnosticFacts$Acl">
+        SELECT a.source_kind, a.principal_type, a.principal_id, a.principal_key,
+            COALESCE(CASE a.principal_type WHEN 1 THEN u.display_name WHEN 2 THEN r.name WHEN 3 THEN d.name END,
+                a.principal_id::text) AS label, a.permission, false AS proposed
+        FROM (
+            SELECT 'SPACE' AS source_kind, principal_type, principal_id, principal_key, permission
+                FROM kb_space_acl a WHERE space_id = #{spaceId}
+                AND <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.principalMatch"><property name="alias" value="a"/></include>
+            <if test="documentId != null">
+                UNION ALL SELECT 'DOCUMENT', principal_type, principal_id, principal_key, permission
+                    FROM kb_document_acl a WHERE doc_id = #{documentId}
+                    AND <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.principalMatch"><property name="alias" value="a"/></include>
+            </if>
+            LIMIT #{fetch}
+        ) a
+        LEFT JOIN sys_user u ON a.principal_type = 1 AND u.id = a.principal_id
+        LEFT JOIN sys_role r ON a.principal_type = 2 AND r.id = a.principal_id
+        LEFT JOIN sys_dept d ON a.principal_type = 3 AND d.id = a.principal_id
+        ORDER BY a.source_kind, a.principal_type, a.principal_id, a.permission
+    </select>
+    <sql id="hypothesis">
+        <!-- 内存行集只作为本条 SELECT 的 CTE 参数，不写回 ACL，不作为业务执行资格。 -->
+        WITH diagnostic_rows(source_kind, principal_key, permission) AS (
+            <choose>
+                <when test="rows != null and rows.size() > 0">
+                    VALUES <foreach collection="rows" item="row" separator=",">(CAST(#{row.sourceKind} AS text), CAST(#{row.principalKey} AS text), CAST(#{row.permission} AS text))</foreach>
+                </when>
+                <otherwise>SELECT NULL::text, NULL::text, NULL::text WHERE FALSE</otherwise>
+            </choose>
+        ), diagnostic_space AS (
+            SELECT CAST(#{spaceId} AS bigint) AS space_id, principal_key, permission FROM diagnostic_rows WHERE source_kind = 'SPACE'
+        ), diagnostic_document AS (
+            SELECT CAST(#{documentId,jdbcType=BIGINT} AS bigint) AS doc_id, principal_key, permission FROM diagnostic_rows WHERE source_kind = 'DOCUMENT'
+        )
+    </sql>
+    <select id="grants" resultType="com.zhishiku.kb.app.auth.model.diagnostics.DiagnosticFacts$Grant">
+        <include refid="hypothesis"/>
+        SELECT p.permission,
+            (<include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.spaceGrant">
+                <property name="spaceTable" value="diagnostic_space"/><property name="spaceId" value="#{spaceId}"/><property name="permission" value="p.permission"/>
+            </include> OR (p.permission = 'manage' AND #{globalManage})) AS space_granted,
+            (<include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.spaceGrant">
+                <property name="spaceTable" value="diagnostic_space"/><property name="spaceId" value="#{spaceId}"/><property name="permission" value="p.permission"/>
+            </include> OR (p.permission IN ('view','download','edit','comment') AND
+            <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.documentGrant">
+                <property name="documentTable" value="diagnostic_document"/><property name="permission" value="p.permission"/>
+            </include>)) AS document_granted
+        FROM (VALUES ('view'),('download'),('edit'),('review'),('comment'),('manage')) p(permission)
+        CROSS JOIN (SELECT CAST(#{documentId,jdbcType=BIGINT} AS bigint) AS id) d
+    </select>
+    <select id="current" resultType="com.zhishiku.kb.app.auth.model.diagnostics.DiagnosticFacts$Current">
+        <!-- 只读取真实发布指针的条件；非空指针损坏与无指针分别投影，由服务整体拒绝损坏事实。 -->
+        <include refid="hypothesis"/>
+        SELECT d.current_version_id IS NOT NULL AS has_current,
+            COALESCE(v.id IS NOT NULL AND <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.publishedEvidence"/>, false) AS valid_current,
+            d.security_level &lt;= #{clearance} AS clearance_passed,
+            COALESCE(<include refid="currentAccess"/>, false) AS view_allowed,
+            COALESCE(<include refid="currentAccess"/> AND (
+                <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.spaceGrant">
+                    <property name="spaceTable" value="diagnostic_space"/><property name="spaceId" value="d.space_id"/><property name="permission" value="'download'"/>
+                </include> OR <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.documentGrant">
+                    <property name="documentTable" value="diagnostic_document"/><property name="permission" value="'download'"/>
+                </include>), false) AS download_allowed
+        FROM kb_document d LEFT JOIN kb_document_version v ON v.id = d.current_version_id AND v.doc_id = d.id
+        WHERE d.id = #{documentId} AND d.space_id = #{spaceId} AND d.status &lt;&gt; 'deleted'
+    </select>
+    <sql id="currentAccess">
+        v.id IS NOT NULL AND <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.publishedEvidence"/>
+        AND d.security_level &lt;= #{clearance}
+        AND <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.activeSpace"/>
+        AND <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.currentViewGrant">
+            <property name="spaceTable" value="diagnostic_space"/><property name="documentTable" value="diagnostic_document"/>
+        </include>
+    </sql>
+</mapper>

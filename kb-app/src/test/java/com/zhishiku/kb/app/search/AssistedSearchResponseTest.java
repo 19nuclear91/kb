@@ -24,6 +24,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.argThat;
 
 /** 完整编码及直接控制器投影，不组装 MVC。 */
 class AssistedSearchResponseTest {
@@ -49,6 +51,8 @@ class AssistedSearchResponseTest {
         assertThat(response.getHeaders().getFirst("X-Search-Filter-Version")).isEqualTo("1");
         assertThat(response.getHeaders().getFirst("Cache-Control")).isEqualTo("no-store");
         assertThat(response.getBody()).isEqualTo(encoded);
+        verify(service).assistedResponse(any(), argThat(input -> input.query().equals("OA") && input.candidates() == 50
+                && input.topK() == 50 && input.mode() == SearchQueryPlan.Mode.ORIGINAL && !input.filters().restricted()));
     }
 
     @Test

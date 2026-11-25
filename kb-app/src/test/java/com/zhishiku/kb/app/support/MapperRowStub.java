@@ -34,6 +34,10 @@ public final class MapperRowStub {
     public static Configuration configuration(String resource) throws IOException {
         Configuration configuration = new Configuration();
         configuration.setMapUnderscoreToCamelCase(true);
+        String rules = "/mapper/AuthorizationRules.xml";
+        try (var input = MapperRowStub.class.getResourceAsStream(rules)) {
+            new XMLMapperBuilder(input, configuration, rules, configuration.getSqlFragments()).parse();
+        }
         try (var input = MapperRowStub.class.getResourceAsStream(resource)) {
             assertThat(input).as(resource).isNotNull();
             new XMLMapperBuilder(input, configuration, resource, configuration.getSqlFragments()).parse();

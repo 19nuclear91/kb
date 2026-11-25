@@ -15,6 +15,7 @@ export const perm = {
   userRead: 'identity:user:read', userWrite: 'identity:user:write', password: 'identity:user:password', clearance: 'identity:clearance:write',
   roleRead: 'identity:role:read', roleAssign: 'identity:role:assign', roleWrite: 'identity:role:write', deptRead: 'identity:dept:read', deptWrite: 'identity:dept:write',
   spaceCreate: 'space:create', spaceManageAll: 'space:manage-all', grantManage: 'space:grant-manage', securityLevelWrite: 'document:security-level:write',
+  diagnose: 'authorization:diagnose',
   embeddingRead: 'embedding:read', embeddingRebuild: 'embedding:rebuild', deadLetterRead: 'parse:deadletter:read', deadLetterReplay: 'parse:deadletter:replay',
   auditRead: 'audit:read',
   aiUsageRead: 'ai:usage:read', aiAuditRead: 'ai:audit:read',

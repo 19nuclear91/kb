@@ -65,6 +65,11 @@ logging:
     com.zhishiku.kb: INFO
     com.zhishiku.kb.app.search.mapper: "OFF"
     com.zhishiku.kb.app.search.term.mapper: "OFF"
+    com.zhishiku.kb.app.auth.mapper.diagnostics: "OFF"
+    com.zhishiku.kb.app.auth.mapper.IdentityDepartmentMapper: "OFF"
+    com.zhishiku.kb.app.auth.mapper.PermissionMapper: "OFF"
+    com.zhishiku.kb.app.auth.mapper.RolePermissionMapper: "OFF"
+    com.zhishiku.kb.app.space.mapper.SpaceMapper: "OFF"
     com.zhishiku.kb.app.conversation.mapper: "OFF"
     com.zhishiku.kb.app.knowledgegap.mapper: "OFF"
     com.zhishiku.kb.app.auth.mapper.IdentityQueryMapper: "OFF"

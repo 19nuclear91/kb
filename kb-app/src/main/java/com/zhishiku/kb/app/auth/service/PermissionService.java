@@ -155,7 +155,7 @@ public class PermissionService {
                 : mapper.findVisibleSpaceIds(new ArrayList<>(handle.principalKeys), permission);
         PermissionScope scope = PermissionScope.of(
                 handle.userId, handle.clearanceLevel, visibleSpaces, handle.principalKeys);
-        log.debug("权限解析完成: {} permission={}", scope, permission);
+        log.debug("权限解析完成 stage=resource permission={}", permission);
         return scope;
     }
 

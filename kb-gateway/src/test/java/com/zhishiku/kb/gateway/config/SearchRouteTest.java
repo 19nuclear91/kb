@@ -44,7 +44,10 @@ class SearchRouteTest {
             var binder = Binder.get(env);
             var definitions = binder.bind("spring.cloud.gateway", GatewayProperties.class).get().getRoutes();
             for (String searchPath : new String[]{"/api/search", "/api/search/assisted", "/api/search/categories", "/api/search/tags",
-                    "/api/admin/search-terms/terms/query", "/api/admin/search-terms/corrections/1/enabled", "/api/admin/search-terms/commands/query"}) {
+                    "/api/admin/search-terms/terms/query", "/api/admin/search-terms/corrections/1/enabled", "/api/admin/search-terms/commands/query",
+                    "/api/admin/spaces/10/authorization-diagnostics/explain", "/api/admin/spaces/10/authorization-diagnostics/preview",
+                    "/api/admin/spaces/10/authorization-diagnostics/users/search", "/api/admin/documents/20/authorization-diagnostics/explain",
+                    "/api/admin/documents/20/authorization-diagnostics/preview", "/api/admin/documents/20/authorization-diagnostics/users/search"}) {
                 var search = MockServerWebExchange.from(MockServerHttpRequest.post(searchPath));
                 int matches = 0;
                 for (var definition : definitions) {
@@ -85,7 +88,8 @@ class SearchRouteTest {
     @Test
     void candidateDenialsAreUncacheableAndVersionHeaderIsOnlyPassedThrough() {
         for (String path : new String[]{"/api/search", "/api/search/assisted", "/api/search/categories", "/api/search/tags",
-                "/api/admin/search-terms/terms/query", "/api/admin/search-terms/commands/query"}) {
+                "/api/admin/search-terms/terms/query", "/api/admin/search-terms/commands/query",
+                "/api/admin/spaces/10/authorization-diagnostics/users/search", "/api/admin/documents/20/authorization-diagnostics/unknown"}) {
             for (var status : new HttpStatus[]{HttpStatus.OK, HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN}) {
                 for (String version : new String[]{"", "1", "2"}) {
                     var exchange = MockServerWebExchange.from(MockServerHttpRequest.post(path));

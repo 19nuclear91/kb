@@ -3,6 +3,7 @@ package com.zhishiku.kb.app.search.web;
 import cn.dev33.satoken.stp.StpUtil;
 import com.zhishiku.kb.app.search.config.SearchLimitsProperties;
 import com.zhishiku.kb.app.search.model.SearchInput;
+import com.zhishiku.kb.app.search.model.AssistedSearchViews;
 import com.zhishiku.kb.app.search.service.SearchService;
 import com.zhishiku.kb.app.search.assistance.AssistedCaller;
 import com.zhishiku.kb.app.search.expansion.SearchQueryPlan;
@@ -77,7 +78,24 @@ public class SearchController {
     }
 
     @PostMapping(value = "/assisted", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<byte[]> assisted(@RequestBody AssistedSearchRequest body, HttpServletRequest request) {
+    @Operation(summary = "辅助检索", description = "在当前用户授权范围检索；ASSISTED 使用词典辅助与人工选择，ORIGINAL 使用原文；不接受 URL 查询参数")
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
+            content = @Content(schema = @Schema(implementation = AssistedSearchRequest.class)))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "完整 JSON 的 R 成功封装，带过滤及辅助契约版本头，Cache-Control 为 no-store",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = AssistedSearchViews.Response.class))),
+            @ApiResponse(responseCode = "400", description = "输入、选择区间或上下文绑定无效"),
+            @ApiResponse(responseCode = "401", description = "缺少有效登录或认证代次"),
+            @ApiResponse(responseCode = "403", description = "身份或强制改密条件不满足"),
+            @ApiResponse(responseCode = "409", description = "词典或选择上下文已变化，须重新检索"),
+            @ApiResponse(responseCode = "413", description = "请求正文超过字节上限"),
+            @ApiResponse(responseCode = "429", description = "本人搜索并发超限，可带 Retry-After 秒数"),
+            @ApiResponse(responseCode = "503", description = "系统容量、预算、依赖或辅助处理暂不可用，不返回部分成功结果")
+    })
+    public ResponseEntity<byte[]> assisted(
+            @RequestBody
+            AssistedSearchRequest body,
+            HttpServletRequest request) {
         try {
             if (request.getQueryString() != null) {
                 throw new SearchFailure(SearchFailure.Kind.INVALID_INPUT);
@@ -91,7 +109,7 @@ public class SearchController {
             }
             var caller = verifiedCaller(session, body.mode(), request);
             try {
-                var result = searchService.assistedResponse(caller, body);
+                var result = searchService.assistedResponse(caller, body.toInput());
                 return ResponseEntity.ok().header("Cache-Control", "no-store").header("X-Search-Filter-Version", result.filterVersion())
                         .header("X-Search-Assistance-Version", result.assistanceVersion()).contentType(MediaType.APPLICATION_JSON).body(result.json());
             } finally {

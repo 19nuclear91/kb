@@ -485,14 +485,26 @@ public class IdentityService {
     @Transactional(readOnly = true)
     public ResolvedPrincipal resolvePrincipal(long userId) {
         IdentityRecord user = requireIdentity(userId);
-        if (!Boolean.TRUE.equals(user.getEnabled())) throw IdentityException.disabled("用户已停用");
-        long departmentId = user.getDepartmentId() == null ? 0 : user.getDepartmentId();
-        DepartmentRecord department = departmentId <= 0 ? null : mapper.findDepartment(departmentId);
-        if (department == null) throw IdentityException.disabled("用户没有有效主部门");
-        if (!Boolean.TRUE.equals(department.getEnabled())) throw IdentityException.disabled("用户主部门已停用");
+        long departmentId = requirePrimaryDepartment(user);
         List<Long> roles = permissionMapper == null ? List.of() : permissionMapper.findRoleIds(userId);
         List<Long> chain = permissionMapper == null ? List.of() : permissionMapper.findDeptChainIds(userId);
         return new ResolvedPrincipal(userId, departmentId, clearance(user), roles, chain);
+    }
+
+    /** 在线主体与只读诊断共用有效身份语义；调用方只能传入服务器读取的身份事实。 */
+    public long requirePrimaryDepartment(IdentityRecord user) {
+        if (!Boolean.TRUE.equals(user.getEnabled())) {
+            throw IdentityException.disabled("用户已停用");
+        }
+        long departmentId = user.getDepartmentId() == null ? 0 : user.getDepartmentId();
+        DepartmentRecord department = departmentId <= 0 ? null : mapper.findDepartment(departmentId);
+        if (department == null) {
+            throw IdentityException.disabled("用户没有有效主部门");
+        }
+        if (!Boolean.TRUE.equals(department.getEnabled())) {
+            throw IdentityException.disabled("用户主部门已停用");
+        }
+        return departmentId;
     }
 
     @Transactional(readOnly = true)

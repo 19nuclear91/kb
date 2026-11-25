@@ -29,12 +29,29 @@ public interface PermissionMapper {
              WHERE u.id = #{userId}
                AND u.enabled = true
                AND d.enabled = true
-               AND t.id <> ''
-            """)
-    List<Long> findDeptChainIds(@Param("userId") long userId);
+                AND t.id <> ''
+              LIMIT #{fetch}
+             """)
+    List<Long> findDeptChainIdsBounded(
+            @Param("userId")
+            long userId,
+            @Param("fetch")
+            int fetch);
 
-    @Select("SELECT role_id FROM sys_user_role WHERE user_id = #{userId}")
-    List<Long> findRoleIds(@Param("userId") long userId);
+    default List<Long> findDeptChainIds(long userId) {
+        return findDeptChainIdsBounded(userId, Integer.MAX_VALUE);
+    }
+
+    @Select("SELECT role_id FROM sys_user_role WHERE user_id = #{userId} LIMIT #{fetch}")
+    List<Long> findRoleIdsBounded(
+            @Param("userId")
+            long userId,
+            @Param("fetch")
+            int fetch);
+
+    default List<Long> findRoleIds(long userId) {
+        return findRoleIdsBounded(userId, Integer.MAX_VALUE);
+    }
 
     /**
      * 为 SaTokenRoleProvider 查询角色 code。ACL 主体仍使用 findRoleIds 的数字 ID；
@@ -75,19 +92,6 @@ public interface PermissionMapper {
      * 被委派的空间管理员连"取消归档"都无法执行，会永久失去该空间
      * （全局管理员仍可兜底，但被委派者不行）。
      */
-    @Select("""
-            <script>
-            SELECT DISTINCT a.space_id
-              FROM kb_space_acl a
-              JOIN kb_space s ON s.id = a.space_id
-             WHERE a.permission = #{permission}
-               AND (s.archived = false OR a.permission = 'manage')
-               AND a.principal_key IN
-                   <foreach item="k" collection="principalKeys" open="(" separator="," close=")">
-                     #{k}
-                   </foreach>
-            </script>
-            """)
     List<Long> findVisibleSpaceIds(@Param("principalKeys") List<String> principalKeys,
                                    @Param("permission") String permission);
 }

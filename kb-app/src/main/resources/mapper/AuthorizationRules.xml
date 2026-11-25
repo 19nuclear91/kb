@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.authorization.AuthorizationRules">
+    <!-- include 属性均由固定 Mapper 提供，在构建 SQL 片段时解析，不接受请求字段。 -->
+    <sql id="principalMatch">
+        <choose>
+            <when test="principalKeys != null and principalKeys.size() > 0">
+                ${alias}.principal_key IN
+                <foreach collection="principalKeys" item="key" open="(" separator="," close=")">#{key}</foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+    </sql>
+    <sql id="spaceGrant">
+        EXISTS (SELECT 1 FROM ${spaceTable} a WHERE a.space_id = ${spaceId}
+            AND a.permission = ${permission}
+            AND <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.principalMatch"><property name="alias" value="a"/></include>)
+    </sql>
+    <sql id="documentGrant">
+        EXISTS (SELECT 1 FROM ${documentTable} a WHERE a.doc_id = d.id
+            AND a.permission = ${permission}
+            AND <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.principalMatch"><property name="alias" value="a"/></include>)
+    </sql>
+    <sql id="currentViewGrant">
+        (<include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.spaceGrant"><property name="spaceId" value="d.space_id"/><property name="permission" value="'view'"/></include>
+        OR <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.documentGrant"><property name="permission" value="'view'"/></include>)
+    </sql>
+    <sql id="activeSpace">
+        EXISTS (SELECT 1 FROM kb_space s WHERE s.id = d.space_id AND s.archived = false)
+    </sql>
+    <sql id="publishedEvidence">
+        (v.publication_evidence IN ('PUBLISHED', 'OBSERVED_CURRENT') OR v.publication_protocol = 'LEGACY_COMPAT')
+    </sql>
+</mapper>

@@ -158,7 +158,7 @@ public class DocumentAclService {
      * {@code comment} 例外只为该文档增加发表资格，不隐含 view 或足够密级。真正的"收紧"请求在
      * 本表结构里无法表达——本表只存授予，不存拒绝——所以这里的拒绝是语义层面的第一道闸。
      */
-    private static String requireWideningPermission(String permission) {
+    public static String requireWideningPermission(String permission) {
         if (permission == null || permission.isBlank()) {
             throw IdentityException.badRequest("permission 不能为空");
         }

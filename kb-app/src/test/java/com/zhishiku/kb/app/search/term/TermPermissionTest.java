@@ -109,18 +109,19 @@ class TermPermissionTest {
         when(identities.findIdentityByUsername("root")).thenReturn(credential);
         when(identities.findIdentity(7)).thenReturn(new IdentityRecord(7L, "root", "管理员", 5L, (short) 1, true, 0L, null, null));
         when(identities.findDepartmentByCode("HQ")).thenReturn(new DepartmentRecord(5L, null, "HQ", "总部", "/5/", true, 0L, null, null));
-        var runner = new AdminBootstrapRunner(new BootstrapProperties(
+        java.util.function.Supplier<AdminBootstrapRunner> createRunner = () -> new AdminBootstrapRunner(new BootstrapProperties(
                 new BootstrapProperties.Admin("root", "unit-test-password", "管理员", (short) 1), null),
                 identities, mock(IdentityAuditService.class), mock(SecurityLevelDictionary.class),
                 mock(BCryptPasswordEncoder.class), new AuthPasswordProperties(8), permissions);
-        runner.run(null);
+        createRunner.get().run(null);
         assertThat(persisted).containsExactlyInAnyOrderElementsOf(Permission.codes());
-        assertThat(persisted).contains("search:term:read", "search:term:write");
+        assertThat(persisted).contains("search:term:read", "search:term:write", "authorization:diagnose");
         persisted.remove("search:term:write");
+        persisted.remove("authorization:diagnose");
         clearInvocations(permissions);
-        runner.run(null);
-        runner.run(null);
-        assertThat(persisted).doesNotContain("search:term:write");
+        createRunner.get().run(null);
+        createRunner.get().run(null);
+        assertThat(persisted).doesNotContain("search:term:write", "authorization:diagnose");
         verify(permissions, never()).grantPermission(anyLong(), anyString());
         verify(permissions, never()).revokePermission(anyLong(), anyString());
     }

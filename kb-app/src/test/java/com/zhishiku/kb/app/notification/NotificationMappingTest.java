@@ -40,7 +40,7 @@ class NotificationMappingTest {
         configuration = new Configuration();
         configuration.setMapUnderscoreToCamelCase(true);
         configuration.getTypeHandlerRegistry().register(UUID.class, UuidTypeHandler.class);
-        for (String resource : List.of("/mapper/DocumentMapper.xml", "/mapper/DocumentReviewEligibilityMapper.xml",
+        for (String resource : List.of("/mapper/AuthorizationRules.xml", "/mapper/DocumentMapper.xml", "/mapper/DocumentReviewEligibilityMapper.xml",
                 "/mapper/DocumentCommentMapper.xml", "/mapper/KnowledgeGapMapper.xml", "/mapper/UserNotificationMapper.xml",
                 "/mapper/NotificationDerivationMapper.xml")) {
             parse(configuration, resource);
@@ -131,7 +131,7 @@ class NotificationMappingTest {
         parse(probed, "/mapper/DocumentReviewEligibilityMapper.xml");
         var probe = new XPathParser("<sql id=\"pendingReviewer\">#{pendingReviewerProbe} = 1</sql>").evalNode("/sql");
         assertThat(probed.getSqlFragments().replace(PENDING_REVIEWER, probe)).as(PENDING_REVIEWER).isNotNull();
-        for (String resource : List.of("/mapper/DocumentMapper.xml", "/mapper/DocumentReviewQueryMapper.xml",
+        for (String resource : List.of("/mapper/AuthorizationRules.xml", "/mapper/DocumentMapper.xml", "/mapper/DocumentReviewQueryMapper.xml",
                 "/mapper/DocumentCommentMapper.xml", "/mapper/KnowledgeGapMapper.xml", "/mapper/UserNotificationMapper.xml")) {
             parse(probed, resource);
         }
@@ -187,7 +187,7 @@ class NotificationMappingTest {
         var probed = new Configuration();
         probed.setMapUnderscoreToCamelCase(true);
         probed.getTypeHandlerRegistry().register(UUID.class, UuidTypeHandler.class);
-        for (String resource : List.of("/mapper/DocumentMapper.xml", "/mapper/DocumentReviewEligibilityMapper.xml",
+        for (String resource : List.of("/mapper/AuthorizationRules.xml", "/mapper/DocumentMapper.xml", "/mapper/DocumentReviewEligibilityMapper.xml",
                 "/mapper/DocumentCommentMapper.xml", "/mapper/KnowledgeGapMapper.xml")) {
             parse(probed, resource);
         }

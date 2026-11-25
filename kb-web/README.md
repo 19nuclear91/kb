@@ -14,6 +14,12 @@ npm run build
 
 单元测试仅使用内存替身和模拟 DOM，不启动应用、浏览器、数据库、Redis、MinIO 或模型服务，不测试说明文档内容。
 
+空间／文档管理新增权限诊断与可选授权预演。新资格 `authorization:diagnose` 必须与当前管理范围同时确认；从最小用户选择或 USER 行进入，仅解释一个用户与资源。结果严格绑定当前用户、资源、草稿、会话及请求代次；关闭、隐藏或改草稿清理结果，恢复后主动重试。预演不可用不阻止原合法授权提交，写入在途／未知及删除协调期间暂停读取，不能借诊断结清原写入。详见 [权限诊断](../docs/authorization-diagnostics.md)。
+
+该变更已于 2026-11-25 同步四份主规格并[归档](../openspec/changes/archive/2026-11-25-permission-explanation-and-authorization-preview/archive-record.md)，42/42 项任务完成。预演 403／404 重核成功后恢复原授权草稿并保留提示；失权、搬迁、身份变化或离页时清理待恢复表单。最终前端白名单 **9 文件／145 项**、类型检查、静态构建及包体隔离通过，核验为 0 CRITICAL、0 WARNING、0 SUGGESTION，详见[最终报告](../openspec/changes/archive/2026-11-25-permission-explanation-and-authorization-preview/verification-report-3.md)。未部署，真实浏览器及联调仍未验证。
+
+`DiagnosticHost` 仅在管理页显示开关，点击后动态加载 `src/authorization/DiagnosticPanel.vue`、API 与结果组件；包体报告登记 `authorizationDiagnostics` 场景，入口／登录／普通文档列表不得提前包含诊断实现。与旧基线比较时显式登记 `--new-scenarios authorizationDiagnostics`。
+
 版本对比页为 `/documents/:documentId/compare/:baseVersionId/:targetVersionId`，身份确认后独立懒加载，支持合法登录返回。文档详情的版本历史可从可见版本中选择基准与目标；默认采用说明基准，否则选择最近的已发布旧版本。审核上下文提供“与当前发布版本对比”入口和只读说明。
 
 详情页展示选中版本的变更说明、基准、更正和发布后补写标记及分页修改历史。待审可清除，审核中冻结，发布后修改已有说明必须填写原因。说明写入参与删除互斥；结果未确认时只允许原标识重试、读取核对或显式放弃。对比页显示纯文本结构差异、表格与数值变化，并分别说明缺快照、规模过大、超时、相似度过低及解析质量提示。读取说明失败不影响差异和审核操作。完整协议见 [版本对比与变更说明](../docs/version-diff-and-change-notes.md)。

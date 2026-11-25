@@ -25,6 +25,7 @@ export const routes = {
   aiUsage: ['src/admin/AiUsagePage.vue'], aiAudits: ['src/admin/AiAuditsPage.vue'],
   operations: ['src/admin/OperationsReportsPage.vue'], tags: ['src/admin/DocumentTagsPage.vue'],
   searchTerms: ['src/admin/SearchTermsPage.vue'],
+  authorizationDiagnostics: ['src/authorization/DiagnosticPanel.vue'],
 };
 export const compression = { gzipLevel: 9, brotliQuality: 11, basis: '逐文件压缩后求和，字节' };
 const fail = message => { throw new Error(message); };
@@ -109,6 +110,7 @@ export function checkIsolation(report) {
     if (list.has(id)) fail(`列表包含详情专用模块: ${id}`);
   }
   if ([...entry, ...list].some(id => id.startsWith('src/imports/'))) fail('入口或文档列表提前包含导入实现');
+  if ([...entry, ...login, ...list].some(id => id.startsWith('src/authorization/'))) fail('普通入口提前包含权限诊断实现');
   if ([...entry, ...list].some(id => id.startsWith('src/versionDiff/') || id.startsWith('src/changeNotes/'))) fail('入口或文档列表提前包含版本对比或说明实现');
   // 导航可使用极小的地址白名单助手；其余问题 API、表单、正文及反馈实现都必须留在异步业务集合。
   if ([...entry, ...login, ...list].some(id => id.startsWith('src/knowledgeGaps/') && id !== 'src/knowledgeGaps/routes.ts')) {

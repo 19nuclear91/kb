@@ -21,14 +21,13 @@ import com.zhishiku.kb.app.search.expansion.SyntheticTermDictionary;
 import com.zhishiku.kb.app.search.model.ChunkHit;
 import com.zhishiku.kb.app.search.model.SearchFailure;
 import com.zhishiku.kb.app.search.model.SearchFilters;
+import com.zhishiku.kb.app.search.model.AssistedSearchInput;
 import com.zhishiku.kb.app.search.rerank.RerankClient;
 import com.zhishiku.kb.app.search.service.QueryRetrievalService;
 import com.zhishiku.kb.app.search.service.SearchAssistanceService;
 import com.zhishiku.kb.app.search.service.SearchService;
 import com.zhishiku.kb.app.search.term.TermSnapshot;
 import com.zhishiku.kb.app.search.term.TermSnapshotReader;
-import com.zhishiku.kb.app.search.web.AssistedSearchRequest;
-import com.zhishiku.kb.app.search.web.SearchRequest;
 import com.zhishiku.kb.common.embedding.EmbeddingClientRegistry;
 import com.zhishiku.kb.common.embedding.EmbeddingConnection;
 import com.zhishiku.kb.common.embedding.EmbeddingControl;
@@ -127,14 +126,14 @@ class AssistedSearchServiceTest {
             vector[0] = 1;
             return new EmbeddingResult(profile, EmbeddingRole.QUERY, List.of(vector));
         });
-        var request = new AssistedSearchRequest(new SearchRequest("OA", 20, 5, 3L, null, false, List.of(9L, 1L),
+        var request = new AssistedSearchInput("OA", 20, 5, new SearchFilters(3L, null, false, List.of(9L, 1L),
                 SearchFilters.FileType.PDF, null, null), SearchQueryPlan.Mode.ASSISTED, null, List.of());
         var hit = hit();
-        when(f.retrieval.retrieve(eq(execution), any(), eq(scope), eq(20), eq(request.base().filters()))).thenReturn(List.of(hit));
+        when(f.retrieval.retrieve(eq(execution), any(), eq(scope), eq(20), eq(request.filters()))).thenReturn(List.of(hit));
         when(f.rerank.rerank(execution, List.of(hit), 5)).thenReturn(List.of(hit));
         var response = f.service.assistedResponse(caller(), request);
         verify(f.embedding).embed(eq(List.of(execution)), any());
-        verify(f.retrieval).retrieve(eq(execution), any(), eq(scope), eq(20), eq(request.base().filters()));
+        verify(f.retrieval).retrieve(eq(execution), any(), eq(scope), eq(20), eq(request.filters()));
         verify(f.rerank).rerank(execution, List.of(hit), 5);
         var data = f.json.readTree(response.json()).get("data");
         assertThat(data.get("hits").get(0).get("chunkId").textValue()).isEqualTo(Long.toString(Long.MAX_VALUE));
@@ -146,7 +145,7 @@ class AssistedSearchServiceTest {
         var f = new Fixture();
         var response = f.service.assistedResponse(caller(), body("PM", SearchQueryPlan.Mode.ASSISTED));
         String context = f.json.readTree(response.json()).get("data").get("assistance").get("selectionContext").textValue();
-        var chosen = new AssistedSearchRequest(new SearchRequest("PM", null, null), SearchQueryPlan.Mode.ASSISTED, context,
+        var chosen = new AssistedSearchInput("PM", 50, 50, SearchFilters.empty(), SearchQueryPlan.Mode.ASSISTED, context,
                 List.of(new SearchQueryPlan.Selection(SearchQueryPlan.SelectionKind.DISAMBIGUATION, 0, 2, 3)));
         var adopted = f.json.readTree(f.service.assistedResponse(caller(), chosen).json()).get("data").get("assistance");
         assertThat(adopted.get("effectiveQuery").textValue()).isEqualTo("项目管理");
@@ -189,8 +188,8 @@ class AssistedSearchServiceTest {
         return new AssistedCaller(7, 3, "verified-session-token");
     }
 
-    private static AssistedSearchRequest body(String query, SearchQueryPlan.Mode mode) {
-        return new AssistedSearchRequest(new SearchRequest(query, null, null), mode, null, List.of());
+    private static AssistedSearchInput body(String query, SearchQueryPlan.Mode mode) {
+        return new AssistedSearchInput(query, 50, 50, SearchFilters.empty(), mode, null, List.of());
     }
 
     private static ChunkHit hit() {

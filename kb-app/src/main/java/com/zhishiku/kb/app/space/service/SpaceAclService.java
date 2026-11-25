@@ -203,7 +203,8 @@ public class SpaceAclService {
                 && savedPermissions.equals(new HashSet<>(permissions));
     }
 
-    private static List<String> validateBatch(List<SpaceAclPrincipal> principals, List<String> permissions) {
+    /** 纯输入规则，供正式写入和只读预演共用，不读取回执或持锁。 */
+    public static List<String> validateBatch(List<SpaceAclPrincipal> principals, List<String> permissions) {
         if (principals == null || principals.isEmpty() || principals.size() > 50) {
             throw IdentityException.badRequest("主体列表不能为空，须包含 1 至 50 个主体，上限为 50");
         }
@@ -292,7 +293,8 @@ public class SpaceAclService {
         return normalized;
     }
 
-    private static List<SpaceAclBatchRevokeItem> validateRevokeBatch(List<SpaceAclBatchRevokeItem> items) {
+    /** 显式撤销条目的纯校验，不要求残留主体仍然存在。 */
+    public static List<SpaceAclBatchRevokeItem> validateRevokeBatch(List<SpaceAclBatchRevokeItem> items) {
         if (items == null || items.isEmpty() || items.size() > 300) {
             throw IdentityException.badRequest("撤销条目不能为空，须包含 1 至 300 条，上限为 300");
         }

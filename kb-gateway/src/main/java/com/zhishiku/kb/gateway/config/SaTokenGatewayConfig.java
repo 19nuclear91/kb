@@ -6,6 +6,7 @@ import cn.dev33.satoken.reactor.filter.SaReactorFilter;
 import cn.dev33.satoken.stp.StpUtil;
 import com.zhishiku.kb.common.api.R;
 import com.zhishiku.kb.common.security.AuthenticationEndpoints;
+import com.zhishiku.kb.common.security.AuthorizationDiagnosticEndpoints;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -51,6 +52,10 @@ public class SaTokenGatewayConfig {
                         // 500 会把一次可预期的拒绝报成服务端故障。
                         exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
                         exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+                        if (AuthorizationDiagnosticEndpoints.matches(exchange.getRequest().getPath().value())) {
+                            exchange.getResponse().getHeaders().setCacheControl("no-store");
+                            return "{\"code\":500,\"message\":\"登录状态无效或已过期\",\"data\":null,\"reasonCode\":\"UNAUTHORIZED\"}";
+                        }
                     }
                     return SaManager.getSaJsonTemplate()
                             .objectToJson(R.fail("登录状态无效或已过期"));

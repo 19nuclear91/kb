@@ -4,6 +4,7 @@ import cn.dev33.satoken.reactor.context.SaReactorSyncHolder;
 import cn.dev33.satoken.stp.StpUtil;
 import com.zhishiku.kb.common.api.ApiException;
 import com.zhishiku.kb.common.security.AuthenticationEndpoints;
+import com.zhishiku.kb.common.security.AuthorizationDiagnosticEndpoints;
 import com.zhishiku.kb.common.security.IdentityException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -66,7 +67,11 @@ public class CurrentIdentityFilter implements WebFilter {
         exchange.getResponse().setStatusCode(HttpStatusCode.valueOf(status));
         exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
         exchange.getResponse().getHeaders().setCacheControl("no-store");
-        byte[] body = ("{\"code\":500,\"message\":\"" + message + "\",\"data\":null}").getBytes(StandardCharsets.UTF_8);
+        String reason = "";
+        if (AuthorizationDiagnosticEndpoints.matches(exchange.getRequest().getPath().value())) {
+            reason = ",\"reasonCode\":\"" + (status == 401 ? "UNAUTHORIZED" : status == 403 ? "FORBIDDEN" : "DIAGNOSTIC_UNAVAILABLE") + "\"";
+        }
+        byte[] body = ("{\"code\":500,\"message\":\"" + message + "\",\"data\":null" + reason + "}").getBytes(StandardCharsets.UTF_8);
         return exchange.getResponse().writeWith(Mono.just(exchange.getResponse().bufferFactory().wrap(body)));
     }
 }

@@ -36,6 +36,14 @@ class AssistedSearchInputTest {
         assertThat(selected.selections().getFirst().termId()).isEqualTo(Long.MAX_VALUE);
         assertThat(selected.base().spaceId()).isEqualTo(Long.MAX_VALUE);
         assertThat(selected.base().tagIds()).containsExactly(1L, 9L);
+        var serviceInput = selected.toInput();
+        assertThat(serviceInput.query()).isEqualTo("😀PM");
+        assertThat(serviceInput.candidates()).isEqualTo(20);
+        assertThat(serviceInput.topK()).isEqualTo(5);
+        assertThat(serviceInput.filters()).isEqualTo(selected.base().filters());
+        assertThat(serviceInput.selections()).isEqualTo(selected.selections());
+        assertThat(serviceInput.selectionContext()).isEqualTo("opaque");
+        assertThat(serviceInput.toString()).doesNotContain("opaque", "😀PM");
         assertThat(selected.toString()).doesNotContain("opaque", "😀PM");
         assertThat(json.readValue("{\"query\":\"OA\"}", SearchRequest.class).query()).isEqualTo("OA");
     }

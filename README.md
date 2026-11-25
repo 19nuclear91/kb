@@ -500,7 +500,7 @@ E-11 首期 48/48 项任务已完成，已同步 5 份主规格并[归档](opens
 
 ## 开发路线图
 
-[开发路线图与候选功能](docs/development-roadmap.md) 跟踪 11 项工程任务和 14 项产品方向。F-01 知识缺口闭环、F-02 知识有效期及复审、F-03 版本差异与人工变更说明、F-06 AI 辅助整理文档资料首期均已实现，通过离线核验并归档，尚未部署。F-05 搜索纠错与企业术语词典首期已实现，51/51 项任务完成，2026-11-24 同步 10 份主规格并归档，归档时的 W4 已于 2026-11-25 修复，未部署；见[归档记录](openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)与[W4 修复验证](docs/search-terminology-w4-fix.md)。F-04 及 F-07～F-14 仍为候选。可查阅 [F-03 归档记录](openspec/changes/archive/2026-11-17-version-diff-and-change-notes/archive-summary.md)和 [F-06 归档任务](openspec/changes/archive/2026-11-18-ai-assisted-document-metadata/tasks.md)。
+[开发路线图与候选功能](docs/development-roadmap.md) 跟踪 11 项工程任务和 14 项产品方向。F-01 知识缺口闭环、F-02 知识有效期及复审、F-03 版本差异与人工变更说明、F-06 AI 辅助整理文档资料首期均已实现，通过离线核验并归档，尚未部署。F-05 搜索纠错与企业术语词典首期已实现，51/51 项任务完成，2026-11-24 同步 10 份主规格并归档，归档时的 W4 已于 2026-11-25 修复，未部署；见[归档记录](openspec/changes/archive/2026-11-24-search-correction-and-enterprise-terminology/archive-record.md)与[W4 修复验证](docs/search-terminology-w4-fix.md)。F-04 权限解释与授权预演已实现独立诊断资格、单用户资源解释与可选只读预演，42/42 项任务完成，2026-11-25 同步四份主规格并归档；W1–W4、预演恢复 R1 及既有搜索分层失败均已修复，最终核验为 0 CRITICAL、0 WARNING、0 SUGGESTION。前端最终白名单 145 项、后端白名单 129 项通过，尚未部署；见[归档记录](openspec/changes/archive/2026-11-25-permission-explanation-and-authorization-preview/archive-record.md)、[最终核验报告](openspec/changes/archive/2026-11-25-permission-explanation-and-authorization-preview/verification-report-3.md)及其真实环境未验证边界。F-07～F-14 仍为候选。可查阅 [F-03 归档记录](openspec/changes/archive/2026-11-17-version-diff-and-change-notes/archive-summary.md)和 [F-06 归档任务](openspec/changes/archive/2026-11-18-ai-assisted-document-metadata/tasks.md)。
 
 路线图的候选条目不是实施授权、排期或工期承诺；已交付条目以各自范围和证据为准，不以归档代替真实环境验收，也不替代当前功能说明及 OpenSpec 正式规格。
 

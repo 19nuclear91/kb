@@ -34,20 +34,15 @@
 
     <!-- 空权限范围必须变成 FALSE，绝不能省略过滤条件。 -->
     <sql id="currentViewGrant">
-        <choose>
-            <when test="principalKeys != null and principalKeys.size() > 0">
-                (EXISTS (SELECT 1 FROM kb_space_acl va WHERE va.space_id = d.space_id AND va.permission = 'view'
-                    AND va.principal_key IN <foreach collection="principalKeys" item="k" open="(" separator="," close=")">#{k}</foreach>)
-                OR EXISTS (SELECT 1 FROM kb_document_acl va WHERE va.doc_id = d.id AND va.permission = 'view'
-                    AND va.principal_key IN <foreach collection="principalKeys" item="k" open="(" separator="," close=")">#{k}</foreach>))
-            </when>
-            <otherwise>FALSE</otherwise>
-        </choose>
+        <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.currentViewGrant">
+            <property name="spaceTable" value="kb_space_acl"/>
+            <property name="documentTable" value="kb_document_acl"/>
+        </include>
     </sql>
 
     <sql id="versionInteractivePredicate">
         <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.currentViewGrant"/>
-        AND (v.publication_evidence IN ('PUBLISHED', 'OBSERVED_CURRENT') OR v.publication_protocol = 'LEGACY_COMPAT'
+        AND (<include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.publishedEvidence"/>
         <if test="principalKeys != null and principalKeys.size() > 0">
             OR ('1:' || v.uploader_user_id) IN
                 <foreach collection="principalKeys" item="k" open="(" separator="," close=")">#{k}</foreach>
@@ -74,7 +69,7 @@
     </sql>
 
     <sql id="documentAccessPredicate">
-        EXISTS (SELECT 1 FROM kb_space s WHERE s.id = d.space_id AND s.archived = false)
+        <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.activeSpace"/>
         AND
         (
         <choose>
@@ -85,14 +80,10 @@
             <otherwise>FALSE</otherwise>
         </choose>
         <if test="principalKeys != null and principalKeys.size() > 0">
-            OR EXISTS (
-            SELECT 1
-            FROM kb_document_acl da
-            WHERE da.doc_id = d.id
-            AND da.permission = #{aclPermission}
-            AND da.principal_key IN
-            <foreach item="principal" collection="principalKeys" open="(" separator="," close=")">#{principal}</foreach>
-            )
+            OR <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.documentGrant">
+                <property name="documentTable" value="kb_document_acl"/>
+                <property name="permission" value="#{aclPermission}"/>
+            </include>
         </if>
         )
     </sql>

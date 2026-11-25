@@ -23,7 +23,8 @@ class SearchTermGatewayProtectionTest {
         captured.start();
         log.addAppender(captured);
         try {
-            for (String path : List.of("/api/search/assisted", "/api/admin/search-terms/unknown/" + probe)) {
+            for (String path : List.of("/api/search/assisted", "/api/admin/search-terms/unknown/" + probe,
+                    "/api/admin/spaces/10/authorization-diagnostics/unknown/" + probe)) {
                 var exchange = MockServerWebExchange.from(MockServerHttpRequest.post(path + "?query=" + probe)
                         .header("X-User-Id", probe).header("X-Role-Ids", probe).header("satoken", probe));
                 new InboundHeaderSanitizeFilter().filter(exchange, target -> {
@@ -32,7 +33,7 @@ class SearchTermGatewayProtectionTest {
                     return Mono.empty();
                 }).block();
             }
-            assertThat(captured.list).hasSize(2).allSatisfy(event -> {
+            assertThat(captured.list).hasSize(3).allSatisfy(event -> {
                 assertThat(event.getFormattedMessage()).doesNotContain(probe);
                 assertThat(event.getThrowableProxy()).isNull();
             });
