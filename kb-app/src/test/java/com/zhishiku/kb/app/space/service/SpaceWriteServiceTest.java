@@ -31,6 +31,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SpaceWriteServiceTest {
+    @Test
+    void draftOrSuspendedCardPreventsSpaceDeletionWithoutDisclosingContent() {
+        when(authorizer.requireSpaceManager(SPACE)).thenReturn(ACTOR);
+        when(mapper.findByIdForUpdate(SPACE)).thenReturn(space(SPACE, false, 0L));
+        when(mapper.countReferencedAnswerCards(SPACE)).thenReturn(1L);
+        assertThatThrownBy(() -> service.delete(SPACE, null, "card-reference"))
+                .isInstanceOf(IdentityException.class)
+                .satisfies(ex -> assertConflict(ex, IdentityConflictReason.SPACE_NOT_EMPTY));
+        verify(mapper, never()).deleteSpace(anyLong());
+        verifyNoSuccessAudit();
+    }
+
 
     private static final long ACTOR = 7L;
     private static final long SPACE = 3L;

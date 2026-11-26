@@ -25,6 +25,7 @@ import { pairKey, sourcePair } from '../validity/api';
 import { useValidityBatch } from '../validity/useValidityBatch';
 
 const GapFeedbackDialog = lazyPage(() => import('../knowledgeGaps/GapFeedbackDialog.vue'));
+const CardSearchPanel = lazyPage(() => import('../answerCards/SearchPanel.vue'));
 
 const props = defineProps<{ maximum: number }>();
 const auth = useSession(), form = ref<FormInstance>(), values = reactive({ query: '' });
@@ -129,6 +130,7 @@ function adopt(suggestion: Suggestion, termId: string) {
 
 <template>
   <PageHeader title="知识搜索" description="在当前可检索的已发布资料中组合筛选，按相关性查看片段" />
+  <CardSearchPanel :original-query="values.query" />
   <section class="panel"><ElForm ref="form" :model="values" :rules="rules" @submit.prevent="search()" @validate="(_, valid) => { invalid = !valid; }">
     <div class="toolbar"><ElFormItem prop="query" style="flex: 1; margin: 0"><ElInput v-model="values.query" size="large" placeholder="输入关键词或描述你要查找的内容" aria-label="搜索词" :aria-invalid="invalid ? 'true' : undefined" /></ElFormItem><ElButton type="primary" native-type="submit" size="large" :loading="loading">搜索</ElButton></div>
     <SearchFilterFields :value="draft" @change="draft = $event" />

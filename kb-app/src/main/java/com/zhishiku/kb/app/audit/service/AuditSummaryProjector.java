@@ -46,6 +46,16 @@ public class AuditSummaryProjector {
             AuditScope scope = AuditScope.valueOf(row.getOperationScope());
             Map<String, Kind> rules = rules(scope);
             JsonNode before = object(row.getBeforeState()), after = object(row.getAfterState());
+            if (scope.targetType().equals("answer-card")) {
+                for (var state : List.of(before, after)) {
+                    var fields = state.fieldNames();
+                    while (fields.hasNext()) {
+                        if (!rules.containsKey(fields.next())) {
+                            throw new IllegalArgumentException();
+                        }
+                    }
+                }
+            }
             if (scope == AuditScope.SEARCH_TERM_CREATE || scope == AuditScope.SEARCH_TERM_UPDATE
                     || scope == AuditScope.SEARCH_CORRECTION_CREATE || scope == AuditScope.SEARCH_CORRECTION_UPDATE) {
                 validateTerminology(scope, row, before, after, rules);
@@ -160,6 +170,15 @@ public class AuditSummaryProjector {
                     "version", Kind.COUNT, "dictionaryRevision", Kind.COUNT, "changedFields", Kind.TERM_FIELDS);
             case SEARCH_CORRECTION_CREATE, SEARCH_CORRECTION_UPDATE -> fields("correctionId", Kind.ID, "targetTermId", Kind.ID,
                     "enabled", Kind.BOOL, "version", Kind.COUNT, "dictionaryRevision", Kind.COUNT, "changedFields", Kind.CORRECTION_FIELDS);
+            case ANSWER_CARD_CREATE, ANSWER_CARD_SAVE, ANSWER_CARD_SUBMIT, ANSWER_CARD_APPROVE,
+                    ANSWER_CARD_REJECT, ANSWER_CARD_WITHDRAW, ANSWER_CARD_STEWARDSHIP_UPDATE, ANSWER_CARD_CONFIRM ->
+                    fields("cardId", Kind.ID, "spaceId", Kind.ID, "revisionId", Kind.NULLABLE_ID,
+                            "branchId", Kind.NULLABLE_ID, "reviewId", Kind.NULLABLE_ID, "cardVersion", Kind.COUNT,
+                            "stewardshipVersion", Kind.COUNT, "reviewVersion", Kind.COUNT,
+                            "state", Kind.CARD_STATE, "responsibleUserId", Kind.NULLABLE_ID, "cycleMonths", Kind.CYCLE,
+                            "lastConfirmedOn", Kind.DATE, "dueDate", Kind.DATE, "effectiveFrom", Kind.DATE,
+                            "untilKind", Kind.UNTIL_KIND, "effectiveUntil", Kind.DATE, "reasonProvided", Kind.BOOL,
+                            "changedFields", Kind.CARD_FIELDS);
             case DOCUMENT_SECURITY_LEVEL_CHANGE ->
                     fields("securityLevel", Kind.LEVEL, "securityVersion", Kind.COUNT, "expectedSecurityVersion",
                             Kind.COUNT);
@@ -180,8 +199,9 @@ public class AuditSummaryProjector {
         if (value == null) {
             return null;
         }
-        if (kind == Kind.IDS || kind == Kind.CHANGED_FIELDS || kind == Kind.TERM_FIELDS || kind == Kind.CORRECTION_FIELDS) {
-            if (!value.isArray() || value.size() > (kind == Kind.IDS ? 20 : 4)) {
+        if (kind == Kind.IDS || kind == Kind.CHANGED_FIELDS || kind == Kind.TERM_FIELDS || kind == Kind.CORRECTION_FIELDS
+                || kind == Kind.CARD_FIELDS) {
+            if (!value.isArray() || value.size() > (kind == Kind.IDS ? 20 : kind == Kind.CARD_FIELDS ? 10 : 4)) {
                 throw new IllegalArgumentException();
             }
             List<Object> result = new ArrayList<>();
@@ -219,6 +239,9 @@ public class AuditSummaryProjector {
         }
         if (value.isTextual()) {
             String text = value.textValue();
+            if (kind == Kind.CARD_STATE && Set.of("DRAFT", "IN_REVIEW", "APPROVED", "REJECTED", "WITHDRAWN", "ASSIGNED", "CONFIRMED").contains(text)) {
+                return text;
+            }
             if (kind == Kind.DATE && text.matches("[12][0-9]{3}-[0-9]{2}-[0-9]{2}")) {
                 LocalDate date = LocalDate.parse(text);
                 if (date.getYear() >= 1900 && date.getYear() <= 2999) {
@@ -246,6 +269,8 @@ public class AuditSummaryProjector {
             case CHANGED_FIELDS -> Set.of("title", "summary", "categoryId", "tagIds");
             case TERM_FIELDS -> Set.of("canonicalName", "description", "aliases", "enabled");
             case CORRECTION_FIELDS -> Set.of("wrongExpression", "targetTermId", "enabled");
+            case CARD_FIELDS -> Set.of("question", "aliases", "answer", "applicabilityText", "sources",
+                    "effectiveFrom", "untilKind", "effectiveUntil", "responsible", "cycleMonths");
             default -> Set.of();
         };
     }
@@ -284,5 +309,5 @@ public class AuditSummaryProjector {
     }
 
     private enum Kind {ID, NULLABLE_ID, IDS, CHANGED_FIELDS, TERM_FIELDS, CORRECTION_FIELDS, COUNT, LEVEL, BOOL, FUNCTIONAL_PERMISSION, ACL_PERMISSION, PRINCIPAL, DEAD_LETTER_STATUS,
-        SSO_PLATFORM, SSO_RESULT, PUBLICATION_POLICY, DATE, UNTIL_KIND, CYCLE}
+        SSO_PLATFORM, SSO_RESULT, PUBLICATION_POLICY, DATE, UNTIL_KIND, CYCLE, CARD_STATE, CARD_FIELDS}
 }

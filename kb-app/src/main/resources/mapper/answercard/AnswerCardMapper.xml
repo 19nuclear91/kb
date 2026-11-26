@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.mapper.answercard.AnswerCardMapper">
+    <select id="now" resultType="java.time.OffsetDateTime" useCache="false" flushCache="true" timeout="3">SELECT clock_timestamp()</select>
+    <select id="limits" resultType="string" timeout="3">
+        SELECT set_config('lock_timeout', '3000ms', true), set_config('statement_timeout', '3000ms', true)
+    </select>
+    <select id="nextCardId" resultType="long">SELECT nextval(pg_get_serial_sequence('kb_answer_card', 'id'))</select>
+    <select id="nextBranchId" resultType="long">SELECT nextval(pg_get_serial_sequence('kb_answer_card_branch', 'id'))</select>
+    <select id="nextRevisionId" resultType="long">SELECT nextval(pg_get_serial_sequence('kb_answer_card_revision', 'id'))</select>
+    <select id="nextReviewId" resultType="long">SELECT nextval(pg_get_serial_sequence('kb_answer_card_review', 'id'))</select>
+    <select id="card" resultType="com.zhishiku.kb.app.domain.answercard.AnswerCard" useCache="false" flushCache="true" timeout="3">
+        SELECT id, space_id, card_version, published_revision_id, active_branch_id, created_at FROM kb_answer_card WHERE id = #{id}
+    </select>
+    <select id="lockCard" resultType="com.zhishiku.kb.app.domain.answercard.AnswerCard" useCache="false" flushCache="true" timeout="3">
+        SELECT id, space_id, card_version, published_revision_id, active_branch_id, created_at FROM kb_answer_card WHERE id = #{id} FOR UPDATE
+    </select>
+    <select id="branch" resultType="com.zhishiku.kb.app.domain.answercard.AnswerCardBranch" useCache="false" flushCache="true" timeout="3">
+        SELECT id, card_id, branch_no, latest_revision_id, closed FROM kb_answer_card_branch WHERE id = #{id}
+    </select>
+    <select id="lockBranch" resultType="long" useCache="false" flushCache="true" timeout="3">
+        SELECT id FROM kb_answer_card_branch WHERE id = #{id} FOR UPDATE
+    </select>
+    <select id="lockReview" resultType="long" useCache="false" flushCache="true" timeout="3">
+        SELECT id FROM kb_answer_card_review WHERE card_id = #{cardId} AND state = 'IN_REVIEW' FOR UPDATE
+    </select>
+    <select id="lockStewardship" resultType="long" useCache="false" flushCache="true" timeout="3">
+        SELECT card_id FROM kb_answer_card_stewardship WHERE card_id = #{cardId} FOR UPDATE
+    </select>
+    <select id="revision" resultType="com.zhishiku.kb.app.domain.answercard.AnswerCardRevision" useCache="false" flushCache="true" timeout="3">
+        SELECT id, card_id, branch_id, revision_no, question, aliases_json::text AS aliases_json,
+            answer, applicability_text, effective_from, until_kind, effective_until,
+            normalized_questions_json::text AS normalized_questions_json, question_text, created_by, created_at
+        FROM kb_answer_card_revision WHERE id = #{id}
+    </select>
+    <sql id="reviewProjection">
+        id, card_id, branch_id, revision_id, round_no, state, review_version, submitted_by, submitted_at, decided_by, decided_at, reason
+    </sql>
+    <select id="review" resultType="com.zhishiku.kb.app.domain.answercard.AnswerCardReview" useCache="false" flushCache="true" timeout="3">
+        SELECT <include refid="reviewProjection"/> FROM kb_answer_card_review WHERE id = #{id}
+    </select>
+    <select id="activeReview" resultType="com.zhishiku.kb.app.domain.answercard.AnswerCardReview" useCache="false" flushCache="true" timeout="3">
+        SELECT <include refid="reviewProjection"/> FROM kb_answer_card_review WHERE card_id = #{cardId} AND state = 'IN_REVIEW'
+    </select>
+    <select id="hasActiveReview" resultType="boolean" useCache="false" timeout="3">
+        SELECT EXISTS (SELECT 1 FROM kb_answer_card_review WHERE card_id = #{cardId} AND state = 'IN_REVIEW')
+    </select>
+    <select id="latestReview" resultType="com.zhishiku.kb.app.domain.answercard.AnswerCardReview" useCache="false" timeout="3">
+        SELECT <include refid="reviewProjection"/> FROM kb_answer_card_review WHERE revision_id = #{revisionId} ORDER BY round_no DESC LIMIT 1
+    </select>
+    <select id="stewardship" resultType="com.zhishiku.kb.app.domain.answercard.AnswerCardStewardship" useCache="false" flushCache="true" timeout="3">
+        SELECT card_id, responsible_user_id, cycle_months, first_assigned_on, last_confirmed_on,
+            last_confirmed_revision_id, stewardship_version FROM kb_answer_card_stewardship WHERE card_id = #{cardId}
+    </select>
+    <select id="sources" resultType="com.zhishiku.kb.app.domain.answercard.AnswerCardSource" useCache="false" flushCache="true" timeout="3">
+        SELECT revision_id, document_id, version_id, applicability_version, effective_from, until_kind, effective_until
+        FROM kb_answer_card_source WHERE revision_id = #{revisionId} ORDER BY document_id LIMIT 11
+    </select>
+    <select id="contributors" resultType="long" useCache="false" flushCache="true" timeout="3">
+        SELECT user_id FROM kb_answer_card_contributor WHERE branch_id = #{branchId}
+    </select>
+    <select id="sourceLocations" resultType="com.zhishiku.kb.app.domain.dto.answercard.AnswerCardSourceLocation" useCache="false" flushCache="true" timeout="3">
+        SELECT id AS document_id, space_id FROM kb_document WHERE id IN
+        <foreach collection="list" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY id
+    </select>
+    <select id="shareTree" resultType="long" useCache="false" flushCache="true" timeout="3">
+        SELECT space_id FROM kb_category_tree_state WHERE space_id = #{spaceId} FOR SHARE
+    </select>
+    <select id="shareDocument" resultType="long" useCache="false" flushCache="true" timeout="3">
+        SELECT id FROM kb_document WHERE id = #{documentId} FOR SHARE
+    </select>
+    <select id="shareVersion" resultType="long" useCache="false" flushCache="true" timeout="3">
+        SELECT id FROM kb_document_version WHERE id = #{versionId} FOR SHARE
+    </select>
+    <select id="nextRevisionNo" resultType="long" timeout="3">SELECT COALESCE(max(revision_no), 0) + 1 FROM kb_answer_card_revision WHERE card_id = #{cardId}</select>
+    <select id="nextBranchNo" resultType="long" timeout="3">SELECT COALESCE(max(branch_no), 0) + 1 FROM kb_answer_card_branch WHERE card_id = #{cardId}</select>
+    <select id="nextRoundNo" resultType="long" timeout="3">SELECT COALESCE(max(round_no), 0) + 1 FROM kb_answer_card_review WHERE card_id = #{cardId}</select>
+    <insert id="insertCard" timeout="3">
+        INSERT INTO kb_answer_card (id, space_id, card_version, published_revision_id, active_branch_id, created_at)
+        VALUES (#{id}, #{spaceId}, #{cardVersion}, #{publishedRevisionId}, #{activeBranchId}, #{createdAt})
+    </insert>
+    <insert id="insertBranch" timeout="3">
+        INSERT INTO kb_answer_card_branch (id, card_id, branch_no, latest_revision_id, closed)
+        VALUES (#{id}, #{cardId}, #{branchNo}, #{latestRevisionId}, #{closed})
+    </insert>
+    <insert id="insertRevision" timeout="3">
+        INSERT INTO kb_answer_card_revision (id, card_id, branch_id, revision_no, question, aliases_json, answer,
+            applicability_text, effective_from, until_kind, effective_until, normalized_questions_json, question_text, created_by, created_at)
+        VALUES (#{id}, #{cardId}, #{branchId}, #{revisionNo}, #{question}, CAST(#{aliasesJson} AS jsonb), #{answer},
+            #{applicabilityText}, #{effectiveFrom}, #{untilKind}, #{effectiveUntil}, CAST(#{normalizedQuestionsJson} AS jsonb),
+            #{questionText}, #{createdBy}, #{createdAt})
+    </insert>
+    <insert id="insertSource" timeout="3">
+        INSERT INTO kb_answer_card_source (revision_id, document_id, version_id, applicability_version, effective_from, until_kind, effective_until)
+        VALUES (#{revisionId}, #{documentId}, #{versionId}, #{applicabilityVersion}, #{effectiveFrom}, #{untilKind}, #{effectiveUntil})
+    </insert>
+    <insert id="contribute" timeout="3">
+        INSERT INTO kb_answer_card_contributor (branch_id, user_id) VALUES (#{branchId}, #{userId}) ON CONFLICT DO NOTHING
+    </insert>
+    <update id="advanceBranch" timeout="3">UPDATE kb_answer_card_branch SET latest_revision_id = #{revisionId} WHERE id = #{id} AND NOT closed</update>
+    <update id="advanceCard" timeout="3">
+        UPDATE kb_answer_card SET card_version = card_version + 1, published_revision_id = #{publishedRevisionId}, active_branch_id = #{activeBranchId}
+        WHERE id = #{id} AND card_version = #{expected}
+    </update>
+    <update id="closeBranch" timeout="3">UPDATE kb_answer_card_branch SET closed = TRUE WHERE id = #{id} AND NOT closed</update>
+    <insert id="insertReview" timeout="3">
+        INSERT INTO kb_answer_card_review (id, card_id, branch_id, revision_id, round_no, state, review_version, submitted_by, submitted_at)
+        VALUES (#{id}, #{cardId}, #{branchId}, #{revisionId}, #{roundNo}, #{state}, #{reviewVersion}, #{submittedBy}, #{submittedAt})
+    </insert>
+    <update id="decide" timeout="3">
+        UPDATE kb_answer_card_review SET state = #{state}, review_version = review_version + 1, decided_by = #{actor}, decided_at = #{at}, reason = #{reason}
+        WHERE id = #{id} AND state = 'IN_REVIEW' AND review_version = #{expected}
+    </update>
+    <insert id="insertStewardship" timeout="3">
+        INSERT INTO kb_answer_card_stewardship (card_id, responsible_user_id, cycle_months, first_assigned_on,
+            last_confirmed_on, last_confirmed_revision_id, stewardship_version)
+        VALUES (#{cardId}, #{responsibleUserId}, #{cycleMonths}, #{firstAssignedOn}, #{lastConfirmedOn}, #{lastConfirmedRevisionId}, #{stewardshipVersion})
+    </insert>
+    <update id="updateStewardship" timeout="3">
+        UPDATE kb_answer_card_stewardship SET responsible_user_id = #{responsibleUserId}, cycle_months = #{cycleMonths},
+            last_confirmed_on = #{lastConfirmedOn}, last_confirmed_revision_id = #{lastConfirmedRevisionId}, stewardship_version = #{stewardshipVersion}
+        WHERE card_id = #{cardId} AND stewardship_version = #{stewardshipVersion} - 1
+    </update>
+    <insert id="insertConfirmation" timeout="3">
+        INSERT INTO kb_answer_card_confirmation (card_id, revision_id, confirmed_by, confirmed_on, before_version, after_version)
+        VALUES (#{cardId}, #{revisionId}, #{confirmedBy}, #{confirmedOn}, #{beforeVersion}, #{afterVersion})
+    </insert>
+</mapper>

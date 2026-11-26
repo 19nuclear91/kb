@@ -8,6 +8,9 @@ import type { Session } from '../session';
 import { deferred, json, me } from '../test/fixtures';
 import SearchPage from '../pages/SearchPage.vue';
 import { assistedResponse, assistedResult } from './assistedFixtures';
+import { cardApi } from '../answerCards/api';
+import { CardError } from '../answerCards/protocol';
+import { item as cardItem } from '../answerCards/fixtures';
 
 const context = reactive({ session: {} as Session, state: { phase: 'ready', epoch: 1, me: null as typeof me | null } });
 vi.mock('../SessionProvider', () => ({ useSession: () => context }));
@@ -41,6 +44,20 @@ const tagReads = () => vi.mocked(context.session.send).mock.calls.filter(([path]
 const change = (label: string, value: string) => fireEvent.update(screen.getByLabelText(label), value);
 const submit = async (query = '问题') => { await change('搜索词', query); await fireEvent.submit(screen.getByLabelText('搜索词').closest('form')!); };
 const mount = () => mountRouter(() => h(SearchPage));
+
+it('文档和卡片分别提交条件与错误，预填不采纳文档筛选或建议', async () => {
+  const cards = vi.spyOn(cardApi, 'search').mockImplementation(async (_, input) => ({ items: [cardItem], asOfDate: '2026-11-26',
+    evaluatedAt: '2026-11-26T10:00:00+08:00', appliedQuery: input.query, appliedSpaceId: input.spaceId }));
+  mount(); await change('文件类型', 'PDF'); await submit(); await screen.findByText('可见正文');
+  await fireEvent.click(await screen.findByRole('button', { name: '用原问题查标准答案' }));
+  expect(cards).not.toHaveBeenCalled();
+  await fireEvent.click(screen.getByRole('button', { name: '查询标准答案' })); await screen.findByText('标准问题');
+  expect(cards.mock.calls[0]?.[1]).toMatchObject({ query: '问题', spaceId: null });
+  expect(cards.mock.calls[0]?.[1]).not.toHaveProperty('fileType');
+  await change('搜索词', '文档新草稿'); expect((screen.getByLabelText('标准答案问题') as HTMLInputElement).value).toBe('问题');
+  cards.mockRejectedValueOnce(new CardError(503)); await fireEvent.click(screen.getByRole('button', { name: '查询标准答案' }));
+  await screen.findByText('标准答案功能暂不可用。'); expect(screen.getByText('可见正文')).toBeTruthy(); expect(searches()).toHaveLength(1);
+});
 
 it('标签框回车仅查询标签，保留已选条件、搜索结果和原提交摘要', async () => {
   const user = userEvent.setup(); mount(); await user.click(await screen.findByRole('button', { name: '全局停用（停用）' }));

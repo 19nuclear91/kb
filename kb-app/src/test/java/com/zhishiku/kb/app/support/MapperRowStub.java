@@ -12,6 +12,7 @@ import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Map;
@@ -101,6 +102,7 @@ public final class MapperRowStub {
                 wasNull));
         when(rows.getObject(anyString(), eq(OffsetDateTime.class))).thenAnswer(call -> columnValue(row, call.getArgument(0),
                 wasNull));
+        when(rows.getObject(anyString(), eq(LocalDate.class))).thenAnswer(call -> columnValue(row, call.getArgument(0), wasNull));
         when(rows.wasNull()).thenAnswer(call -> wasNull.get());
         when(rows.getMetaData()).thenReturn(metadata);
         when(rows.next()).thenReturn(true, false);

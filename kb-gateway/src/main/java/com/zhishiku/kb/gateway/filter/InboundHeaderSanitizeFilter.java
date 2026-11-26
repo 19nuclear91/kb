@@ -2,6 +2,7 @@ package com.zhishiku.kb.gateway.filter;
 
 import com.zhishiku.kb.common.security.SearchEndpoints;
 import com.zhishiku.kb.common.security.SearchTermEndpoints;
+import com.zhishiku.kb.common.security.AnswerCardEndpoints;
 import com.zhishiku.kb.common.security.AuthorizationDiagnosticEndpoints;
 
 import org.slf4j.Logger;
@@ -66,7 +67,8 @@ public class InboundHeaderSanitizeFilter implements GlobalFilter, Ordered {
         // 两种都值得留痕，但只记头名称，不记值——值本身可能是攻击者构造的注入内容。
         if (AuthorizationDiagnosticEndpoints.matches(original.getPath().value())) {
             log.warn("剥离客户端自带的身份请求头 headers={} category=AUTHORIZATION_DIAGNOSTICS", present);
-        } else if (SearchEndpoints.matches(original.getPath().value()) || SearchTermEndpoints.matches(original.getPath().value())) {
+        } else if (SearchEndpoints.matches(original.getPath().value()) || SearchTermEndpoints.matches(original.getPath().value())
+                || AnswerCardEndpoints.matches(original.getPath().value())) {
             log.warn("剥离客户端自带的身份请求头 headers={} category=SEARCH", present);
         } else {
             log.warn("剥离客户端自带的身份请求头 headers={} path={} remote={}",

@@ -4,6 +4,8 @@ import cn.dev33.satoken.exception.SaTokenException;
 import com.zhishiku.kb.app.auth.controller.diagnostics.DiagnosticAdvice;
 import com.zhishiku.kb.common.security.AuthorizationDiagnosticEndpoints;
 import com.zhishiku.kb.app.search.model.SearchFailure;
+import com.zhishiku.kb.app.controller.answercard.AnswerCardAdvice;
+import com.zhishiku.kb.common.security.AnswerCardEndpoints;
 import com.zhishiku.kb.app.knowledgegap.web.KnowledgeGapAdvice;
 import com.zhishiku.kb.app.search.term.web.TermAdminAdvice;
 import com.zhishiku.kb.app.search.web.AssistedSearchFailure;
@@ -48,6 +50,10 @@ public class GlobalExceptionHandler {
     /** 全局入口先处理受保护路径；下列既有方法保留各接口的原响应及诊断行为。 */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<?> handle(Exception error) {
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes
+                && AnswerCardEndpoints.matches(PrivateApiResponse.path(attributes.getRequest()))) {
+            return AnswerCardAdvice.project(error);
+        }
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes
                 && AuthorizationDiagnosticEndpoints.matches(PrivateApiResponse.path(attributes.getRequest()))) {
             return DiagnosticAdvice.project(error);

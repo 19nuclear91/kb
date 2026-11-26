@@ -27,6 +27,19 @@ class IdentityAuditServiceTest {
             Clock.fixed(Instant.parse("2026-10-01T00:00:00Z"), ZoneOffset.UTC));
 
     @Test
+    void cardAuditKeepsExactRequestIdentityIncludingNonControlWhitespace() {
+        when(mapper.insert(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
+        for (String request : List.of("r", " r ", " ", "\u2003", "😀".repeat(128))) {
+            assertThat(service.appendSuccess(AuditScope.ANSWER_CARD_CREATE, request, 1, 7, "create", "{}", "{}")
+                    .getRequestId()).isEqualTo(request);
+        }
+        for (String request : List.of("", "bad\n", "\uD800", "😀".repeat(129))) {
+            assertThatThrownBy(() -> service.appendSuccess(AuditScope.ANSWER_CARD_CREATE, request, 1, 7, "create", "{}", "{}"))
+                    .isInstanceOf(IdentityException.class);
+        }
+    }
+
+    @Test
     void strictSuccessPersistsReasonAndDoesNotRecoverFromInsertFailure() {
         when(mapper.insert(any(), any(), any(), any(), any(), any(), any(), any(),
                 any(), any(), any(), any())).thenReturn(1);

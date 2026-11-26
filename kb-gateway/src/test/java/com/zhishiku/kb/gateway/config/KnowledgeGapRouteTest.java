@@ -29,7 +29,9 @@ class KnowledgeGapRouteTest {
             var routes = routes(dev);
             for (String path : List.of("/api/knowledge-gaps", "/api/knowledge-gaps/123", "/api/knowledge-gaps/123/history",
                     "/api/knowledge-gaps/123/solutions", "/api/knowledge-gaps/invalid/unknown",
-                    "/api/admin/knowledge-gaps", "/api/admin/knowledge-gaps/123/assignees/search")) {
+                    "/api/admin/knowledge-gaps", "/api/admin/knowledge-gaps/123/assignees/search",
+                    "/api/answer-cards", "/api/answer-cards/search", "/api/answer-cards/1/revisions/2",
+                    "/api/answer-cards/commands/query", "/api/answer-cards/1/reviews/2/approve", "/api/answer-cards/invalid/unknown")) {
                 for (HttpMethod method : List.of(HttpMethod.GET, HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH,
                         HttpMethod.DELETE, HttpMethod.OPTIONS)) {
                     var exchange = MockServerWebExchange.from(MockServerHttpRequest.method(method, URI.create(path)));
@@ -52,7 +54,8 @@ class KnowledgeGapRouteTest {
                     assertThat(AuthenticationEndpoints.isPublic(method.name(), path)).isFalse();
                 }
             }
-            for (String excluded : List.of("/api/knowledge-gapsx", "/knowledge-gaps", "/internal/knowledge-gaps", "/actuator/health")) {
+            for (String excluded : List.of("/api/knowledge-gapsx", "/knowledge-gaps", "/internal/knowledge-gaps", "/actuator/health",
+                    "/api/answer-cardsx", "/internal/answer-cards", "/answer-cards")) {
                 for (var route : routes) {
                     var definition = route.getPredicates().stream().filter(value -> value.getName().equals("Path")).findFirst().orElseThrow();
                     var predicate = new PathRoutePredicateFactory().apply(new PathRoutePredicateFactory.Config()

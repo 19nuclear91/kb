@@ -14,6 +14,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AuditSummaryProjectorTest {
     @Test
+    void answerCardAuditRejectsPrivateOrMalformedFieldsWithoutReturningAnyContent() {
+        var projector = new AuditSummaryProjector();
+        for (String raw : List.of("{\"answer\":\"private\"}", "{\"reason\":\"private\"}",
+                "{\"sources\":[1,2]}", "{\"state\":\"private\"}", "{\"changedFields\":[\"private\"]}")) {
+            var detail = projector.detail(row("ANSWER_CARD_SAVE", "{}", raw));
+            assertThat(detail.summaryAvailable()).isFalse();
+            assertThat(detail.changes()).isEmpty();
+        }
+    }
+
+    @Test
     void eachRegisteredScopeAcceptsProductionShapeAndDropsFreeTextAndUnknownNesting() throws Exception {
         var projector = new AuditSummaryProjector();
         for (AuditScope scope : AuditScope.values()) {
@@ -93,6 +104,10 @@ class AuditSummaryProjectorTest {
                         "{\"correctionId\":1,\"targetTermId\":2,\"version\":1,\"enabled\":false,\"dictionaryRevision\":2,\"changedFields\":[\"enabled\"],\"wrongExpression\":\"private-expression\"}";
                 case PARSE_DEAD_LETTER_QUERY, PARSE_DEAD_LETTER_REPLAY ->
                         "{\"status\":\"REPLAYED\",\"reason\":\"private-reason\"}";
+                case ANSWER_CARD_CREATE, ANSWER_CARD_SAVE, ANSWER_CARD_SUBMIT, ANSWER_CARD_APPROVE,
+                        ANSWER_CARD_REJECT, ANSWER_CARD_WITHDRAW, ANSWER_CARD_STEWARDSHIP_UPDATE, ANSWER_CARD_CONFIRM ->
+                        "{\"cardId\":1,\"spaceId\":2,\"revisionId\":3,\"cardVersion\":1,\"state\":\"DRAFT\","
+                                + "\"reasonProvided\":true,\"changedFields\":[\"answer\",\"sources\"]}";
             };
             String before = switch (scope) {
                 case SEARCH_TERM_UPDATE -> "{\"termId\":1,\"version\":0,\"enabled\":true,\"dictionaryRevision\":1}";

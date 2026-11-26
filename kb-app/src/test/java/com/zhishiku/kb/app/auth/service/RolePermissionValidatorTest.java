@@ -19,6 +19,17 @@ import static org.mockito.Mockito.when;
 @ExtendWith(OutputCaptureExtension.class)
 class RolePermissionValidatorTest {
     @Test
+    void cardPermissionsRemainIndependentAndRevokedBindingsAreNotRepairedOnStartup() {
+        var mapper = mock(RolePermissionMapper.class);
+        when(mapper.findAllPermissionCodes()).thenReturn(List.of("answer:card:write", "answer:card:review"));
+        when(mapper.findPermissionsByRoleCode("ROLE_ADMIN")).thenReturn(List.of("answer:card:review"));
+        new RolePermissionValidator(mapper).run(null);
+        verify(mapper).findAllPermissionCodes();
+        verify(mapper).findPermissionsByRoleCode("ROLE_ADMIN");
+        verifyNoMoreInteractions(mapper);
+    }
+
+    @Test
     void unknownCodeFailsStartupAndIsReported() {
         var mapper = mock(RolePermissionMapper.class);
         when(mapper.findAllPermissionCodes()).thenReturn(List.of("space:*"));

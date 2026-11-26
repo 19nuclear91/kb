@@ -38,7 +38,7 @@ afterEach(() => { Reflect.deleteProperty(document, 'visibilityState'); });
 /** 对应 React 版的 useEffect 探针：挂载后及依赖变化时记录并读取当前目标。 */
 const Probe = defineComponent({ props: { name: { type: String, required: true } }, setup(props) {
   const auth = useSession(), route = useRoute();
-  const target = () => String(route.params.documentId ?? route.params.spaceId ?? route.params.importId ?? route.params.gapId ?? '');
+  const target = () => String(route.params.documentId ?? route.params.spaceId ?? route.params.importId ?? route.params.gapId ?? route.params.cardId ?? '');
   const run = () => {
     mounted(props.name, target(), auth.state.epoch, auth.state.me?.user.userId);
     void auth.session.json(`/api/probe/${props.name}/${target()}`).catch(() => {});
@@ -84,7 +84,19 @@ it('直接打开对比页仅按需加载对应模块', async () => {
   expectOnly('VersionComparePage'); await finish('VersionComparePage'); expect(await screen.findByRole('heading', { name: 'VersionComparePage:1' })).toBeTruthy();
 });
 
-it.each(['/documents/1', '/documents/1/compare/20/21', '/admin/users', '/imports', '/imports/9223372036854775807', '/knowledge-gaps', '/knowledge-gaps/new', '/knowledge-gaps/123', '/stewardship'])('地址 %s 在身份未确认、匿名、改密或故障时不调用加载器', async path => {
+it('卡片普通详情独立加载，维护资格不足不下载私有页面，加载失败仍可退出', async () => {
+  const denied = harness('/answer-cards/1/workspace', { permissions: [] });
+  await screen.findByText('当前账号没有此管理页面的读取资格。');
+  expect(loaders.AnswerCardWorkspacePage).not.toHaveBeenCalled(); denied.view.unmount();
+  harness('/answer-cards/1/revisions/2', { permissions: [] });
+  await waitFor(() => expect(loaders.AnswerCardDetailPage).toHaveBeenCalledOnce());
+  expectOnly('AnswerCardDetailPage'); await finish('AnswerCardDetailPage', true);
+  expect(screen.getByRole('button', { name: '退出登录' })).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: '退出登录' })); await screen.findByText(/登录入口/);
+});
+
+it.each(['/documents/1', '/documents/1/compare/20/21', '/admin/users', '/imports', '/imports/9223372036854775807', '/knowledge-gaps', '/knowledge-gaps/new', '/knowledge-gaps/123', '/stewardship',
+  '/answer-cards', '/answer-cards/workspace', '/answer-cards/management', '/answer-cards/123/workspace', '/answer-cards/123/revisions/124'])('地址 %s 在身份未确认、匿名、改密或故障时不调用加载器', async path => {
   for (const options of [{ saved: false }, { identity: { ...me, mustChangePassword: true } },
     { identity: deferred<Response>().promise }, { identity: new Response(null, { status: 503 }) }]) {
     const h = harness(path, options);

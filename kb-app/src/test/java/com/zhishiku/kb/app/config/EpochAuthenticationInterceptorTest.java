@@ -20,6 +20,19 @@ import static org.mockito.Mockito.when;
 
 class EpochAuthenticationInterceptorTest {
     @Test
+    void answerCardReadsWritesAndReceiptQueryNeverBypassRevokedEpoch() {
+        for (String path : java.util.List.of("/api/answer-cards", "/api/answer-cards/search",
+                "/api/answer-cards/1/workspace", "/api/answer-cards/commands/query")) {
+            doThrow(IdentityException.unauthorized("会话已撤销")).when(sessions).check(null);
+            try (var ignored = mockStatic(StpUtil.class)) {
+                var request = new MockHttpServletRequest("POST", path);
+                assertThatThrownBy(() -> interceptor.preHandle(request, new MockHttpServletResponse(), new Object()))
+                        .isInstanceOf(IdentityException.class);
+                assertThat(request.getAttribute(EpochAuthenticationInterceptor.VERIFIED)).isNull();
+            }
+        }
+    }
+    @Test
     void assistedRequestReceivesOnlyVerifiedIdentityAndTokenIsRemovedOnCompletion() {
         var request = new MockHttpServletRequest("POST", "/api/search/assisted");
         request.addHeader("X-User-Id", "999");

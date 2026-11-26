@@ -26,6 +26,9 @@ export const routes = {
   operations: ['src/admin/OperationsReportsPage.vue'], tags: ['src/admin/DocumentTagsPage.vue'],
   searchTerms: ['src/admin/SearchTermsPage.vue'],
   authorizationDiagnostics: ['src/authorization/DiagnosticPanel.vue'],
+  answerCards: ['src/pages/AnswerCardsPage.vue'], answerCardDetail: ['src/pages/AnswerCardDetailPage.vue'],
+  answerCardWorkspaces: ['src/pages/AnswerCardWorkspacesPage.vue'], answerCardWorkspace: ['src/pages/AnswerCardWorkspacePage.vue'],
+  answerCardManagement: ['src/pages/AnswerCardManagementPage.vue'], answerCardSearch: ['src/answerCards/SearchPanel.vue'],
 };
 export const compression = { gzipLevel: 9, brotliQuality: 11, basis: '逐文件压缩后求和，字节' };
 const fail = message => { throw new Error(message); };
@@ -117,6 +120,9 @@ export function checkIsolation(report) {
     fail('入口、登录或文档列表提前包含知识问题实现');
   }
   const adminPages = Object.values(routes).flat().filter(id => id.startsWith('src/admin/'));
+  if ([...entry, ...login, ...list].some(id => id.startsWith('src/answerCards/') && id !== 'src/answerCards/routes.ts')) {
+    fail('入口、登录或文档列表提前包含标准答案业务实现');
+  }
   if (report.scenarios.search && [...modules('search')].some(id => id.startsWith('src/searchTerms/'))) fail('普通搜索提前包含词典管理实现');
   const userPages = Object.values(routes).flat().filter(id => !id.startsWith('src/admin/') && !['login', 'password', 'sso'].some(name => routes[name].includes(id)));
   for (const [name, ids] of Object.entries(routes)) {

@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.mapper.answercard.AnswerCardQueryMapper">
+    <!-- u/dept为本次主体，c为卡片，r为所选内容修订；来源嵌套查询用d/v。 -->
+    <sql id="activeUser">u.enabled AND dept.enabled AND NOT u.must_change_password</sql>
+    <sql id="spaceView">
+        EXISTS (SELECT 1 FROM kb_space s WHERE s.id = c.space_id AND NOT s.archived)
+        AND EXISTS (SELECT 1 FROM kb_space_acl ca WHERE ca.space_id = c.space_id AND ca.permission = 'view'
+            AND ca.principal_key IN (<include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.userKeys"/>))
+    </sql>
+    <sql id="writer">
+        EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role_permission rp ON rp.role_id = ur.role_id
+            WHERE ur.user_id = u.id AND rp.permission = 'answer:card:write')
+        AND EXISTS (SELECT 1 FROM kb_space_acl ca WHERE ca.space_id = c.space_id AND ca.permission = 'edit'
+            AND ca.principal_key IN (<include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.userKeys"/>))
+    </sql>
+    <sql id="reviewer">
+        EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role_permission rp ON rp.role_id = ur.role_id
+            WHERE ur.user_id = u.id AND rp.permission = 'answer:card:review')
+        AND EXISTS (SELECT 1 FROM kb_space_acl ca WHERE ca.space_id = c.space_id AND ca.permission = 'review'
+            AND ca.principal_key IN (<include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.userKeys"/>))
+    </sql>
+    <sql id="manager">
+        (EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role_permission rp ON rp.role_id = ur.role_id
+            WHERE ur.user_id = u.id AND rp.permission = 'space:manage-all')
+        OR EXISTS (SELECT 1 FROM kb_space_acl ca WHERE ca.space_id = c.space_id AND ca.permission = 'manage'
+            AND ca.principal_key IN (<include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.userKeys"/>)))
+    </sql>
+    <!-- 权限只判断固定来源可读；历史工作区可读旧来源，普通展示另要求仍当前。 -->
+    <sql id="allSourcesReadable">
+        NOT EXISTS (SELECT 1 FROM kb_answer_card_source cs WHERE cs.revision_id = r.id AND NOT EXISTS (
+            SELECT 1 FROM kb_document d JOIN kb_document_version v ON v.doc_id = d.id
+            JOIN kb_space ss ON ss.id = d.space_id
+            WHERE d.id = cs.document_id AND v.id = cs.version_id AND NOT ss.archived
+                AND d.status NOT IN ('deleted', 'archived') AND d.security_level &lt;= u.clearance_level
+                AND v.publication_evidence IN ('PUBLISHED', 'OBSERVED_CURRENT')
+                AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.viewGrant"/>
+        ))
+    </sql>
+    <sql id="freshSources">
+        EXISTS (SELECT 1 FROM kb_answer_card_source cs WHERE cs.revision_id = r.id)
+        AND NOT EXISTS (SELECT 1 FROM kb_answer_card_source cs JOIN kb_document d ON d.id = cs.document_id
+            LEFT JOIN kb_document_version_applicability da ON da.version_id = cs.version_id AND da.doc_id = cs.document_id
+            WHERE cs.revision_id = r.id AND (d.current_version_id IS DISTINCT FROM cs.version_id
+                OR COALESCE(da.applicability_version, 0) &lt;&gt; cs.applicability_version))
+    </sql>
+    <sql id="applicable">
+        (r.effective_from IS NULL OR r.effective_from &lt;= #{today})
+        AND (r.effective_until IS NULL OR r.effective_until &gt;= #{today})
+        AND NOT EXISTS (SELECT 1 FROM kb_answer_card_source cs
+            JOIN kb_document_version_applicability da ON da.version_id = cs.version_id AND da.doc_id = cs.document_id
+            WHERE cs.revision_id = r.id AND (da.effective_from &gt; #{today} OR da.effective_until &lt; #{today}))
+    </sql>
+    <sql id="publishedFrom">
+        FROM kb_answer_card c JOIN kb_answer_card_revision r ON r.id = c.published_revision_id AND r.card_id = c.id
+        CROSS JOIN sys_user u JOIN sys_dept dept ON dept.id = u.dept_id
+    </sql>
+    <sql id="displayable">
+        <include refid="activeUser"/> AND <include refid="spaceView"/> AND <include refid="allSourcesReadable"/>
+        AND <include refid="freshSources"/> AND <include refid="applicable"/>
+        AND EXISTS (SELECT 1 FROM kb_answer_card_review ar WHERE ar.card_id = c.id AND ar.revision_id = r.id AND ar.state = 'APPROVED')
+    </sql>
+    <sql id="spaceFilter"><if test="spaceId != null">AND c.space_id = #{spaceId}</if></sql>
+    <select id="browse" resultType="long" useCache="false" timeout="3">
+        SELECT c.id <include refid="publishedFrom"/> WHERE u.id = #{actor} AND <include refid="displayable"/>
+        <include refid="spaceFilter"/>
+        <if test="afterId != null">AND c.id &lt; #{afterId}</if>
+        ORDER BY c.id DESC LIMIT #{limit}
+    </select>
+    <select id="displayable" resultType="boolean" useCache="false" timeout="3">
+        SELECT EXISTS (SELECT 1 <include refid="publishedFrom"/> WHERE u.id = #{actor}
+            AND c.id = #{cardId} AND r.id = #{revisionId} AND <include refid="displayable"/>)
+    </select>
+    <!-- 三组各自先授权再截取；旧版与草稿不能挤占预算。 -->
+    <select id="search" resultType="long" useCache="false" timeout="3">
+        WITH exact_hits AS (
+            SELECT c.id, 0 AS tier, 0.0::double precision AS score <include refid="publishedFrom"/>
+            WHERE u.id = #{actor} AND r.normalized_questions_json @&gt; jsonb_build_array(CAST(#{normalizedQuery} AS text))
+                AND <include refid="displayable"/> <include refid="spaceFilter"/>
+            ORDER BY c.id LIMIT #{limit}
+        ), question_hits AS (
+            SELECT c.id, 1 AS tier, pdb.score(r.id) AS score <include refid="publishedFrom"/>
+            WHERE u.id = #{actor} AND r.question_text ||| #{query}
+                AND <include refid="displayable"/> <include refid="spaceFilter"/>
+            ORDER BY pdb.score(r.id) DESC, c.id LIMIT #{limit}
+        ), answer_hits AS (
+            SELECT c.id, 2 AS tier, pdb.score(r.id) AS score <include refid="publishedFrom"/>
+            WHERE u.id = #{actor} AND r.answer ||| #{query}
+                AND <include refid="displayable"/> <include refid="spaceFilter"/>
+            ORDER BY pdb.score(r.id) DESC, c.id LIMIT #{limit}
+        ), combined AS (
+            SELECT * FROM exact_hits UNION ALL SELECT * FROM question_hits UNION ALL SELECT * FROM answer_hits
+        ), deduplicated AS (
+            SELECT DISTINCT ON (id) id, tier, score FROM combined ORDER BY id, tier, score DESC
+        ) SELECT id FROM deduplicated ORDER BY tier, score DESC, id LIMIT #{limit}
+    </select>
+    <sql id="selectedFrom">
+        FROM kb_answer_card c JOIN kb_answer_card_revision r ON r.card_id = c.id AND r.id = #{revisionId}
+        CROSS JOIN sys_user u JOIN sys_dept dept ON dept.id = u.dept_id
+    </sql>
+    <select id="eligible" resultType="boolean" useCache="false" flushCache="true" timeout="3">
+        SELECT EXISTS (SELECT 1 <include refid="selectedFrom"/>
+        WHERE c.id = #{cardId} AND u.id = #{userId} AND <include refid="activeUser"/>
+            AND <include refid="spaceView"/> AND <include refid="allSourcesReadable"/> AND
+            <choose><when test="reviewer"><include refid="reviewer"/></when><otherwise><include refid="writer"/></otherwise></choose>)
+    </select>
+    <select id="hasReviewer" resultType="boolean" useCache="false" flushCache="true" timeout="3">
+        SELECT EXISTS (SELECT 1 <include refid="selectedFrom"/> WHERE c.id = #{cardId}
+            AND <include refid="activeUser"/> AND <include refid="spaceView"/> AND <include refid="reviewer"/>
+            AND <include refid="allSourcesReadable"/> AND u.id &lt;&gt; #{submittedBy}
+            AND NOT EXISTS (SELECT 1 FROM kb_answer_card_contributor ac WHERE ac.branch_id = #{branchId} AND ac.user_id = u.id))
+    </select>
+    <select id="candidates" resultType="com.zhishiku.kb.app.domain.dto.answercard.AnswerCardPerson" useCache="false" flushCache="true" timeout="3">
+        SELECT u.id AS user_id, u.display_name <include refid="selectedFrom"/> WHERE c.id = #{cardId}
+            AND <include refid="activeUser"/> AND <include refid="spaceView"/> AND <include refid="writer"/>
+            AND <include refid="allSourcesReadable"/> AND u.display_name LIKE #{namePattern} ESCAPE '\'
+        <if test="afterId != null">AND u.id &gt; #{afterId}</if>
+        ORDER BY u.id LIMIT #{limit}
+    </select>
+    <select id="responsible" resultType="com.zhishiku.kb.app.domain.dto.answercard.AnswerCardPerson" useCache="false" timeout="3">
+        SELECT u.id AS user_id, u.display_name FROM kb_answer_card_stewardship st JOIN sys_user u ON u.id = st.responsible_user_id
+        WHERE st.card_id = #{cardId}
+    </select>
+    <select id="management" resultType="long" useCache="false" timeout="3">
+        SELECT c.id FROM kb_answer_card c CROSS JOIN sys_user u JOIN sys_dept dept ON dept.id = u.dept_id
+        WHERE u.id = #{actor} AND <include refid="activeUser"/> AND <include refid="manager"/>
+        <include refid="spaceFilter"/>
+        <if test="afterId != null">AND c.id &lt; #{afterId}</if>
+        ORDER BY c.id DESC LIMIT #{limit}
+    </select>
+    <select id="history" resultType="long" useCache="false" timeout="3">
+        SELECT r.id FROM kb_answer_card c JOIN kb_answer_card_revision r ON r.card_id = c.id
+        CROSS JOIN sys_user u JOIN sys_dept dept ON dept.id = u.dept_id
+        WHERE u.id = #{actor} AND c.id = #{cardId} AND <include refid="activeUser"/> AND <include refid="spaceView"/>
+            AND ((<include refid="writer"/>) OR (<include refid="reviewer"/>)) AND <include refid="allSourcesReadable"/>
+        <if test="afterId != null">AND r.id &lt; #{afterId}</if>
+        ORDER BY r.id DESC LIMIT #{limit}
+    </select>
+    <select id="workspace" resultType="long" useCache="false" timeout="3">
+        SELECT c.id FROM kb_answer_card c
+        LEFT JOIN kb_answer_card_branch b ON b.id = c.active_branch_id AND b.card_id = c.id
+        JOIN kb_answer_card_revision r ON r.id =
+        <choose>
+            <when test="view == 'mine' or view == 'attention'">COALESCE(c.published_revision_id, b.latest_revision_id)</when>
+            <otherwise>COALESCE(b.latest_revision_id, c.published_revision_id)</otherwise>
+        </choose>
+        AND r.card_id = c.id
+        LEFT JOIN kb_answer_card_stewardship st ON st.card_id = c.id
+        CROSS JOIN sys_user u JOIN sys_dept dept ON dept.id = u.dept_id
+        WHERE u.id = #{actor} AND <include refid="activeUser"/> AND <include refid="spaceView"/> AND <include refid="allSourcesReadable"/>
+        <choose>
+            <when test="view == 'reviewable'">
+                AND <include refid="reviewer"/>
+                AND EXISTS (SELECT 1 FROM kb_answer_card_review ar WHERE ar.card_id = c.id AND ar.revision_id = r.id
+                    AND ar.state = 'IN_REVIEW' AND ar.submitted_by &lt;&gt; u.id)
+                AND NOT EXISTS (SELECT 1 FROM kb_answer_card_contributor ac WHERE ac.branch_id = b.id AND ac.user_id = u.id)
+            </when>
+            <otherwise>AND <include refid="writer"/></otherwise>
+        </choose>
+        <if test="view == 'mine' or view == 'attention'">AND st.responsible_user_id = u.id</if>
+        <if test="view == 'attention'">
+            AND (NOT (<include refid="freshSources"/>) OR NOT (<include refid="applicable"/>)
+                OR (COALESCE(st.last_confirmed_on, st.first_assigned_on) + make_interval(months => st.cycle_months))::date &lt;= CAST(#{today} AS date) + 30
+                OR r.effective_until &lt;= CAST(#{today} AS date) + 30
+                OR EXISTS (SELECT 1 FROM kb_answer_card_source cs WHERE cs.revision_id = r.id AND cs.effective_until &lt;= CAST(#{today} AS date) + 30))
+        </if>
+        <include refid="spaceFilter"/>
+        <if test="afterId != null">AND c.id &lt; #{afterId}</if>
+        ORDER BY c.id DESC LIMIT #{limit}
+    </select>
+    <select id="reviewHistory" resultType="long" useCache="false" timeout="3">
+        SELECT ar.id FROM kb_answer_card c JOIN kb_answer_card_revision r ON r.card_id = c.id
+        JOIN kb_answer_card_review ar ON ar.card_id = c.id AND ar.revision_id = r.id
+        CROSS JOIN sys_user u JOIN sys_dept dept ON dept.id = u.dept_id
+        WHERE u.id = #{actor} AND c.id = #{cardId} AND <include refid="activeUser"/> AND <include refid="spaceView"/>
+            AND ((<include refid="writer"/>) OR (<include refid="reviewer"/>)) AND <include refid="allSourcesReadable"/>
+        <if test="revisionId != null">AND r.id = #{revisionId}</if>
+        <if test="afterId != null">AND ar.id &lt; #{afterId}</if>
+        ORDER BY ar.id DESC LIMIT #{limit}
+    </select>
+</mapper>

@@ -55,7 +55,8 @@ public class IdentityAuditService {
     public IdentityAuditRecord appendSuccess(AuditScope scope, String requestId, long actorUserId,
                                               long targetId, String operation, String beforeState, String afterState) {
         AuditScope normalizedScope = requireScope(scope);
-        String request = IdentityWriteSupport.requestId(requestId);
+        String request = normalizedScope.targetType().equals("answer-card")
+                ? exactCardRequestId(requestId) : IdentityWriteSupport.requestId(requestId);
         String action = IdentityWriteSupport.required(operation, "operation");
         String before = safeJson(beforeState);
         String after = safeJson(afterState);
@@ -67,6 +68,16 @@ public class IdentityAuditService {
         }
         return new IdentityAuditRecord(null, eventId, normalizedScope.name(), request, actorUserId,
                 normalizedScope.targetType(), targetId, action, "SUCCESS", before, after, null, now);
+    }
+
+    /** 卡片请求身份按原码点保留，不能在审计唯一键上另做trim而合并不同意图。 */
+    private static String exactCardRequestId(String value) {
+        if (value == null || value.isEmpty() || value.codePointCount(0, value.length()) > 128
+                || value.codePoints().anyMatch(code -> Character.isISOControl(code)
+                || code >= Character.MIN_SURROGATE && code <= Character.MAX_SURROGATE)) {
+            throw IdentityException.badRequest("请求标识无效");
+        }
+        return value;
     }
 
     /**

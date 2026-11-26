@@ -42,6 +42,8 @@ public enum Permission {
     DOCUMENT_TAG_WRITE("document:tag:write", "创建、改名和启停全局标签"),
     SEARCH_TERM_READ("search:term:read", "读取企业术语与人工错词管理目录"),
     SEARCH_TERM_WRITE("search:term:write", "创建、编辑和启停企业术语与人工错词"),
+    ANSWER_CARD_WRITE("answer:card:write", "在当前空间与来源授权范围维护标准答案卡及本人复审确认"),
+    ANSWER_CARD_REVIEW("answer:card:review", "在当前空间与来源授权范围独立审核标准答案卡，禁止自审"),
     EMBEDDING_READ("embedding:read", "查询向量配置与重建状态"),
     EMBEDDING_REBUILD("embedding:rebuild", "发起与恢复向量重建");
 

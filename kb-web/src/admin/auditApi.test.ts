@@ -14,6 +14,16 @@ function client(value: unknown) {
   return { read, state, session: { send: read, getSnapshot: () => state } as unknown as Session };
 }
 describe('审计输入输出单元', () => {
+  it('卡片审计支持固定变化字段与大整数，私有字段混入降为摘要不可用', async () => {
+    const metadata = { ...meta, operationScope: 'ANSWER_CARD_SAVE', targetType: 'answer-card', targetId: '9' };
+    const changes = [{ field: 'changedFields', before: null, after: ['question', 'aliases', 'answer', 'applicabilityText', 'sources', 'effectiveFrom', 'untilKind', 'effectiveUntil'] },
+      { field: 'cardVersion', before: 9007199254740993n, after: 9007199254740994n }, { field: 'state', before: null, after: 'DRAFT' }];
+    expect((await auditDetail(client({ metadata, changes, summaryAvailable: true }).session, eventId, signal)).summaryAvailable).toBe(true);
+    for (const change of [{ field: 'answer', before: null, after: 'PRIVATE' }, { field: 'reason', before: null, after: 'PRIVATE' },
+      { field: 'state', before: null, after: 'PRIVATE' }, { field: 'changedFields', before: [], after: ['PRIVATE'] }]) {
+      expect(await auditDetail(client({ metadata, changes: [change], summaryAvailable: true }).session, eventId, signal)).toEqual({ metadata, changes: [], summaryAvailable: false });
+    }
+  });
   it('词典审计仅消费固定字段名和版本，不接受词条正文混入', async () => {
     const metadata = { ...meta, operationScope: 'SEARCH_TERM_UPDATE', targetType: 'search-term', targetId: '9' };
     const c = client({ metadata, summaryAvailable: true, changes: [

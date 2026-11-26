@@ -86,6 +86,13 @@ public interface SpaceMapper {
     @Select("SELECT count(*) FROM kb_document WHERE space_id = #{spaceId}")
     long countReferencedDocuments(@Param("spaceId") long spaceId);
 
+    /** 全部卡片引用，包含仅有草稿和暂停展示的历史。 */
+    @Select("SELECT count(*) FROM kb_answer_card WHERE space_id = #{spaceId}")
+    long countReferencedAnswerCards(
+            @Param("spaceId")
+            long spaceId
+    );
+
     /**
      * 元数据更新，带乐观锁。
      *

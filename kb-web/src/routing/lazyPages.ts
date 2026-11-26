@@ -33,3 +33,8 @@ export const AiAuditsPage = lazyPage(() => import('../admin/AiAuditsPage.vue'));
 export const OperationsReportsPage = lazyPage(() => import('../admin/OperationsReportsPage.vue'));
 export const DocumentTagsPage = lazyPage(() => import('../admin/DocumentTagsPage.vue'));
 export const SearchTermsPage = lazyPage(() => import('../admin/SearchTermsPage.vue'));
+export const AnswerCardsPage = lazyPage(() => import('../pages/AnswerCardsPage.vue'));
+export const AnswerCardDetailPage = lazyPage(() => import('../pages/AnswerCardDetailPage.vue'));
+export const AnswerCardWorkspacesPage = lazyPage(() => import('../pages/AnswerCardWorkspacesPage.vue'));
+export const AnswerCardWorkspacePage = lazyPage(() => import('../pages/AnswerCardWorkspacePage.vue'));
+export const AnswerCardManagementPage = lazyPage(() => import('../pages/AnswerCardManagementPage.vue'));

@@ -18,6 +18,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhishiku.kb.common.api.R;
 import com.zhishiku.kb.gateway.filter.KnowledgeGapResponsePolicy;
+import com.zhishiku.kb.gateway.filter.AnswerCardResponsePolicy;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -166,6 +167,27 @@ class SaTokenGatewayConfigTest {
             } finally {
                 SaReactorSyncHolder.clearContext();
             }
+        }
+    }
+
+    @Test
+    void cardAuthenticationFailureIsJsonNoStoreAndCannotClaimSuccessVersion() {
+        for (String path : List.of("/api/answer-cards", "/api/answer-cards/search", "/api/answer-cards/commands/query")) {
+            var exchange = MockServerWebExchange.from(MockServerHttpRequest.post(path));
+            new AnswerCardResponsePolicy().filter(exchange, current -> {
+                SaReactorSyncHolder.setContext(current);
+                try {
+                    Assertions.assertThatThrownBy(() -> filter.auth.run(null)).isInstanceOf(NotLoginException.class);
+                    Object body = filter.error.run(new NotLoginException(NotLoginException.NOT_TOKEN_MESSAGE, NotLoginException.NOT_TOKEN, null));
+                    return current.getResponse().writeWith(Mono.just(current.getResponse().bufferFactory()
+                            .wrap(String.valueOf(body).getBytes(StandardCharsets.UTF_8))));
+                } finally {
+                    SaReactorSyncHolder.clearContext();
+                }
+            }).block(Duration.ofSeconds(1));
+            assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(exchange.getResponse().getHeaders().getCacheControl()).isEqualTo("no-store");
+            assertThat(exchange.getResponse().getHeaders().containsKey("X-Answer-Card-Version")).isFalse();
         }
     }
 

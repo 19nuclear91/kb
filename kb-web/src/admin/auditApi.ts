@@ -103,11 +103,13 @@ function scalar(value: unknown): AuditScalar {
 }
 function changeValue(field: string, value: unknown, scope = ''): AuditValue {
   if (!Array.isArray(value)) return scalar(value);
-  if (!['tagIds', 'changedFields'].includes(field) || value.length > (field === 'tagIds' ? 20 : 6)) throw broken();
+  if (!['tagIds', 'changedFields'].includes(field) || value.length > (field === 'tagIds' ? 20 : scope.startsWith('ANSWER_CARD_') ? 10 : 6)) throw broken();
   const items = value.map(item => {
     if (field === 'changedFields') {
       const allowed = scope.startsWith('SEARCH_TERM_') ? ['canonicalName', 'description', 'aliases', 'enabled']
-        : scope.startsWith('SEARCH_CORRECTION_') ? ['wrongExpression', 'targetTermId', 'enabled'] : ['title', 'summary', 'categoryId', 'tagIds'];
+        : scope.startsWith('SEARCH_CORRECTION_') ? ['wrongExpression', 'targetTermId', 'enabled']
+          : scope.startsWith('ANSWER_CARD_') ? ['question', 'aliases', 'answer', 'applicabilityText', 'sources', 'effectiveFrom', 'untilKind', 'effectiveUntil', 'responsible', 'cycleMonths']
+            : ['title', 'summary', 'categoryId', 'tagIds'];
       if (typeof item !== 'string' || !allowed.includes(item)) throw broken();
       return item;
     }
@@ -144,12 +146,30 @@ export async function auditDetail(session: Session, eventId: string, signal: Abo
   const row = object(await auditJson(session, `${base}/${eventId}`, signal)), meta = metadata(row.metadata);
   if (meta.eventId !== eventId.toLowerCase() || typeof row.summaryAvailable !== 'boolean' || !Array.isArray(row.changes)) throw broken();
   const term = ['SEARCH_TERM_CREATE', 'SEARCH_TERM_UPDATE', 'SEARCH_CORRECTION_CREATE', 'SEARCH_CORRECTION_UPDATE'].includes(meta.operationScope);
+  const card = ['ANSWER_CARD_CREATE', 'ANSWER_CARD_SAVE', 'ANSWER_CARD_SUBMIT', 'ANSWER_CARD_APPROVE', 'ANSWER_CARD_REJECT', 'ANSWER_CARD_WITHDRAW', 'ANSWER_CARD_STEWARDSHIP_UPDATE', 'ANSWER_CARD_CONFIRM'].includes(meta.operationScope);
   let summaryAvailable = row.summaryAvailable;
   let changes: AuditChange[] = [];
   try {
     if (term && summaryAvailable && meta.targetType !== (meta.operationScope.startsWith('SEARCH_CORRECTION_') ? 'search-correction' : 'search-term')) throw broken();
+    if (card && summaryAvailable && meta.targetType !== 'answer-card') throw broken();
     changes = summaryAvailable ? row.changes.map(value => {
       const change = object(value), field = text(change.field);
+      if (card) {
+        const fields = ['cardId', 'spaceId', 'revisionId', 'branchId', 'reviewId', 'cardVersion', 'reviewVersion', 'stewardshipVersion', 'state',
+          'responsibleUserId', 'cycleMonths', 'lastConfirmedOn', 'dueDate', 'effectiveFrom', 'untilKind', 'effectiveUntil', 'reasonProvided', 'changedFields'];
+        if (!fields.includes(field)) throw broken();
+        for (const value of [change.before, change.after]) {
+          if (value === null) continue;
+          if (field === 'changedFields') { if (!Array.isArray(value)) throw broken(); }
+          else if (field === 'state') { if (!['DRAFT', 'IN_REVIEW', 'APPROVED', 'REJECTED', 'WITHDRAWN', 'ASSIGNED', 'CONFIRMED'].includes(String(value))) throw broken(); }
+          else if (field === 'untilKind') { if (!['UNDECLARED', 'OPEN_ENDED', 'DATE'].includes(String(value))) throw broken(); }
+          else if (field === 'cycleMonths') { if (![3, 6, 12, 24].includes(Number(value))) throw broken(); }
+          else if (field === 'reasonProvided') { if (typeof value !== 'boolean') throw broken(); }
+          else if (['lastConfirmedOn', 'dueDate', 'effectiveFrom', 'effectiveUntil'].includes(field)) {
+            if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(`${value}T00:00:00Z`))) throw broken();
+          } else if (!/^(0|[1-9]\d{0,18})$/.test(String(value)) || BigInt(value as string) > maxLong || field.endsWith('Id') && BigInt(value as string) === 0n) throw broken();
+        }
+      }
       if (term) {
         const correction = meta.operationScope.startsWith('SEARCH_CORRECTION_');
         const fields = correction ? ['correctionId', 'targetTermId', 'enabled', 'version', 'dictionaryRevision', 'changedFields'] : ['termId', 'enabled', 'version', 'dictionaryRevision', 'changedFields'];
@@ -169,9 +189,9 @@ export async function auditDetail(session: Session, eventId: string, signal: Abo
       }
       return { field, before: changeValue(field, change.before, meta.operationScope), after: changeValue(field, change.after, meta.operationScope) };
     }) : [];
-    if (term && new Set(changes.map(change => change.field)).size !== changes.length) throw broken();
+    if ((term || card) && new Set(changes.map(change => change.field)).size !== changes.length) throw broken();
   } catch (error) {
-    if (!term) throw error;
+    if (!term && !card) throw error;
     changes = []; summaryAvailable = false;
   }
   return { metadata: meta, changes, summaryAvailable };

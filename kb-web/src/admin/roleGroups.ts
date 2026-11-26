@@ -1,6 +1,6 @@
 import type { PermissionSummary } from './types';
 
-const groupNames: Record<string, string> = { identity: '身份管理', audit: '审计', parse: '解析处理', space: '知识空间', document: '文档', embedding: '向量与检索' };
+const groupNames: Record<string, string> = { identity: '身份管理', audit: '审计', parse: '解析处理', space: '知识空间', document: '文档', answer: '标准答案维护与独立审核', embedding: '向量与检索' };
 /** 分组只影响目录展示；未知前缀保持原文。 */
 export function groupPermissions(list: PermissionSummary[]) {
   const groups = new Map<string, PermissionSummary[]>();

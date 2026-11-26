@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.mapper.answercard.AnswerCardSourceMapper">
+    <sql id="projection">
+        d.id AS document_id, v.id AS version_id, d.space_id, d.title, v.version_no,
+        d.current_version_id, COALESCE(a.applicability_version, 0) AS applicability_version,
+        a.effective_from, COALESCE(a.until_kind, 'UNDECLARED') AS until_kind, a.effective_until
+    </sql>
+    <sql id="sourceFrom">
+        FROM kb_document d JOIN kb_document_version v ON v.doc_id = d.id
+        LEFT JOIN kb_document_version_applicability a ON a.version_id = v.id AND a.doc_id = d.id
+    </sql>
+    <sql id="readable">
+        d.status NOT IN ('deleted', 'archived') AND d.security_level &lt;= #{clearance}
+        AND v.publication_evidence IN ('PUBLISHED', 'OBSERVED_CURRENT')
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+    </sql>
+    <select id="facts" resultType="com.zhishiku.kb.app.domain.dto.answercard.AnswerCardSourceFact" useCache="false" flushCache="true" timeout="3">
+        <bind name="aclPermission" value="'view'"/>
+        SELECT <include refid="projection"/> <include refid="sourceFrom"/>
+        WHERE <include refid="readable"/> AND
+        <choose>
+            <when test="sources != null and sources.size() > 0">
+                <foreach collection="sources" item="source" open="(" separator=" OR " close=")">
+                    (d.id = #{source.documentId} AND v.id = #{source.versionId})
+                </foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+        ORDER BY d.id
+    </select>
+    <select id="candidates" resultType="com.zhishiku.kb.app.domain.dto.answercard.AnswerCardSourceFact" useCache="false" flushCache="true" timeout="3">
+        <bind name="aclPermission" value="'view'"/>
+        SELECT <include refid="projection"/> <include refid="sourceFrom"/>
+        WHERE v.id = d.current_version_id AND <include refid="readable"/>
+        AND d.title ILIKE #{namePattern} ESCAPE '\'
+        <if test="afterId != null">AND d.id &gt; #{afterId}</if>
+        ORDER BY d.id LIMIT #{limit}
+    </select>
+</mapper>

@@ -1,5 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router';
-import { canOpenDocuments, perm } from '../admin/access';
+import { canOpenDocuments, canWorkCards, canManageCards, perm } from '../admin/access';
 import ChangePasswordPage from '../pages/ChangePasswordPage.vue';
 import LoginPage from '../pages/LoginPage.vue';
 import { RESULT_PATH } from '../sso/storage';
@@ -30,6 +30,11 @@ export const routes: RouteRecordRaw[] = [
       page('/reviews', 'ReviewsPage'),
       page('/notifications', 'NotificationsPage'),
       page('/stewardship', 'StewardshipPage'),
+      page('/answer-cards', 'AnswerCardsPage'),
+      page('/answer-cards/workspace', 'AnswerCardWorkspacesPage', { allow: canWorkCards, title: '标准答案维护与审核' }),
+      page('/answer-cards/management', 'AnswerCardManagementPage', { allow: canManageCards, title: '标准答案责任人管理' }),
+      page('/answer-cards/:cardId/workspace', 'AnswerCardWorkspacePage', { allow: canWorkCards, title: '标准答案工作区' }),
+      page('/answer-cards/:cardId/revisions/:revisionId', 'AnswerCardDetailPage'),
       page('/knowledge-gaps', 'KnowledgeGapsPage'), page('/knowledge-gaps/new', 'KnowledgeGapNewPage'),
       page('/knowledge-gaps/:gapId', 'KnowledgeGapDetailPage'),
       page('/search', 'SearchPage'), page('/assistant', 'AssistantPage'), page('/assistant/:conversationId', 'AssistantPage'),

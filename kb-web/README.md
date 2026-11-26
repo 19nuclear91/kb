@@ -14,6 +14,18 @@ npm run build
 
 单元测试仅使用内存替身和模拟 DOM，不启动应用、浏览器、数据库、Redis、MinIO 或模型服务，不测试说明文档内容。
 
+## 标准答案卡
+
+普通入口为 `/answer-cards`，固定详情为 `/answer-cards/:cardId/revisions/:revisionId`。维护清单、详情和责任人管理分别为 `/answer-cards/workspace`、`/answer-cards/:cardId/workspace`、`/answer-cards/management`，按当前功能资格和空间管理范围懒加载。详情展示经审核原文、适用范围、日期、复审提示及受保护的原固定版本预览；相关命中不表示自动适用于用户情形。
+
+知识搜索页的标准答案区域独立提交问题和所属空间，不继承文档分类、标签、文件类型、日期或术语建议。“用原问题查标准答案”只预填，用户需明确提交；两个区域的结果和故障分别处理。客户端要求 `X-Answer-Card-Version: 1`，对缺失协议、旧数组、损坏身份或日期显示不可用，合法空结果另行提示。
+
+维护页分别展示发布记录和活动草稿；来源版本或日期变化需要明确重选、保存新稿再审核。审核绑定原修订和轮次，贡献者和送审者不得自审。责任人管理使用最小身份候选，改派不重置复审基准；本人准确性确认不能解除来源变化暂停，也不能延长有效期。
+
+`src/answerCards/commands.ts` 仅在当前会话内存保留未确认原意图。关闭弹窗或重开工作区继续核对；NOT_FOUND、资格正在重核或重读失败均不证明原请求未提交。确认失权、退出和换号清理私有状态；主动放弃后先重读服务器事实。所有读取及反馈绑定身份、目标和请求世代，迟到响应不能串用户。
+
+使用与接口说明见[标准答案](../docs/answer-cards.md)、[API](../docs/answer-cards-api.md)、[运维](../docs/answer-cards-operations.md)。包体新增 answerCards、answerCardDetail、answerCardWorkspaces、answerCardWorkspace、answerCardManagement、answerCardSearch 六个场景；入口、登录和文档列表只允许小型地址白名单，不静态包含卡片业务模块。变更已同步主规格并[归档](../openspec/changes/archive/2026-11-26-reviewed-answer-cards/archive-record.md)，最终159项前端回归、类型检查、构建及包体隔离通过，详见[核验报告](../openspec/changes/archive/2026-11-26-reviewed-answer-cards/verify-report.md)。本次构建和包体临时产物已清理，可通过报告内命令重新生成；未进行真实浏览器或前后端联调。
+
 空间／文档管理新增权限诊断与可选授权预演。新资格 `authorization:diagnose` 必须与当前管理范围同时确认；从最小用户选择或 USER 行进入，仅解释一个用户与资源。结果严格绑定当前用户、资源、草稿、会话及请求代次；关闭、隐藏或改草稿清理结果，恢复后主动重试。预演不可用不阻止原合法授权提交，写入在途／未知及删除协调期间暂停读取，不能借诊断结清原写入。详见 [权限诊断](../docs/authorization-diagnostics.md)。
 
 该变更已于 2026-11-25 同步四份主规格并[归档](../openspec/changes/archive/2026-11-25-permission-explanation-and-authorization-preview/archive-record.md)，42/42 项任务完成。预演 403／404 重核成功后恢复原授权草稿并保留提示；失权、搬迁、身份变化或离页时清理待恢复表单。最终前端白名单 **9 文件／145 项**、类型检查、静态构建及包体隔离通过，核验为 0 CRITICAL、0 WARNING、0 SUGGESTION，详见[最终报告](../openspec/changes/archive/2026-11-25-permission-explanation-and-authorization-preview/verification-report-3.md)。未部署，真实浏览器及联调仍未验证。

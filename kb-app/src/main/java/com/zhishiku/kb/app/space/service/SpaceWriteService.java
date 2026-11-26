@@ -175,9 +175,9 @@ public class SpaceWriteService {
         SpaceRecord before = requireSpaceForUpdate(spaceId);
         authorizer.requireSpaceManager(spaceId);
         long documents = mapper.countReferencedDocuments(spaceId);
-        if (documents > 0) {
+        if (documents > 0 || mapper.countReferencedAnswerCards(spaceId) > 0) {
             throw IdentityException.conflict(IdentityConflictReason.SPACE_NOT_EMPTY,
-                    "空间仍有文档引用，不能删除，请改用归档");
+                    "空间仍有内容引用，不能删除，请改用归档");
         }
         if (mapper.deleteSpace(spaceId) != 1) {
             throw IdentityException.notFound("空间不存在或已被删除");
