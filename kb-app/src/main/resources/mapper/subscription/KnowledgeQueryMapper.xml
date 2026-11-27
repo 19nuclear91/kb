@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.mapper.subscription.KnowledgeQueryMapper">
+    <sql id="versionVisible">
+        <bind name="aclPermission" value="'view'"/>
+        d.status NOT IN ('deleted', 'archived') AND d.security_level &lt;= #{clearance}
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.versionInteractivePredicate"/>
+    </sql>
+    <sql id="columns">
+        u.id AS update_id, p.position, p.document_id, p.version_id, v.version_no, d.title,
+        p.published_at, u.week_start, u.mode
+    </sql>
+    <sql id="sources">
+        FROM kb_knowledge_update u JOIN kb_knowledge_publication p ON p.event_id = u.event_id
+        JOIN kb_document d ON d.id = p.document_id
+        JOIN kb_document_version v ON v.id = p.version_id AND v.doc_id = d.id
+    </sql>
+    <sql id="visible">
+        u.user_id = #{actor} AND v.publication_evidence = 'PUBLISHED' AND <include refid="com.zhishiku.kb.app.mapper.subscription.KnowledgeQueryMapper.versionVisible"/>
+    </sql>
+    <sql id="originalMatches">
+        EXISTS (SELECT 1 FROM kb_knowledge_update_match m
+            JOIN kb_knowledge_subscription_period g ON g.id = m.generation_id AND g.user_id = m.user_id
+            WHERE m.update_id = u.id AND m.user_id = u.user_id
+                AND (g.end_position IS NULL OR g.end_position &gt; ${dispatch}))
+    </sql>
+    <!-- 供已发周报和通知共享；必须已有NOTIFIED且属于本人。 -->
+    <sql id="digestMembers">
+        <include refid="com.zhishiku.kb.app.mapper.subscription.KnowledgeQueryMapper.visible"/> AND u.mode = 'WEEKLY' AND u.week_start = kd.week_start
+        AND kd.user_id = #{actor} AND kd.kind = 'WEEKLY' AND kd.status = 'NOTIFIED'
+        AND <include refid="com.zhishiku.kb.app.mapper.subscription.KnowledgeQueryMapper.originalMatches"><property name="dispatch" value="kd.dispatch_position"/></include>
+    </sql>
+    <sql id="updatePosition">
+        <if test="beforePosition != null">AND p.position &lt; #{beforePosition}</if>
+        ORDER BY p.position DESC LIMIT #{limit}
+    </sql>
+    <select id="updates" resultType="com.zhishiku.kb.app.domain.dto.subscription.KnowledgeRows$Update" useCache="false" timeout="3">
+        SELECT <include refid="columns"/> <include refid="sources"/> WHERE <include refid="visible"/>
+        <if test="weekStart != null">AND u.week_start = #{weekStart}</if>
+        <include refid="updatePosition"/>
+    </select>
+    <select id="update" resultType="com.zhishiku.kb.app.domain.dto.subscription.KnowledgeRows$Update" useCache="false" timeout="3">
+        SELECT <include refid="columns"/> <include refid="sources"/>
+        WHERE u.id = #{updateId} AND <include refid="visible"/>
+    </select>
+    <select id="eligible" resultType="boolean" useCache="false" timeout="3">
+        SELECT EXISTS (SELECT 1 <include refid="sources"/> WHERE <include refid="visible"/>
+            <choose>
+                <when test="updateId != null">AND u.id = #{updateId} AND u.mode = 'PER_PUBLICATION'</when>
+                <when test="weekStart != null">AND u.week_start = #{weekStart} AND u.mode = 'WEEKLY'</when>
+                <otherwise>AND FALSE</otherwise>
+            </choose>
+            AND <include refid="originalMatches"><property name="dispatch" value="#{dispatchPosition}"/></include>)
+    </select>
+    <sql id="digestVisible">
+        kd.user_id = #{actor} AND kd.kind = 'WEEKLY' AND kd.status = 'NOTIFIED'
+        AND EXISTS (SELECT 1 <include refid="sources"/> WHERE <include refid="digestMembers"/>)
+    </sql>
+    <select id="digests" resultType="com.zhishiku.kb.app.domain.dto.subscription.KnowledgeRows$Digest" useCache="false" timeout="3">
+        SELECT kd.id AS digest_id, kd.week_start, kd.dispatched_at AS generated_at FROM kb_knowledge_delivery kd
+        WHERE <include refid="digestVisible"/>
+        <if test="beforeWeek != null">AND kd.week_start &lt; #{beforeWeek}</if>
+        ORDER BY kd.week_start DESC LIMIT #{limit}
+    </select>
+    <select id="digest" resultType="com.zhishiku.kb.app.domain.dto.subscription.KnowledgeRows$Digest" useCache="false" timeout="3">
+        SELECT kd.id AS digest_id, kd.week_start, kd.dispatched_at AS generated_at FROM kb_knowledge_delivery kd
+        WHERE kd.id = #{digestId} AND <include refid="digestVisible"/>
+    </select>
+    <select id="groups" resultType="com.zhishiku.kb.app.domain.dto.subscription.KnowledgeRows$Group" useCache="false" timeout="3">
+        SELECT grouped.* FROM (
+            SELECT d.id AS document_id, d.title, count(*) AS publication_count,
+                max(p.position) AS position, max(p.published_at) AS latest_published_at
+            <include refid="sources"/> JOIN kb_knowledge_delivery kd ON kd.id = #{digestId}
+            WHERE <include refid="digestMembers"/> GROUP BY d.id, d.title
+        ) grouped WHERE TRUE
+        <if test="beforePosition != null">AND (grouped.position, grouped.document_id) &lt; (#{beforePosition}, #{beforeDocumentId})</if>
+        ORDER BY grouped.position DESC, grouped.document_id DESC LIMIT #{limit}
+    </select>
+    <select id="members" resultType="com.zhishiku.kb.app.domain.dto.subscription.KnowledgeRows$Update" useCache="false" timeout="3">
+        SELECT <include refid="columns"/> <include refid="sources"/>
+        JOIN kb_knowledge_delivery kd ON kd.id = #{digestId}
+        WHERE d.id = #{documentId} AND <include refid="digestMembers"/>
+        <include refid="updatePosition"/>
+    </select>
+    <select id="base" resultType="com.zhishiku.kb.app.domain.dto.subscription.KnowledgeRows$Base" useCache="false" timeout="3">
+        <bind name="spaceIds" value="q.spaceIds"/>
+        <bind name="principalKeys" value="q.principalKeys"/>
+        <bind name="clearance" value="q.clearance"/>
+        SELECT v.id AS version_id, v.version_no FROM kb_document d JOIN kb_document_version v ON v.doc_id = d.id
+        JOIN kb_document_version target ON target.id = #{versionId} AND target.doc_id = d.id
+        WHERE d.id = #{q.documentId} AND v.publication_evidence IN ('PUBLISHED', 'OBSERVED_CURRENT')
+            AND <include refid="versionVisible"/>
+        <choose>
+            <when test="baseVersionId != null">AND v.id = #{baseVersionId}</when>
+            <otherwise>AND v.version_no &lt; target.version_no</otherwise>
+        </choose>
+        ORDER BY v.version_no DESC LIMIT 1
+    </select>
+    <!-- 通知模块传入actor及当前范围，kd为第三来源工作别名。 -->
+    <sql id="notificationVisible">
+        kd.user_id = #{actor} AND kd.status = 'NOTIFIED'
+        AND ((kd.kind = 'PER_PUBLICATION' AND EXISTS (SELECT 1 <include refid="com.zhishiku.kb.app.mapper.subscription.KnowledgeQueryMapper.sources"/>
+                WHERE u.id = kd.update_id AND <include refid="com.zhishiku.kb.app.mapper.subscription.KnowledgeQueryMapper.visible"/>))
+            OR (kd.kind = 'WEEKLY' AND EXISTS (SELECT 1 <include refid="com.zhishiku.kb.app.mapper.subscription.KnowledgeQueryMapper.sources"/>
+                WHERE <include refid="com.zhishiku.kb.app.mapper.subscription.KnowledgeQueryMapper.digestMembers"/>)))
+    </sql>
+</mapper>

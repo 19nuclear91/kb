@@ -25,6 +25,10 @@ public final class NotificationTargetJson {
             output.writeStringField("kind", target.kind());
             if (NotificationTarget.KNOWLEDGE_GAP.equals(target.kind())) {
                 output.writeNumberField("gapId", target.gapId());
+            } else if (NotificationTarget.KNOWLEDGE_UPDATE.equals(target.kind())) {
+                identity(output, "updateId", target.updateId());
+            } else if (NotificationTarget.KNOWLEDGE_DIGEST.equals(target.kind())) {
+                identity(output, "digestId", target.digestId());
             } else {
                 output.writeNumberField("documentId", target.documentId());
                 output.writeNumberField("versionId", target.versionId());
@@ -54,8 +58,12 @@ public final class NotificationTargetJson {
                     throw invalid(input);
                 }
                 String kind = text(node, "kind", input);
-                var allowed = NotificationTarget.KNOWLEDGE_GAP.equals(kind) ? Set.of("kind", "gapId")
-                        : Set.of("kind", "documentId", "versionId", "reviewId", "commentId");
+                var allowed = switch (kind) {
+                    case NotificationTarget.KNOWLEDGE_GAP -> Set.of("kind", "gapId");
+                    case NotificationTarget.KNOWLEDGE_UPDATE -> Set.of("kind", "updateId");
+                    case NotificationTarget.KNOWLEDGE_DIGEST -> Set.of("kind", "digestId");
+                    default -> Set.of("kind", "documentId", "versionId", "reviewId", "commentId");
+                };
                 if (node.size() != allowed.size()) {
                     throw invalid(input);
                 }
@@ -67,6 +75,12 @@ public final class NotificationTargetJson {
                 }
                 if (NotificationTarget.KNOWLEDGE_GAP.equals(kind)) {
                     return NotificationTarget.knowledgeGap(integer(node, "gapId", input));
+                }
+                if (NotificationTarget.KNOWLEDGE_UPDATE.equals(kind)) {
+                    return NotificationTarget.knowledgeUpdate(identity(node, "updateId", input));
+                }
+                if (NotificationTarget.KNOWLEDGE_DIGEST.equals(kind)) {
+                    return NotificationTarget.knowledgeDigest(identity(node, "digestId", input));
                 }
                 return new NotificationTarget(kind, integer(node, "documentId", input), integer(node, "versionId", input),
                         identity(node, "reviewId", input), identity(node, "commentId", input));

@@ -1,5 +1,7 @@
 import { lazyPage } from './lazyPage';
 
+export const KnowledgePage = lazyPage(() => import('../pages/KnowledgePage.vue'));
+
 export const LifecyclePage = lazyPage(() => import('../admin/lifecycle/LifecyclePage.vue'));
 export const AccountPage = lazyPage(() => import('../pages/AccountPage.vue'));
 export const DocumentsPage = lazyPage(() => import('../pages/DocumentsPage.vue'));

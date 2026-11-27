@@ -11,6 +11,8 @@
 
 ## 升级与回退
 
+知识订阅V45扩展：审核批准、app自动发布和Worker AUTO发布共用 `kb_knowledge_next_order` / `kb_knowledge_capture_publication` 协议，发布时间、源事件和归属上下文同事务提交。原审核资格、索引门禁及批准回执继续保留；重复命令不新建发布来源。升级前必须排空旧写入者，缺上下文的新发布会被提交时约束拒绝。派生关闭仍捕获发布，不回填旧历史；完整顺序见[订阅协调发布](knowledge-subscriptions-rollout.md)。这些约束的真实数据库执行尚未验证。
+
 ### 升级边界
 
 - 先备份，再停止接收旧协议写入，并排空全部旧 app/Worker 及在途任务；不得让新旧 app/Worker 混部写入。

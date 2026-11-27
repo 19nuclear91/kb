@@ -12,6 +12,7 @@ export const routes = {
   search: ['src/pages/SearchPage.vue'], favorites: ['src/pages/FavoritesPage.vue'],
   reviews: ['src/pages/ReviewsPage.vue'], notifications: ['src/pages/NotificationsPage.vue'],
   stewardship: ['src/stewardship/StewardshipPage.vue'],
+  knowledgeSubscriptions: ['src/pages/KnowledgePage.vue'],
   imports: ['src/pages/ImportsPage.vue'], importDetail: ['src/pages/ImportDetailPage.vue'],
   knowledgeGapList: ['src/pages/KnowledgeGapsPage.vue'], knowledgeGapNew: ['src/pages/KnowledgeGapNewPage.vue'],
   knowledgeGapDetail: ['src/pages/KnowledgeGapDetailPage.vue'], knowledgeGapFeedback: ['src/knowledgeGaps/GapFeedbackDialog.vue'],
@@ -120,6 +121,9 @@ export function checkIsolation(report) {
     fail('入口、登录或文档列表提前包含知识问题实现');
   }
   const adminPages = Object.values(routes).flat().filter(id => id.startsWith('src/admin/'));
+  if ([...entry, ...login, ...list].some(id => id.startsWith('src/subscriptions/') && id !== 'src/subscriptions/routes.ts')) {
+    fail('入口、登录或文档列表提前包含知识订阅业务实现');
+  }
   if ([...entry, ...login, ...list].some(id => id.startsWith('src/answerCards/') && id !== 'src/answerCards/routes.ts')) {
     fail('入口、登录或文档列表提前包含标准答案业务实现');
   }

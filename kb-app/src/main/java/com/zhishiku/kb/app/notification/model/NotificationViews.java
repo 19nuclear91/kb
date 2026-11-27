@@ -23,12 +23,19 @@ public final class NotificationViews {
      */
     @Schema(description = "本人当前可见通知")
     public record Item(
-            @Schema(description = "通知 UUID") UUID notificationId,
-            @Schema(description = "固定通知类型") NotificationType type,
-            @Schema(description = "服务端固定提示，不含源正文") String prompt,
-            @Schema(description = "通知生成时间") Instant createdAt,
-            @Schema(description = "首次已读时间；未读为空") Instant readAt,
-            @Schema(description = "固定站内目标") NotificationTarget target) {
+            @Schema(description = "通知UUID")
+            UUID notificationId,
+            @Schema(description = "REVIEW_*审核、COMMENT_REPLIED评论回复、GAP_*知识问题、SUBSCRIBED_VERSION_PUBLISHED订阅发布、KNOWLEDGE_WEEKLY_DIGEST周报")
+            NotificationType type,
+            @Schema(description = "服务端固定提示，不含源正文")
+            String prompt,
+            @Schema(description = "通知生成时间，ISO-8601 UTC")
+            Instant createdAt,
+            @Schema(description = "首次已读时间，ISO-8601 UTC；未读为空")
+            Instant readAt,
+            @Schema(description = "固定站内目标，打开时重新鉴权")
+            NotificationTarget target
+    ) {
     }
 
     /**
@@ -41,10 +48,15 @@ public final class NotificationViews {
      */
     @Schema(description = "本人通知分页结果，不提供原始总数")
     public record Page(
-            @Schema(description = "当前页通知") List<Item> items,
-            @Schema(description = "是否还有更多可见通知") boolean hasMore,
-            @Schema(description = "续页游标；末页为空") String nextCursor,
-            @Schema(description = "本次读取时间") Instant asOf) {
+            @Schema(description = "当前页通知")
+            List<Item> items,
+            @Schema(description = "是否还有更多可见通知")
+            boolean hasMore,
+            @Schema(description = "续页游标；末页为空")
+            String nextCursor,
+            @Schema(description = "本次读取时间，ISO-8601 UTC")
+            Instant asOf
+    ) {
         public Page {
             items = List.copyOf(items);
         }
@@ -58,8 +70,11 @@ public final class NotificationViews {
      */
     @Schema(description = "本人当前可见未读数；不等于审核待办数")
     public record UnreadCount(
-            @Schema(description = "精确十进制字符串") String count,
-            @Schema(description = "本次计数时间") Instant asOf) {
+            @Schema(description = "当前可见未读数量，精确十进制字符串")
+            String count,
+            @Schema(description = "本次计数时间，ISO-8601 UTC")
+            Instant asOf
+    ) {
     }
 
     /**
@@ -70,7 +85,10 @@ public final class NotificationViews {
      */
     @Schema(description = "本人通知已读回执，不含目标")
     public record ReadReceipt(
-            @Schema(description = "通知 UUID") UUID notificationId,
-            @Schema(description = "首次已读时间") Instant readAt) {
+            @Schema(description = "本人通知UUID")
+            UUID notificationId,
+            @Schema(description = "首次已读时间，ISO-8601 UTC")
+            Instant readAt
+    ) {
     }
 }

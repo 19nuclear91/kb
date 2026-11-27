@@ -14,6 +14,16 @@ npm run build
 
 单元测试仅使用内存替身和模拟 DOM，不启动应用、浏览器、数据库、Redis、MinIO 或模型服务，不测试说明文档内容。
 
+## 知识订阅与更新
+
+2026-11-27已同步主规格并[归档](../openspec/changes/archive/2026-11-27-knowledge-subscriptions-and-digests/archive-record.md)，最终前端白名单23文件/265项、类型检查、构建及包体隔离通过，尚未部署。详情见[核验报告](../openspec/changes/archive/2026-11-27-knowledge-subscriptions-and-digests/verify-report.md)。
+
+`/subscriptions`、`/updates`、`/updates/:updateId`、`/digests`及`/digests/:digestId`统一经身份门禁懒加载；文档详情可进入 `/subscriptions/documents/:documentId` 核对本人关系。支持文档/空间/标签候选、200条有效关系、取消和重新订阅、统一逐次/每周偏好、未知结果原意图核对及同请求重试。
+
+个人更新保持各次固定发布，周报按文档展开发布明细；说明从固定版本取当前值，并提供补写、更正、缺说明及原基准不可用提示。页面隐藏、离页、退出或换号清理私有状态并拒绝迟到响应；不持久化候选、请求或正文，不接入遥测或AI。请求响应头与响应体共用15秒期限，写入超时保留原意图供核对。当前状态重读不能代替原回执，离页不自动重放命令。
+
+通知列表与导航统一声明KNOWLEDGE_SUBSCRIPTIONS_V1，新增最小更新/周报目标，打开仍需重新鉴权，已读单独操作。包体场景 `knowledgeSubscriptions` 检查入口、登录和文档列表只含地址白名单，无订阅业务实现。使用 `npx vitest run src/subscriptions src/notifications` 运行独立模拟DOM/协议检查；构建和包体命令见下文。详情见[用户说明](../docs/knowledge-subscriptions.md)、[API](../docs/knowledge-subscriptions-api.md)及[发布](../docs/knowledge-subscriptions-rollout.md)。
+
 ## 标准答案卡
 
 普通入口为 `/answer-cards`，固定详情为 `/answer-cards/:cardId/revisions/:revisionId`。维护清单、详情和责任人管理分别为 `/answer-cards/workspace`、`/answer-cards/:cardId/workspace`、`/answer-cards/management`，按当前功能资格和空间管理范围懒加载。详情展示经审核原文、适用范围、日期、复审提示及受保护的原固定版本预览；相关命中不表示自动适用于用户情形。
@@ -196,7 +206,7 @@ AI 用量与调用审计入口为 `/admin/ai/usage` 和 `/admin/ai/audits`，分
 
 ## 站内通知
 
-主导航“站内通知”位于 `/notifications`，展示发给本人的审核、评论回复和知识问题提醒。新列表和导航未读数一致发送 `X-Kb-Notification-Contract: KNOWLEDGE_GAPS_V1`，故障不去头降级；缺省旧客户端只见旧四类及旧计数，新旧游标不混用。导航默认 60 秒刷新（`VITE_NOTIFICATION_POLL_MS`，最低 30 秒），后台/离线停止并清理旧数，失败显示待确认而非假零。
+主导航“站内通知”位于 `/notifications`，展示发给本人的审核、评论回复、知识问题、订阅发布和周报提醒。新列表和导航未读数一致发送 `X-Kb-Notification-Contract: KNOWLEDGE_SUBSCRIPTIONS_V1`，故障不去头降级；缺省旧客户端只见旧四类及旧计数，旧问题客户端继续使用KNOWLEDGE_GAPS_V1，三档游标不混用。导航默认 60 秒刷新（`VITE_NOTIFICATION_POLL_MS`，最低 30 秒），后台/离线停止并清理旧数，失败显示待确认而非假零。
 
 “打开目标”按原文档版本/轮次/评论或相同问题 gapId 重新鉴权。问题改派、失权或状态已变化时以详情重读为准，不恢复旧正文或确认旧方案；点击不自动标记已读或执行处理。已读是本人通知首次已读事实，不等于审批已处理或提问者确认解决。页面只显示本地固定提示，问题目标不含描述、资料身份或外链。详见 [站内通知](../docs/in-app-notifications.md)。
 

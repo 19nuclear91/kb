@@ -6,10 +6,12 @@ import com.zhishiku.kb.app.document.model.IndexIntegrity;
 import com.zhishiku.kb.app.document.service.PublicationReadinessService;
 import com.zhishiku.kb.app.document.service.ReviewApprovalService;
 import com.zhishiku.kb.app.embedding.service.EmbeddingControlService;
+import com.zhishiku.kb.app.service.subscription.KnowledgePublicationService;
 import com.zhishiku.kb.common.embedding.EmbeddingControl;
 import com.zhishiku.kb.common.review.CollaborationEvent;
 import com.zhishiku.kb.common.review.CollaborationKind;
 import com.zhishiku.kb.common.review.PublicationEvidence;
+import com.zhishiku.kb.common.review.PublicationOrder;
 import com.zhishiku.kb.common.review.ReviewFailure;
 import com.zhishiku.kb.common.review.ReviewState;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -37,14 +40,16 @@ class ReviewApprovalServiceTest {
     private final ReviewCommandFixture f = new ReviewCommandFixture();
     private final DocumentPublicationMapper publication = mock(DocumentPublicationMapper.class);
     private final EmbeddingControlService embedding = mock(EmbeddingControlService.class);
+    private final KnowledgePublicationService knowledge = mock(KnowledgePublicationService.class);
     private final ReviewApprovalService service = new ReviewApprovalService(f.mapper, publication, f.auth,
-            new PublicationReadinessService(publication), embedding, f.receipts, f.events);
+            new PublicationReadinessService(publication), embedding, f.receipts, f.events, knowledge);
     private final DocumentReviewRow round = DocumentReviewRow.builder().id(UUID.randomUUID()).docId(10).versionId(20).roundNo(1)
             .submittedBy(8).submittedSpaceId(3).submittedAt(Instant.EPOCH).state(ReviewState.IN_REVIEW).build();
     private final IndexIntegrity integrity = new IndexIntegrity();
 
     @BeforeEach
     void setup() {
+        when(knowledge.next()).thenReturn(new PublicationOrder(10, Instant.parse("2026-11-27T08:00:00Z")));
         f.version.setIndexedProfileId("p");
         f.version.setIndexedFingerprint("fp");
         f.version.setIndexedEpoch(2L);
@@ -81,9 +86,18 @@ class ReviewApprovalServiceTest {
         verify(f.eventMapper, times(2)).append(facts.capture());
         assertThat(facts.getAllValues()).extracting(CollaborationEvent::kind)
                 .containsExactly(CollaborationKind.REVIEW_APPROVED, CollaborationKind.VERSION_PUBLISHED);
+        verify(knowledge).capture(eq(facts.getAllValues().getLast().eventId()), any());
         verify(f.receipts).complete(any(), eq(receipt));
         assertThat(ReviewApprovalService.class.getMethod("approve", long.class, long.class, long.class,
                 UUID.class, long.class, String.class).getAnnotation(Transactional.class)).isNotNull();
+    }
+
+    @Test
+    void knowledgeCaptureFailureDoesNotCompleteApprovalReceipt() {
+        doThrow(new IllegalStateException("capture unavailable")).when(knowledge).capture(any(), any());
+        assertThatThrownBy(() -> service.approve(9, 10, 20, round.getId(), 0, "capture-failed"))
+                .isInstanceOf(IllegalStateException.class).hasMessage("capture unavailable");
+        verify(f.receipts, never()).complete(any(), any());
     }
 
     @Test

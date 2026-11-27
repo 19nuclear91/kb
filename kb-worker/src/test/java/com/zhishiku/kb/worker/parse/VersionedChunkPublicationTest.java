@@ -4,6 +4,7 @@ import com.zhishiku.kb.common.review.CollaborationEvent;
 import com.zhishiku.kb.common.review.CollaborationKind;
 import com.zhishiku.kb.common.review.PublicationEvidence;
 import com.zhishiku.kb.common.review.PublicationPolicy;
+import com.zhishiku.kb.common.review.PublicationOrder;
 import com.zhishiku.kb.worker.embedding.mapper.EmbeddingStateMapper;
 import com.zhishiku.kb.worker.parse.mapper.ReviewFactMapper;
 import com.zhishiku.kb.worker.parse.mapper.VersionPublicationMapper;
@@ -58,6 +59,8 @@ class VersionedChunkPublicationTest {
         when(publication.lockDocumentForVersion(2)).thenReturn(42L);
         when(publication.indexed(any())).thenReturn(1);
         when(publication.publishAuto(eq(2L), any(), any(), any())).thenReturn(1);
+        when(publication.nextKnowledgeOrder()).thenReturn(new PublicationOrder(10, Instant.parse("2026-11-27T08:00:00Z")));
+        when(publication.captureKnowledgePublication(any(), anyLong(), any())).thenReturn(1);
         when(facts.append(any())).thenReturn(1);
     }
 
@@ -89,6 +92,7 @@ class VersionedChunkPublicationTest {
         assertThat(event.getValue().kind()).isEqualTo(CollaborationKind.VERSION_PUBLISHED);
         assertThat(event.getValue().versionId()).isEqualTo(2);
         assertThat(event.getValue().occurredAt()).isNotNull();
+        verify(publication).captureKnowledgePublication(event.getValue().eventId(), 10, event.getValue().occurredAt());
     }
 
     @Test
@@ -102,6 +106,13 @@ class VersionedChunkPublicationTest {
         assertThat(publisher.publish(ParseEmbeddingFixture.task(), "owner", parsed)).isTrue();
         verify(publication, never()).publishAuto(anyLong(), any(), any(), any());
         verifyNoInteractions(facts);
+    }
+
+    @Test
+    void failedKnowledgeCapturePropagatesFromOriginalPublicationTransaction() {
+        when(publication.captureKnowledgePublication(any(), anyLong(), any())).thenReturn(0);
+        assertThatThrownBy(() -> publisher.publish(ParseEmbeddingFixture.task(), "owner", parsed))
+                .isInstanceOf(IllegalStateException.class).hasMessage("Knowledge publication context was not saved");
     }
 
     @Test

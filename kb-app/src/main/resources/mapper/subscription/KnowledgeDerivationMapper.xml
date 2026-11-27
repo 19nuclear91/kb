@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.mapper.subscription.KnowledgeDerivationMapper">
+    <select id="sourceReady" resultType="boolean" useCache="false" timeout="3">
+        SELECT EXISTS (SELECT 1 FROM kb_knowledge_publication p
+            JOIN kb_collaboration_event e ON e.event_id = p.event_id AND e.doc_id = p.document_id AND e.version_id = p.version_id
+            JOIN kb_document_version v ON v.id = p.version_id AND v.doc_id = p.document_id
+            JOIN kb_knowledge_order k ON k.singleton
+            WHERE p.event_id = #{eventId} AND e.kind = 'VERSION_PUBLISHED' AND k.protocol_version = 1
+                AND v.publication_evidence = 'PUBLISHED' AND v.published_at = p.published_at AND e.occurred_at = p.published_at)
+    </select>
+    <update id="waitSource" timeout="10">
+        UPDATE kb_knowledge_match_projection SET status = 'WAITING_SOURCE', error_class = 'SOURCE_NOT_READY',
+            lease_owner = NULL, lease_until = NULL, attempts = attempts + 1,
+            next_attempt_at = clock_timestamp() + make_interval(secs => #{delay}), updated_at = clock_timestamp()
+        WHERE event_id = #{claim.id} AND lease_owner = #{owner} AND claim_token = #{claim.token} AND status = 'PENDING'
+    </update>
+    <insert id="discover" timeout="10">
+        INSERT INTO kb_knowledge_match_projection(event_id)
+        SELECT p.event_id FROM kb_knowledge_publication p
+        WHERE NOT EXISTS (SELECT 1 FROM kb_knowledge_match_projection m WHERE m.event_id = p.event_id)
+        ORDER BY p.position LIMIT #{limit} ON CONFLICT DO NOTHING
+    </insert>
+    <select id="claimMatches" resultType="com.zhishiku.kb.app.domain.dto.subscription.KnowledgeWork$Claim"
+            affectData="true" flushCache="true" useCache="false" timeout="10">
+        UPDATE kb_knowledge_match_projection m SET lease_owner = #{owner},
+            lease_until = clock_timestamp() + make_interval(secs => #{leaseSeconds}), claim_token = m.claim_token + 1,
+            status = 'PENDING', updated_at = clock_timestamp()
+        FROM (SELECT event_id, lease_owner IS NOT NULL AS takeover FROM kb_knowledge_match_projection
+            WHERE status &lt;&gt; 'DONE' AND next_attempt_at &lt;= clock_timestamp()
+                AND (lease_until IS NULL OR lease_until &lt; clock_timestamp())
+            ORDER BY next_attempt_at, event_id LIMIT #{limit} FOR UPDATE SKIP LOCKED) c
+        WHERE m.event_id = c.event_id
+        RETURNING m.event_id AS id, NULL::date AS week_start, m.claim_token AS token, m.recipient_cursor, m.attempts, c.takeover
+    </select>
+    <select id="lockMatch" resultType="long" flushCache="true" useCache="false" timeout="10">
+        SELECT recipient_cursor FROM kb_knowledge_match_projection WHERE event_id = #{claim.id}
+            AND lease_owner = #{owner} AND claim_token = #{claim.token} AND status = 'PENDING'
+            AND lease_until &gt; clock_timestamp() FOR UPDATE
+    </select>
+    <!-- 历史区间按发布位置匹配，之后取消仍保留原命中意图；提醒另行检查取消。 -->
+    <sql id="matching">
+        FROM kb_knowledge_publication p JOIN kb_knowledge_subscription s ON
+            ((s.kind = 'DOCUMENT' AND s.target_id = p.document_id)
+             OR (s.kind = 'SPACE' AND s.target_id = p.space_id)
+             OR (s.kind = 'TAG' AND s.target_id = ANY(p.tag_ids)))
+        JOIN kb_knowledge_subscription_period g ON g.subscription_id = s.id AND g.user_id = s.user_id
+        WHERE p.event_id = #{eventId} AND g.start_position &lt; p.position
+            AND (g.end_position IS NULL OR g.end_position &gt; p.position)
+    </sql>
+    <select id="recipients" resultType="long" useCache="false" timeout="10">
+        SELECT DISTINCT s.user_id <include refid="matching"/> AND s.user_id &gt; #{after}
+        ORDER BY s.user_id LIMIT #{limit}
+    </select>
+    <select id="matches" resultType="com.zhishiku.kb.app.domain.dto.subscription.KnowledgeWork$Match" useCache="false" timeout="10">
+        SELECT s.user_id, g.id AS generation_id, COALESCE((SELECT r.mode FROM kb_knowledge_preference_revision r
+            WHERE r.user_id = s.user_id AND r.position &lt; p.position ORDER BY r.position DESC LIMIT 1), 'WEEKLY') AS mode,
+            p.week_start <include refid="matching"/> AND
+        <choose>
+            <when test="users != null and users.size() > 0">s.user_id IN
+                <foreach collection="users" item="user" open="(" separator="," close=")">#{user}</foreach>
+            </when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+        ORDER BY s.user_id, g.id
+    </select>
+    <select id="saveUpdate" resultType="java.util.UUID" affectData="true" flushCache="true" useCache="false" timeout="10">
+        WITH inserted AS (
+            INSERT INTO kb_knowledge_update(id, user_id, event_id, mode, week_start)
+            VALUES (#{id}, #{userId}, #{eventId}, #{mode}, #{weekStart})
+            ON CONFLICT (user_id, event_id) DO NOTHING RETURNING id
+        ) SELECT id FROM inserted UNION ALL SELECT id FROM kb_knowledge_update
+            WHERE user_id = #{userId} AND event_id = #{eventId} AND NOT EXISTS (SELECT 1 FROM inserted)
+    </select>
+    <insert id="saveMatch" timeout="10">
+        INSERT INTO kb_knowledge_update_match(update_id, user_id, generation_id)
+        VALUES (#{updateId}, #{userId}, #{generationId}) ON CONFLICT DO NOTHING
+    </insert>
+    <insert id="registerImmediate" timeout="10">
+        INSERT INTO kb_knowledge_delivery(id, user_id, kind, update_id)
+        VALUES (gen_random_uuid(), #{userId}, 'PER_PUBLICATION', #{updateId}) ON CONFLICT DO NOTHING
+    </insert>
+    <update id="advanceMatch" timeout="10">
+        UPDATE kb_knowledge_match_projection SET recipient_cursor = #{cursor},
+            status = CASE WHEN #{done} THEN 'DONE' ELSE 'PENDING' END,
+            completed_at = CASE WHEN #{done} THEN clock_timestamp() ELSE NULL END,
+            lease_owner = CASE WHEN #{done} THEN NULL ELSE #{owner} END,
+            lease_until = CASE WHEN #{done} THEN NULL ELSE clock_timestamp() + make_interval(secs => #{leaseSeconds}) END,
+            error_class = NULL, updated_at = clock_timestamp()
+        WHERE event_id = #{claim.id} AND lease_owner = #{owner} AND claim_token = #{claim.token}
+            AND status = 'PENDING' AND recipient_cursor &lt;= #{cursor}
+    </update>
+
+    <select id="nextWeek" resultType="java.time.LocalDate" useCache="false" timeout="3">
+        SELECT COALESCE((SELECT max(week_start) + 7 FROM kb_knowledge_week),
+            kb_knowledge_week_start(coverage_at)) FROM kb_knowledge_order WHERE singleton
+    </select>
+    <insert id="createWeek" timeout="10">
+        INSERT INTO kb_knowledge_week(week_start, due_at, close_position, status)
+        SELECT #{week}, ((CAST(#{week} AS date) + 7)::timestamp + interval '9 hours') AT TIME ZONE 'Asia/Shanghai',
+            #{position}, 'WAITING_MATCHES'
+        WHERE #{at} &gt;= (((CAST(#{week} AS date) + 7)::timestamp + interval '9 hours') AT TIME ZONE 'Asia/Shanghai')
+        ON CONFLICT DO NOTHING
+    </insert>
+    <select id="claimWeeks" resultType="com.zhishiku.kb.app.domain.dto.subscription.KnowledgeWork$Claim"
+            affectData="true" flushCache="true" useCache="false" timeout="10">
+        UPDATE kb_knowledge_week w SET lease_owner = #{owner},
+            lease_until = clock_timestamp() + make_interval(secs => #{leaseSeconds}), claim_token = w.claim_token + 1
+        FROM (SELECT week_start, lease_owner IS NOT NULL AS takeover FROM kb_knowledge_week
+            WHERE status &lt;&gt; 'DONE' AND next_attempt_at &lt;= clock_timestamp() AND due_at &lt;= clock_timestamp()
+                AND (lease_until IS NULL OR lease_until &lt; clock_timestamp())
+            ORDER BY week_start LIMIT #{limit} FOR UPDATE SKIP LOCKED) c
+        WHERE w.week_start = c.week_start
+        RETURNING NULL::uuid AS id, w.week_start, w.claim_token AS token, w.recipient_cursor, w.attempts, c.takeover
+    </select>
+    <select id="lockWeek" resultType="long" flushCache="true" useCache="false" timeout="10">
+        SELECT recipient_cursor FROM kb_knowledge_week WHERE week_start = #{claim.weekStart}
+            AND lease_owner = #{owner} AND claim_token = #{claim.token} AND status &lt;&gt; 'DONE'
+            AND lease_until &gt; clock_timestamp() FOR UPDATE
+    </select>
+    <select id="weekComplete" resultType="boolean" useCache="false" timeout="10">
+        SELECT NOT EXISTS (SELECT 1 FROM kb_knowledge_publication p
+            JOIN kb_knowledge_week w ON w.week_start = p.week_start
+            LEFT JOIN kb_knowledge_match_projection m ON m.event_id = p.event_id
+            WHERE p.week_start = #{week} AND (p.position &gt; w.close_position OR m.status IS DISTINCT FROM 'DONE'))
+    </select>
+    <select id="weeklyRecipients" resultType="long" useCache="false" timeout="10">
+        SELECT DISTINCT user_id FROM kb_knowledge_update WHERE week_start = #{week}
+            AND mode = 'WEEKLY' AND user_id &gt; #{after} ORDER BY user_id LIMIT #{limit}
+    </select>
+    <insert id="registerWeekly" timeout="10">
+        INSERT INTO kb_knowledge_delivery(id, user_id, kind, week_start)
+        VALUES (gen_random_uuid(), #{userId}, 'WEEKLY', #{week}) ON CONFLICT DO NOTHING
+    </insert>
+    <update id="advanceWeek" timeout="10">
+        UPDATE kb_knowledge_week SET recipient_cursor = #{cursor}, status = CASE WHEN #{done} THEN 'DONE' ELSE 'READY' END,
+            completed_at = CASE WHEN #{done} THEN clock_timestamp() ELSE NULL END,
+            lease_owner = CASE WHEN #{done} THEN NULL ELSE #{owner} END,
+            lease_until = CASE WHEN #{done} THEN NULL ELSE clock_timestamp() + make_interval(secs => #{leaseSeconds}) END,
+            error_class = NULL
+        WHERE week_start = #{claim.weekStart} AND lease_owner = #{owner} AND claim_token = #{claim.token}
+            AND status &lt;&gt; 'DONE' AND recipient_cursor &lt;= #{cursor}
+    </update>
+
+    <!-- 逐次提醒等待来源整批匹配完成，周报工作只在周期匹配完整后登记。 -->
+    <select id="claimDeliveries" resultType="com.zhishiku.kb.app.domain.dto.subscription.KnowledgeWork$Claim"
+            affectData="true" flushCache="true" useCache="false" timeout="10">
+        UPDATE kb_knowledge_delivery d SET lease_owner = #{owner},
+            lease_until = clock_timestamp() + make_interval(secs => #{leaseSeconds}), claim_token = d.claim_token + 1
+        FROM (SELECT k.id, k.lease_owner IS NOT NULL AS takeover FROM kb_knowledge_delivery k
+            WHERE k.status = 'PENDING' AND k.next_attempt_at &lt;= clock_timestamp()
+                AND (k.lease_until IS NULL OR k.lease_until &lt; clock_timestamp())
+                AND (k.kind = 'WEEKLY' OR EXISTS (SELECT 1 FROM kb_knowledge_update u
+                    JOIN kb_knowledge_match_projection p ON p.event_id = u.event_id
+                    WHERE u.id = k.update_id AND p.status = 'DONE'))
+            ORDER BY k.next_attempt_at, k.id LIMIT #{limit} FOR UPDATE OF k SKIP LOCKED) c
+        WHERE d.id = c.id RETURNING d.id, d.week_start, d.claim_token AS token, 0::bigint AS recipient_cursor, d.attempts, c.takeover
+    </select>
+    <select id="lockDelivery" resultType="com.zhishiku.kb.app.domain.subscription.KnowledgeDelivery" flushCache="true" useCache="false" timeout="10">
+        SELECT id, user_id, kind, update_id, week_start, status, dispatch_position, dispatched_at
+        FROM kb_knowledge_delivery WHERE id = #{claim.id} AND lease_owner = #{owner} AND claim_token = #{claim.token}
+            AND status = 'PENDING' AND lease_until &gt; clock_timestamp() FOR UPDATE
+    </select>
+    <update id="finishDelivery" timeout="10">
+        UPDATE kb_knowledge_delivery SET status = CASE WHEN #{notified} THEN 'NOTIFIED' ELSE 'NO_ELIGIBLE' END,
+            dispatch_position = #{position}, dispatched_at = #{at}, lease_owner = NULL, lease_until = NULL, error_class = NULL
+        WHERE id = #{claim.id} AND lease_owner = #{owner} AND claim_token = #{claim.token} AND status = 'PENDING'
+    </update>
+    <insert id="notify" timeout="10">
+        INSERT INTO kb_user_notification(notification_id, recipient_user_id, type, knowledge_delivery_id)
+        VALUES (gen_random_uuid(), #{userId},
+            CASE WHEN #{kind} = 'WEEKLY' THEN 'KNOWLEDGE_WEEKLY_DIGEST' ELSE 'SUBSCRIBED_VERSION_PUBLISHED' END, #{id})
+        ON CONFLICT (knowledge_delivery_id, recipient_user_id) DO NOTHING
+    </insert>
+    <!-- 阶段选择是服务端固定值，禁止把请求输入拼为表名。 -->
+    <update id="release" timeout="10">
+        <choose>
+            <when test="stage == 'match'">UPDATE kb_knowledge_match_projection</when>
+            <when test="stage == 'weekly'">UPDATE kb_knowledge_week</when>
+            <otherwise>UPDATE kb_knowledge_delivery</otherwise>
+        </choose>
+        SET lease_owner = NULL, lease_until = NULL, next_attempt_at = clock_timestamp() + make_interval(secs => #{delay}),
+            attempts = attempts + CASE WHEN #{failed} THEN 1 ELSE 0 END,
+            error_class = CASE WHEN #{failed} THEN 'DERIVATION_FAILED' ELSE NULL END
+        WHERE lease_owner = #{owner} AND claim_token = #{claim.token} AND
+        <choose>
+            <when test="stage == 'match'">event_id = #{claim.id} AND status &lt;&gt; 'DONE'</when>
+            <when test="stage == 'weekly'">week_start = #{claim.weekStart} AND status &lt;&gt; 'DONE'</when>
+            <otherwise>id = #{claim.id} AND status = 'PENDING'</otherwise>
+        </choose>
+    </update>
+    <select id="backlog" resultType="com.zhishiku.kb.app.domain.dto.subscription.KnowledgeWork$Backlog" useCache="false" timeout="3">
+        SELECT count(*) FILTER (WHERE stage = 'match') AS matching,
+            count(*) FILTER (WHERE stage = 'weekly') AS weekly,
+            count(*) FILTER (WHERE stage = 'delivery') AS delivery,
+            GREATEST(COALESCE(floor(extract(epoch FROM clock_timestamp() - min(at)))::bigint, 0), 0) AS oldest_seconds,
+            clock_timestamp() AS sampled_at
+        FROM (
+            SELECT 'match' AS stage, p.published_at AS at FROM kb_knowledge_publication p
+                LEFT JOIN kb_knowledge_match_projection m ON m.event_id = p.event_id WHERE m.status IS DISTINCT FROM 'DONE'
+            UNION ALL SELECT 'weekly', due_at FROM kb_knowledge_week WHERE status &lt;&gt; 'DONE'
+            UNION ALL SELECT 'delivery', created_at FROM kb_knowledge_delivery WHERE status = 'PENDING'
+        ) work
+    </select>
+</mapper>

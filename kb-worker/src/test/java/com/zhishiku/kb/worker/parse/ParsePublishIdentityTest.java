@@ -82,6 +82,7 @@ class ParsePublishIdentityTest {
     @Test
     void publishesGeneratedProfileAndReadsCurrentPermissionFacts() throws Exception {
         allowTaskAndVersion("published");
+        when(publication.nextKnowledgeOrder()).thenReturn(new com.zhishiku.kb.common.review.PublicationOrder(1, java.time.Instant.EPOCH));
         when(jdbc.update(contains("kb_parse_task"), any(Object[].class))).thenReturn(1);
         PreparedStatement statement = mock(PreparedStatement.class);
         doAnswer(invocation -> {

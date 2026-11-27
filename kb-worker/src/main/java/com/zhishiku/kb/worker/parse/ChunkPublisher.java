@@ -21,8 +21,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Arrays;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 
 /**
  * 同事务保存合法分块与索引身份、按固定策略发布并完成任务。indexed 不代表业务发布。
@@ -190,14 +188,23 @@ public class ChunkPublisher {
                 task.embeddingEpoch(), chunks.size());
         if (publication.indexed(commit) != 1) throw new LeaseLostException();
         if (target.canAutoPublish()) {
-            var now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            var order = publication.nextKnowledgeOrder();
+            if (order == null) {
+                throw new IllegalStateException("Knowledge publication order is unavailable");
+            }
+            var now = order.businessTime();
             int published = publication.publishAuto(task.versionId(), commit.profileId(), commit.fingerprint(), now);
             if (published < 0 || published > 1) throw new IllegalStateException("Invalid publication result");
             if (published == 1) {
                 facts.startCoverage(now);
-                if (facts.append(CollaborationEvent.create(CollaborationKind.VERSION_PUBLISHED, version.docId(),
-                        task.versionId(), null, null, now, null)) != 1)
+                var event = CollaborationEvent.create(CollaborationKind.VERSION_PUBLISHED, version.docId(),
+                        task.versionId(), null, null, now, null);
+                if (facts.append(event) != 1) {
                     throw new IllegalStateException("Publication fact was not saved");
+                }
+                if (publication.captureKnowledgePublication(event.eventId(), order.position(), now) != 1) {
+                    throw new IllegalStateException("Knowledge publication context was not saved");
+                }
             }
         }
 

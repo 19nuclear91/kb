@@ -17,7 +17,9 @@ public enum NotificationType {
     GAP_SOLUTION_REJECTED("知识问题方案仍未解决"),
     GAP_RESOLVED("知识问题已由提问者确认解决"),
     GAP_WITHDRAWN("知识问题已被提问者撤回"),
-    GAP_CLOSED("知识问题已带原因关闭");
+    GAP_CLOSED("知识问题已带原因关闭"),
+    SUBSCRIBED_VERSION_PUBLISHED("你订阅的资料有新发布"),
+    KNOWLEDGE_WEEKLY_DIGEST("你的知识更新周报已生成");
 
     private static final Map<String, NotificationType> BY_SOURCE = Map.ofEntries(
             Map.entry("REVIEW_SUBMITTED", REVIEW_SUBMITTED), Map.entry("REVIEW_APPROVED", REVIEW_APPROVED),
@@ -41,6 +43,10 @@ public enum NotificationType {
 
     public boolean knowledgeGap() {
         return name().startsWith("GAP_");
+    }
+
+    public boolean knowledgeSubscription() {
+        return this == SUBSCRIBED_VERSION_PUBLISHED || this == KNOWLEDGE_WEEKLY_DIGEST;
     }
 
     /** 源事件种类是否明确不产生提醒；未知种类不属于此集合，需安全等待。 */

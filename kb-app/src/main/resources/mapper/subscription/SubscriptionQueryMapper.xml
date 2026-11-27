@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.mapper.subscription.SubscriptionQueryMapper">
+    <sql id="readableDocument">
+        d.status NOT IN ('deleted', 'archived') AND d.security_level &lt;= #{clearance}
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.parentVersionVisibility"/>
+    </sql>
+    <sql id="targets">
+        <bind name="aclPermission" value="'view'"/>
+        <choose>
+            <when test="kind != null and kind.name() == 'DOCUMENT'">
+                SELECT d.id AS target_id, d.title AS label, TRUE AS enabled FROM kb_document d
+                WHERE <include refid="readableDocument"/>
+            </when>
+            <when test="kind != null and kind.name() == 'SPACE'">
+                SELECT s.id AS target_id, s.name AS label, TRUE AS enabled FROM kb_space s
+                WHERE NOT s.archived AND (
+                <choose>
+                    <when test="spaceIds != null and spaceIds.size() > 0">s.id IN
+                        <foreach collection="spaceIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+                    </when>
+                    <otherwise>FALSE</otherwise>
+                </choose>
+                OR EXISTS (SELECT 1 FROM kb_document d WHERE d.space_id = s.id AND <include refid="readableDocument"/>))
+            </when>
+            <when test="kind != null and kind.name() == 'TAG'">
+                SELECT t.id AS target_id, t.name AS label, t.enabled FROM kb_document_tag t
+                WHERE (#{allowDisabled} OR t.enabled) AND EXISTS (
+                    SELECT 1 FROM kb_document_tag_relation r JOIN kb_document d ON d.id = r.document_id
+                    WHERE r.tag_id = t.id AND <include refid="readableDocument"/>)
+            </when>
+            <otherwise>SELECT NULL::bigint AS target_id, NULL::text AS label, FALSE AS enabled WHERE FALSE</otherwise>
+        </choose>
+    </sql>
+    <sql id="targetColumns">
+        t.target_id, t.label, t.enabled, k.id AS subscription_id, k.generation_id,
+        COALESCE(k.state_version, 0) AS state_version, k.state
+    </sql>
+    <sql id="targetRelation">
+        LEFT JOIN kb_knowledge_subscription k ON k.user_id = #{actor} AND k.kind = #{kind} AND k.target_id = t.target_id
+    </sql>
+    <select id="candidates" resultType="com.zhishiku.kb.app.domain.dto.subscription.SubscriptionTarget" useCache="false" timeout="3">
+        SELECT <include refid="targetColumns"/> FROM (<include refid="targets"/>) t
+        <include refid="targetRelation"/> WHERE TRUE
+        <if test="pattern != null">AND t.label ILIKE #{pattern} ESCAPE '\'</if>
+        <if test="afterId != null">AND t.target_id &gt; #{afterId}</if>
+        ORDER BY t.target_id LIMIT #{limit}
+    </select>
+    <select id="target" resultType="com.zhishiku.kb.app.domain.dto.subscription.SubscriptionTarget" useCache="false" timeout="3">
+        SELECT <include refid="targetColumns"/> FROM (<include refid="targets"/>) t
+        <include refid="targetRelation"/> WHERE t.target_id = #{targetId}
+    </select>
+    <select id="subscriptions" resultType="com.zhishiku.kb.app.domain.subscription.KnowledgeSubscription" useCache="false" timeout="3">
+        SELECT * FROM kb_knowledge_subscription WHERE user_id = #{actor}
+        <if test="kind != null">AND kind = #{kind}</if>
+        <if test="state != null">AND state = #{state}</if>
+        <if test="afterUuid != null">AND id &gt; #{afterUuid}</if>
+        ORDER BY id LIMIT #{limit}
+    </select>
+    <!-- 在统一生效顺序之前取得目标资源共享锁，避免与删除、搬迁、标签停用发生反向锁序。 -->
+    <select id="lockTarget" resultType="long" flushCache="true" useCache="false" timeout="3">
+        <choose>
+            <when test="kind != null and kind.name() == 'DOCUMENT'">
+                SELECT id FROM kb_document WHERE id = #{targetId} FOR SHARE
+            </when>
+            <when test="kind != null and kind.name() == 'SPACE'">
+                SELECT id FROM kb_space WHERE id = #{targetId} FOR SHARE
+            </when>
+            <when test="kind != null and kind.name() == 'TAG'">
+                SELECT id FROM kb_document_tag WHERE id = #{targetId} FOR SHARE
+            </when>
+            <otherwise>SELECT NULL::bigint WHERE FALSE</otherwise>
+        </choose>
+    </select>
+</mapper>

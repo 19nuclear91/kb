@@ -42,7 +42,7 @@ class NotificationMappingTest {
         configuration.getTypeHandlerRegistry().register(UUID.class, UuidTypeHandler.class);
         for (String resource : List.of("/mapper/AuthorizationRules.xml", "/mapper/DocumentMapper.xml", "/mapper/DocumentReviewEligibilityMapper.xml",
                 "/mapper/DocumentCommentMapper.xml", "/mapper/KnowledgeGapMapper.xml", "/mapper/UserNotificationMapper.xml",
-                "/mapper/NotificationDerivationMapper.xml")) {
+                "/mapper/NotificationDerivationMapper.xml", "/mapper/subscription/KnowledgeQueryMapper.xml")) {
             parse(configuration, resource);
         }
     }
@@ -132,7 +132,7 @@ class NotificationMappingTest {
         var probe = new XPathParser("<sql id=\"pendingReviewer\">#{pendingReviewerProbe} = 1</sql>").evalNode("/sql");
         assertThat(probed.getSqlFragments().replace(PENDING_REVIEWER, probe)).as(PENDING_REVIEWER).isNotNull();
         for (String resource : List.of("/mapper/AuthorizationRules.xml", "/mapper/DocumentMapper.xml", "/mapper/DocumentReviewQueryMapper.xml",
-                "/mapper/DocumentCommentMapper.xml", "/mapper/KnowledgeGapMapper.xml", "/mapper/UserNotificationMapper.xml")) {
+                "/mapper/DocumentCommentMapper.xml", "/mapper/KnowledgeGapMapper.xml", "/mapper/UserNotificationMapper.xml", "/mapper/subscription/KnowledgeQueryMapper.xml")) {
             parse(probed, resource);
         }
         var workbench = probed.getMappedStatement("com.zhishiku.kb.app.document.mapper.DocumentReviewQueryMapper.pending")
@@ -197,6 +197,7 @@ class NotificationMappingTest {
                 new XPathParser("<sql id=\"liveReply\">#{liveReplyProbe} = 1</sql>").evalNode("/sql"))).isNotNull();
         assertThat(probed.getSqlFragments().replace(evidence,
                 new XPathParser("<sql id=\"commentTargetEvidence\">#{evidenceProbe} = 1</sql>").evalNode("/sql"))).isNotNull();
+        parse(probed, "/mapper/subscription/KnowledgeQueryMapper.xml");
         parse(probed, "/mapper/UserNotificationMapper.xml");
         for (String id : List.of(USER + ".list", USER + ".countUnread")) {
             var parameters = id.endsWith("list") ? listParameters(List.of("1:7")) : countParameters(List.of("1:7"));
@@ -208,7 +209,8 @@ class NotificationMappingTest {
     @Test
     void notificationSqlIncludesOnlyTheRuleFragmentsSourceModulesPublish() throws Exception {
         // 通知只以 include 复用源模块公开的授权片段；引用其他片段等同于直接读取源模块的表。
-        Set<String> allowed = Set.of("facts", "visible", "documentFacts", "gapFacts",
+        Set<String> allowed = Set.of("facts", "visible", "documentFacts", "gapFacts", "emptyKnowledge", "knowledgeFacts",
+                "com.zhishiku.kb.app.mapper.subscription.KnowledgeQueryMapper.notificationVisible",
                 "com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper.visible",
                 "com.zhishiku.kb.app.knowledgegap.mapper.KnowledgeGapMapper.notificationWorkCurrent",
                 "com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate",
@@ -272,7 +274,8 @@ class NotificationMappingTest {
         for (String column : List.of("gap_id", "gap_event_id", "gap_event_kind", "gap_state", "gap_version",
                 "gap_reporter_user_id", "gap_assignee_user_id", "gap_assignment_epoch", "gap_event_assignment_epoch",
                 "gap_queue_event_id", "gap_pending_solution_id", "gap_event_solution_id", "gap_event_result_version",
-                "gap_visible", "gap_work_current")) {
+                "gap_visible", "gap_work_current", "knowledge_delivery_id", "knowledge_user_id", "knowledge_kind",
+                "knowledge_status", "knowledge_update_id", "knowledge_week_start", "knowledge_visible")) {
             row.put(column, null);
         }
     }

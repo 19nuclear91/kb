@@ -51,6 +51,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<?> handle(Exception error) {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes
+                && com.zhishiku.kb.common.security.KnowledgeSubscriptionEndpoints.matches(PrivateApiResponse.path(attributes.getRequest()))) {
+            return com.zhishiku.kb.app.controller.subscription.SubscriptionAdvice.project(error);
+        }
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes
                 && AnswerCardEndpoints.matches(PrivateApiResponse.path(attributes.getRequest()))) {
             return AnswerCardAdvice.project(error);
         }

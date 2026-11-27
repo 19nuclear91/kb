@@ -147,8 +147,14 @@ public class UserNotificationService {
     }
 
     private List<String> readableTypes(NotificationContract contract) {
-        return registry.readableTypes().stream().filter(type -> contract == NotificationContract.KNOWLEDGE_GAPS_V1
-                || !NotificationType.valueOf(type).knowledgeGap()).toList();
+        return registry.readableTypes().stream().filter(value -> {
+            var type = NotificationType.valueOf(value);
+            return switch (contract) {
+                case LEGACY -> !type.knowledgeGap() && !type.knowledgeSubscription();
+                case KNOWLEDGE_GAPS_V1 -> !type.knowledgeSubscription();
+                case KNOWLEDGE_SUBSCRIPTIONS_V1 -> true;
+            };
+        }).toList();
     }
 
     /** SQL 结果违背本人归属、排序、去重或 Java 可见性复核；计数后按 503 处理，不记录标识。 */

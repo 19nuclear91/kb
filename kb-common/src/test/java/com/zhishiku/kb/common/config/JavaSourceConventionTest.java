@@ -33,7 +33,9 @@ class JavaSourceConventionTest {
             "PublishedDocumentMapper", "PublishedDocumentReference", "PublishedDocumentQueryService", "KnowledgeGapResponsePolicy",
             "NotificationResponsePolicy", "NotificationDerivationMapper", "NotificationRow", "NotificationTarget", "NotificationType",
             "NotificationDerivationScheduler", "NotificationDerivationService", "NotificationDerivationTransaction", "NotificationMetrics",
-            "UserNotificationService", "NotificationController", "NotificationInput", "NotificationSourceFact", "NotificationTargetJson");
+            "UserNotificationService", "NotificationController", "NotificationInput", "NotificationSourceFact", "NotificationTargetJson",
+            "PublicationOrder", "KnowledgeSubscriptionEndpoints", "KnowledgeSubscriptionProperties", "KnowledgeSubscriptionScheduler",
+            "KnowledgeSubscriptionResponseFilter", "KnowledgeSubscriptionResponsePolicy");
 
     @Test
     void gapAndAffectedProductionSourcesUseExplicitImportsAndMultilineBracedBodies() throws Exception {
@@ -46,7 +48,7 @@ class JavaSourceConventionTest {
         for (String module : List.of("kb-common", "kb-app", "kb-gateway")) {
             try (var paths = Files.walk(root.resolve(module + "/src/main/java"))) {
                 sources.addAll(paths.filter(path -> path.toString().endsWith(".java"))
-                        .filter(path -> path.toString().contains("knowledgegap")
+                        .filter(path -> path.toString().contains("knowledgegap") || path.toString().contains("subscription")
                                 || path.getFileName().toString().startsWith("KnowledgeGap")
                                 || path.getFileName().toString().startsWith("GapNotification")
                                 || RELATED.contains(path.getFileName().toString().replace(".java", ""))).toList());

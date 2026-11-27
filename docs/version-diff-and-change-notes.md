@@ -4,6 +4,8 @@
 
 ## 版本对比
 
+知识订阅的 `/updates/:updateId` 按固定发布版本读取本模块当前人工说明，保留补写、更正与原基准；原基准不可读时隐藏ID并提示不可用，无说明时明确提示。通知正文不保存说明快照，补写、更正本身不新建发布提醒。对比入口继续使用下述固定双版本接口与缺快照状态，不回退最新版；读取详情、对比或预览都不自动标记通知已读，见[知识订阅](knowledge-subscriptions.md)。
+
 `GET /api/documents/{documentId}/versions/{versionId}/diff?baseVersionId={id}`，路径版本是目标，查询版本是基准；即使基准更新，也保持请求方向。只允许一个 `baseVersionId`，三个 ID 为正整数且两版本不同。每次请求分别检查两侧的 INTERACTIVE 访问资格，任一不存在、归属不符或不可读统一 404。只需 view，返回解析文本；原件下载仍按 download 授权。
 
 成功响应沿用 `R` 包装。`data` 包含 `documentId`、`base` 与 `target`（`versionId`、`versionNo`、`parserName`、`parserVersion`、`truncated`）、`status`、`missingSides`、`warnings`、`stats`、`operations`、`valueChanges`。操作为 EQUAL、ADDED、REMOVED、MODIFIED、MOVED，包含结构类型、标题路径、两侧块序号、页码、全文；非表格修改提供 EQUAL/INSERT/DELETE 逐字片段，过长则 `segmentsOmitted=true`。表格使用 CELLS 行列差异或 RESTRUCTURED 两侧完整内容。关键数值仅从修改块及修改单元格提取日期、金额、百分比、条款编号，不代表全部变化。

@@ -109,7 +109,7 @@ class GapNotificationVisibilityTest {
         // 已构建语句使用展开后的原片段；另建配置时替换后再解析通知 Mapper。
         var probed = MapperRowStub.configuration("/mapper/DocumentMapper.xml");
         probed.getTypeHandlerRegistry().register(UUID.class, UuidTypeHandler.class);
-        for (String resource : List.of("/mapper/DocumentReviewEligibilityMapper.xml", "/mapper/DocumentCommentMapper.xml", "/mapper/KnowledgeGapMapper.xml")) {
+        for (String resource : List.of("/mapper/DocumentReviewEligibilityMapper.xml", "/mapper/DocumentCommentMapper.xml", "/mapper/KnowledgeGapMapper.xml", "/mapper/subscription/KnowledgeQueryMapper.xml")) {
             try (var input = getClass().getResourceAsStream(resource)) {
                 new XMLMapperBuilder(input, probed, resource, probed.getSqlFragments()).parse();
             }
@@ -144,6 +144,10 @@ class GapNotificationVisibilityTest {
         values.put("type", "GAP_SOLUTION_SUBMITTED");
         values.put("created_at", Instant.EPOCH);
         values.put("read_at", null);
+        for (String column : List.of("knowledge_delivery_id", "knowledge_user_id", "knowledge_kind", "knowledge_status",
+                "knowledge_update_id", "knowledge_week_start", "knowledge_visible")) {
+            values.put(column, null);
+        }
         values.put("document_id", null);
         values.put("version_id", null);
         for (String field : List.of("review_id", "round_no", "round_state", "round_submitted_by", "uploader_user_id",

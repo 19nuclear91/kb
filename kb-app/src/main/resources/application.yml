@@ -79,8 +79,21 @@ logging:
     com.zhishiku.kb.app.document.applicability.mapper: "OFF"
     com.zhishiku.kb.app.document.stewardship.mapper: "OFF"
     com.zhishiku.kb.app.document.imports.mapper: "OFF"
+    com.zhishiku.kb.app.mapper.subscription: "OFF"
 
 kb:
+  knowledge-subscriptions:
+    derivation-enabled: ${KB_KNOWLEDGE_SUBSCRIPTIONS_DERIVATION_ENABLED:true}
+    scan-delay-ms: ${KB_KNOWLEDGE_SUBSCRIPTIONS_SCAN_DELAY_MS:5000}
+    discover-limit: ${KB_KNOWLEDGE_SUBSCRIPTIONS_DISCOVER_LIMIT:50}
+    claim-limit: ${KB_KNOWLEDGE_SUBSCRIPTIONS_CLAIM_LIMIT:50}
+    recipient-batch-size: ${KB_KNOWLEDGE_SUBSCRIPTIONS_RECIPIENT_BATCH_SIZE:100}
+    max-batches-per-event: ${KB_KNOWLEDGE_SUBSCRIPTIONS_MAX_BATCHES_PER_EVENT:10}
+    lease-seconds: ${KB_KNOWLEDGE_SUBSCRIPTIONS_LEASE_SECONDS:60}
+    backoff-initial-seconds: ${KB_KNOWLEDGE_SUBSCRIPTIONS_BACKOFF_INITIAL_SECONDS:30}
+    backoff-max-seconds: ${KB_KNOWLEDGE_SUBSCRIPTIONS_BACKOFF_MAX_SECONDS:900}
+    catchup-weeks: ${KB_KNOWLEDGE_SUBSCRIPTIONS_CATCHUP_WEEKS:20}
+    metrics-delay-ms: ${KB_KNOWLEDGE_SUBSCRIPTIONS_METRICS_DELAY_MS:30000}
   metadata-suggestions:
     enabled: ${KB_METADATA_SUGGESTIONS_ENABLED:false}
     ai-base-url: ${KB_AI_BASE_URL:}

@@ -4,12 +4,22 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
-/** 双来源收件箱的不可变事实；仅有一个来源，首次已读时间不会被重试覆盖。 */
-public record NotificationSourceFact(UUID eventId, UUID gapEventId, Instant readAt) {
+/** 三来源收件箱的不可变事实；仅有一个来源，首次已读时间不会被重试覆盖。 */
+public record NotificationSourceFact(
+        UUID eventId,
+        UUID gapEventId,
+        UUID knowledgeDeliveryId,
+        Instant readAt
+) {
     public NotificationSourceFact {
-        if ((eventId == null) == (gapEventId == null)) {
+        int sources = (eventId == null ? 0 : 1) + (gapEventId == null ? 0 : 1) + (knowledgeDeliveryId == null ? 0 : 1);
+        if (sources != 1) {
             throw new IllegalArgumentException("Notification requires exactly one source");
         }
+    }
+
+    public NotificationSourceFact(UUID eventId, UUID gapEventId, Instant readAt) {
+        this(eventId, gapEventId, null, readAt);
     }
 
     public NotificationSourceFact markRead(Instant now) {
@@ -17,6 +27,6 @@ public record NotificationSourceFact(UUID eventId, UUID gapEventId, Instant read
         if (readAt != null) {
             return this;
         }
-        return new NotificationSourceFact(eventId, gapEventId, now);
+        return new NotificationSourceFact(eventId, gapEventId, knowledgeDeliveryId, now);
     }
 }

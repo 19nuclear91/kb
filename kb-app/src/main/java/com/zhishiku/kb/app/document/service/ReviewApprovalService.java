@@ -6,6 +6,7 @@ import com.zhishiku.kb.app.document.mapper.DocumentPublicationMapper;
 import com.zhishiku.kb.app.document.mapper.DocumentReviewMapper;
 import com.zhishiku.kb.app.document.model.ReviewReceipt;
 import com.zhishiku.kb.app.embedding.service.EmbeddingControlService;
+import com.zhishiku.kb.app.service.subscription.KnowledgePublicationService;
 import com.zhishiku.kb.common.review.CollaborationEvent;
 import com.zhishiku.kb.common.review.CollaborationKind;
 import com.zhishiku.kb.common.review.PublicationEvidence;
@@ -18,8 +19,6 @@ import com.zhishiku.kb.common.review.ReviewState;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,10 +32,12 @@ public class ReviewApprovalService {
     private final EmbeddingControlService embedding;
     private final CommandReceiptService receipts;
     private final CollaborationEventService events;
+    private final KnowledgePublicationService knowledge;
 
     public ReviewApprovalService(DocumentReviewMapper mapper, DocumentPublicationMapper publication,
                                    ReviewAuthorizationService authorization, PublicationReadinessService readiness,
-                                   EmbeddingControlService embedding, CommandReceiptService receipts, CollaborationEventService events) {
+                                    EmbeddingControlService embedding, CommandReceiptService receipts,
+                                    CollaborationEventService events, KnowledgePublicationService knowledge) {
         this.mapper = mapper;
         this.publication = publication;
         this.authorization = authorization;
@@ -44,6 +45,7 @@ public class ReviewApprovalService {
         this.embedding = embedding;
         this.receipts = receipts;
         this.events = events;
+        this.knowledge = knowledge;
     }
 
     @Transactional(timeout = 10)
@@ -53,7 +55,9 @@ public class ReviewApprovalService {
                 reviewId, expectedVersion, null);
         authorization.requireReviewer(actor, mapper.version(documentId, versionId), mapper.review(versionId, reviewId));
         String previous = receipts.claim(binding);
-        if (previous != null) return receipts.read(previous, ReviewReceipt.class);
+        if (previous != null) {
+            return receipts.read(previous, ReviewReceipt.class);
+        }
         var control = embedding.lockShared();
         var version = mapper.lockVersion(documentId, versionId);
         var round = mapper.lockReview(versionId, reviewId);
@@ -61,18 +65,25 @@ public class ReviewApprovalService {
         if (version.getStateVersion() != expectedVersion || round.getState() != ReviewState.IN_REVIEW
                 || round.getSubmittedSpaceId() != version.getSpaceId()
                 || version.getPublicationPolicy() != PublicationPolicy.REVIEW_REQUIRED
-                || version.getPublicationEvidence() != PublicationEvidence.NONE)
+                || version.getPublicationEvidence() != PublicationEvidence.NONE) {
             throw new ReviewFailure(ReviewError.STATE_CONFLICT);
+        }
         readiness.require(version, control, ReviewState.APPROVED);
-        var now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+        var order = knowledge.next();
+        var now = order.businessTime();
         if (publication.publish(documentId, versionId, expectedVersion, "REVIEW_REQUIRED", control.activeProfileId(),
                 control.activeFingerprint(), now) != 1
-                || mapper.decide(versionId, reviewId, round.getStateVersion(), ReviewState.APPROVED, actor, now, null) != 1)
+                || mapper.decide(versionId, reviewId, round.getStateVersion(), ReviewState.APPROVED, actor, now, null) != 1) {
             throw new ReviewFailure(ReviewError.STATE_CONFLICT);
+        }
         events.append(CollaborationEvent.create(CollaborationKind.REVIEW_APPROVED, documentId, versionId, round.round(),
                 actor, now, now), List.of(round.getSubmittedBy()));
-        events.append(CollaborationEvent.create(CollaborationKind.VERSION_PUBLISHED, documentId, versionId, round.round(),
-                actor, now, now), List.of());
+        var event = CollaborationEvent.create(CollaborationKind.VERSION_PUBLISHED, documentId, versionId, round.round(),
+                actor, now, now);
+        if (!events.append(event, List.of())) {
+            throw new ReviewFailure(ReviewError.STATE_CONFLICT);
+        }
+        knowledge.capture(event.eventId(), order);
         var receipt = new ReviewReceipt(documentId, versionId, reviewId, round.getRoundNo(), Math.incrementExact(expectedVersion),
                 version.getIndexStatus(), version.getPublicationPolicy(), ReviewState.APPROVED, PublicationEvidence.PUBLISHED, now);
         receipts.complete(binding, receipt);

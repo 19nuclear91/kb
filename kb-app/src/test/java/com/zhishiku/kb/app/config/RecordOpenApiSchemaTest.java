@@ -1,7 +1,11 @@
 package com.zhishiku.kb.app.config;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhishiku.kb.app.domain.req.subscription.SubscriptionRequests;
+import com.zhishiku.kb.app.domain.vo.subscription.KnowledgeViews;
+import com.zhishiku.kb.app.domain.vo.subscription.SubscriptionViews;
 import com.zhishiku.kb.app.document.model.DocumentSecurityLevelChange;
 import com.zhishiku.kb.app.document.model.DocumentSecurityLevelResult;
 import com.zhishiku.kb.app.document.model.DocumentSecurityLevelState;
@@ -14,6 +18,7 @@ import com.zhishiku.kb.app.space.model.SpaceAclBatchGrantResult;
 import com.zhishiku.kb.app.space.model.SpaceAclPrincipal;
 import com.zhishiku.kb.app.space.web.dto.SpaceAclBatchGrantRequest;
 import com.zhishiku.kb.common.embedding.EmbeddingProfile;
+import com.zhishiku.kb.common.api.R;
 import io.swagger.v3.core.converter.AnnotatedType;
 import io.swagger.v3.core.converter.ModelConverters;
 import io.swagger.v3.oas.models.media.Schema;
@@ -36,6 +41,36 @@ class RecordOpenApiSchemaTest {
         JsonNode actual = mapper.valueToTree(EmbeddingProfileView.from(profile));
         JsonNode expected = mapper.valueToTree(profile);
         assertThat(actual).isEqualTo(expected);
+    }
+
+    @Test
+    void subscriptionPageSchemasKeepTheirConcreteElementAndResponseWrapper() {
+        var model = ModelConverters.getInstance().resolveAsResolvedSchema(new AnnotatedType(
+                new TypeReference<R<SubscriptionViews.Page<KnowledgeViews.Update>>>() { }.getType()));
+        Schema<?> data = (Schema<?>) model.schema.getProperties().get("data");
+        Schema<?> page = model.referencedSchemas.get(data.get$ref().substring(data.get$ref().lastIndexOf('/') + 1));
+        Schema<?> items = (Schema<?>) page.getProperties().get("items");
+        assertThat(items.getItems().get$ref()).endsWith("/KnowledgeUpdate");
+        assertThat(model.schema.getProperties()).containsKeys("code", "message", "data");
+    }
+
+    @Test
+    void subscriptionSchemasHaveDistinctNamesAndDescribeEachPublicField() {
+        var names = new java.util.HashSet<String>();
+        for (Class<?> container : List.of(SubscriptionRequests.class, SubscriptionViews.class, KnowledgeViews.class)) {
+            for (Class<?> type : container.getDeclaredClasses()) {
+                var resolved = ModelConverters.getInstance().resolveAsResolvedSchema(new AnnotatedType(type));
+                assertThat(resolved.schema.getDescription()).isNotBlank();
+                assertThat(names.add(type.getAnnotation(io.swagger.v3.oas.annotations.media.Schema.class).name())).isTrue();
+                for (var component : type.getRecordComponents()) {
+                    Schema<?> property = (Schema<?>) resolved.schema.getProperties().get(component.getName());
+                    assertThat(property).isNotNull();
+                    if (property.get$ref() == null) {
+                        assertThat(property.getDescription()).isNotBlank();
+                    }
+                }
+            }
+        }
     }
 
     @Test

@@ -1,10 +1,16 @@
 # 站内通知
 
-用户可在 `/notifications` 查看发给本人的审核、评论回复及按契约纳入的知识问题提醒，未读数显示在导航上。通知只是提醒，不是待办系统：审核待办仍以 `/reviews` 实时工作台为准，问题处理以当前问题详情及合格受理队列为准。标记已读也不等于已经处理。
+用户可在 `/notifications` 查看发给本人的审核、评论回复及按契约纳入的知识问题、订阅发布和周报提醒，未读数显示在导航上。通知只是提醒，不是待办系统：审核待办仍以 `/reviews` 实时工作台为准，问题处理以当前问题详情及合格受理队列为准。标记已读也不等于已经处理。
 
 知识问题单扩展的后端、新前端、网关及配置已接入独立问题来源、共享收件箱、能力协商和受保护目标，离线验证已完成，2026-11-14 已同步主规格并[归档](../openspec/changes/archive/2026-11-14-knowledge-gap-feedback-loop/)。合同见[通知主规格](../openspec/specs/user-notifications/spec.md)及[通知界面主规格](../openspec/specs/user-web-notifications/spec.md)。本轮未执行迁移或部署，顺序和兼容回退见 [协调发布清单](knowledge-gap-rollout.md)，离线通过及归档不等于真实环境验收。问题处理状态以问题详情为准，通知已读不等于确认解决。
 
 ## 数据生命周期
+
+知识订阅V45新增第三来源 `knowledge_delivery_id`，与协作event_id和问题gap_event_id恰一非空。逐次类型SUBSCRIBED_VERSION_PUBLISHED使用最小目标 `{"kind":"KNOWLEDGE_UPDATE","updateId":"UUID"}`；周报KNOWLEDGE_WEEKLY_DIGEST使用 `{"kind":"KNOWLEDGE_DIGEST","digestId":"UUID"}`。目标不含标题、说明、数量、URL或原件地址，详情和未读数使用同源当前阅读规则；一份周报最多计一条，全部不可读时隐藏。已发后取消不改通知身份或首次已读。
+
+当前共三档能力：缺省仅原审核/评论四类，KNOWLEDGE_GAPS_V1增加问题八类，KNOWLEDGE_SUBSCRIPTIONS_V1再增加上述两类。能力头 `X-Kb-Notification-Contract` 必须单值且精确匹配；非法值拒绝，游标绑定原合同，新web列表和导航均使用第三档、不自动降级。已读按本人通知身份执行，不受当前资源隐藏影响。
+
+新派生仅当 `kb.notification.derivation-enabled` 与 `kb.knowledge-subscriptions.derivation-enabled` 同时启用。订阅匹配、周周期和投递采用独立进度与预算；旧协作VERSION_PUBLISHED的DONE保持，不重新打开、不复制旧行。关闭消费者不停止新发布上下文保存。订阅扩展于2026-11-27同步主规格并[归档](../openspec/changes/archive/2026-11-27-knowledge-subscriptions-and-digests/archive-record.md)；升级与恢复见[订阅协调发布](knowledge-subscriptions-rollout.md)，离线证据见[验证记录](../openspec/changes/archive/2026-11-27-knowledge-subscriptions-and-digests/verification.md)；未运行真实迁移、联调或部署。
 
 三类事实分开保存，各自有生命周期：
 
@@ -14,11 +20,13 @@
 | 派生进度 | `kb_notification_projection` | 通知模块 | 每个事件一行，记录状态、租约、claim token、收件人游标、退避次数和固定错误分类 |
 | 问题源业务事件 | `kb_knowledge_gap_event`、`kb_knowledge_gap_event_recipient` | 问题模块 | 独立无正文事实和源事务固定收件人意图，不写入协作事件 |
 | 问题派生进度 | `kb_knowledge_gap_notification_projection` | 通知模块 | 独立外键及进度，复用同一有界领取/分批算法 |
-| 本人通知与已读 | `kb_user_notification` | 通知模块 | 原 `(event_id, recipient_user_id)` 唯一键保留；新增 `(gap_event_id, recipient_user_id)` 唯一键，二者来源恰有一个 |
+| 订阅发布与个人更新 | `kb_knowledge_publication`、`kb_knowledge_update`、`kb_knowledge_update_match` | 订阅模块 | 固定发布归属、原命中代次及频率，不保存说明正文 |
+| 订阅派生与提醒 | `kb_knowledge_match_projection`、`kb_knowledge_week`、`kb_knowledge_delivery` | 订阅模块 | 匹配、周封口与本人提醒独立进度，NOTIFIED与收件箱同事务提交 |
+| 本人通知与已读 | `kb_user_notification` | 通知模块 | 保留协作和问题来源唯一键，新增 `(knowledge_delivery_id, recipient_user_id)` 唯一键，三者来源恰有一个 |
 
 - 通知不复制标题、正文、审核意见、驳回原因、文件名、存储键或凭据。每次读取时按当前权限重新判断是否可见。
 - 源事件不加“已发送”标记，也不会因为派生而删除；派生失败不会撤销已提交的审核。反过来，源事件写入失败时，源业务事务会整体回滚，这与派生失败是两种不同的故障。
-- 收件人：`REVIEW_SUBMITTED` 发给送审当时记录的合格审核池；`REVIEW_APPROVED`/`REVIEW_REJECTED` 发给本轮送审者（不是文档 owner）。事件操作者本人不会收到。`REVIEW_WITHDRAWN`、`REVIEW_CANCELLED`、`VERSION_PUBLISHED` 不单独产生通知。`COMMENT_REPLIED` 发给根评论作者，回复本人的根评论不记录收件人；`COMMENT_CREATED`、`COMMENT_DELETED` 不产生通知。
+- 协作收件人：`REVIEW_SUBMITTED` 发给送审当时记录的合格审核池；`REVIEW_APPROVED`/`REVIEW_REJECTED` 发给本轮送审者（不是文档 owner），排除事件操作者本人。`REVIEW_WITHDRAWN`、`REVIEW_CANCELLED`、`VERSION_PUBLISHED` 不从旧协作来源单独产生通知。`COMMENT_REPLIED` 发给根评论作者，回复本人的根评论不记录收件人；`COMMENT_CREATED`、`COMMENT_DELETED` 不产生通知。订阅来源另按发布时的本人订阅与频率派生，允许发布参与者本人接收。
 - 派生时不会按当前角色重算历史收件人，避免断点续建时名单发生变化。送审后才加入审核池的人不会补收旧提醒，可以通过实时审核工作台看到待办。
 - 首期不自动清理。触发器只允许首次写入 `read_at`，并拒绝删除。清理需要单独定义覆盖范围、幂等墓碑和用户预期，本次不做隐式删除。
 - 本模块不复用 Worker 的 `TaskAlertOutbox`。那张表面向解析告警，payload 和生命周期都不能保存用户已读状态，它的 dispatch 还会在事务内调用适配器。通知派生只写数据库，不调用 HTTP。

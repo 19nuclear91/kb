@@ -1,16 +1,34 @@
 package com.zhishiku.kb.worker.parse.mapper;
 
+import com.zhishiku.kb.common.review.PublicationOrder;
 import com.zhishiku.kb.worker.parse.model.IndexPublicationCommit;
 import com.zhishiku.kb.worker.parse.model.WorkerPublicationState;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @Mapper
 public interface VersionPublicationMapper {
+    @Select(value = "SELECT position, business_time FROM kb_knowledge_next_order()", affectData = true)
+    @Options(useCache = false, flushCache = Options.FlushCachePolicy.TRUE, timeout = 10)
+    PublicationOrder nextKnowledgeOrder();
+
+    @Select(value = "SELECT kb_knowledge_capture_publication(#{eventId}, #{position}, #{at})", affectData = true)
+    @Options(useCache = false, flushCache = Options.FlushCachePolicy.TRUE, timeout = 10)
+    int captureKnowledgePublication(
+            @Param("eventId")
+            UUID eventId,
+            @Param("position")
+            long position,
+            @Param("at")
+            Instant at
+    );
+
     @Select("""
             SELECT d.id FROM kb_document d JOIN kb_document_version v ON v.doc_id = d.id
             WHERE v.id = #{versionId} FOR UPDATE OF d

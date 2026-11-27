@@ -194,6 +194,7 @@ function uploaded(result: UploadResult) {
   <Feedback :loading="query.loading" :error="query.error" :retry="recheck" />
   <KbAlert v-if="blocked" type="info" title="文档当前不可查看"><template #action><ElButton @click="recheck">重新读取</ElButton></template></KbAlert>
   <template v-if="detail">
+    <p><RouterLink :to="`/subscriptions/documents/${documentId}`">订阅此文档的正式发布</RouterLink></p>
     <section class="panel"><div class="toolbar"><ElTag type="info">密级 {{ detail.securityLevel }}</ElTag><span class="muted">当前发布：{{ detail.currentVersionNo == null ? '尚无版本' : `v${detail.currentVersionNo}` }}</span></div>
       <ElSpace wrap><FavoriteButton :id="documentId" :favorites="favorites" />
         <RouterLink v-if="adminAccess.canManageSpace(detail.spaceId) || adminAccess.has(perm.securityLevelWrite)" :to="`/admin/documents/${documentId}`">管理此文档</RouterLink>

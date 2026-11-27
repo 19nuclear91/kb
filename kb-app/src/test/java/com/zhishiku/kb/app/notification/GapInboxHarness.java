@@ -14,6 +14,7 @@ import com.zhishiku.kb.app.notification.service.ReviewNotificationTargets;
 import com.zhishiku.kb.app.notification.service.UserNotificationService;
 import com.zhishiku.kb.app.notification.web.NotificationController;
 import com.zhishiku.kb.app.support.MapperRowStub;
+import com.zhishiku.kb.app.service.impl.subscription.KnowledgeNotificationTargets;
 import com.zhishiku.kb.common.security.PermissionScope;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.ibatis.builder.xml.XMLMapperBuilder;
@@ -42,7 +43,7 @@ final class GapInboxHarness {
     final PermissionService.PrincipalHandle actor = mock(PermissionService.PrincipalHandle.class);
     final UserNotificationMapper mapper = mock(UserNotificationMapper.class);
     final NotificationTargetRegistry registry = new NotificationTargetRegistry(List.of(new ReviewNotificationTargets(),
-            new CommentNotificationTargets(), new GapNotificationTargets()));
+            new CommentNotificationTargets(), new GapNotificationTargets(), new KnowledgeNotificationTargets()));
     final SimpleMeterRegistry meters = new SimpleMeterRegistry();
     final UserNotificationService service = new UserNotificationService(access, permissions, mapper, registry,
             new NotificationMetrics(meters), Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
@@ -83,7 +84,7 @@ final class GapInboxHarness {
         var configuration = MapperRowStub.configuration("/mapper/DocumentMapper.xml");
         configuration.getTypeHandlerRegistry().register(UUID.class, UuidTypeHandler.class);
         for (String resource : List.of("/mapper/DocumentReviewEligibilityMapper.xml", "/mapper/DocumentCommentMapper.xml",
-                "/mapper/KnowledgeGapMapper.xml", "/mapper/UserNotificationMapper.xml")) {
+                "/mapper/KnowledgeGapMapper.xml", "/mapper/subscription/KnowledgeQueryMapper.xml", "/mapper/UserNotificationMapper.xml")) {
             try (var input = GapInboxHarness.class.getResourceAsStream(resource)) {
                 new XMLMapperBuilder(input, configuration, resource, configuration.getSqlFragments()).parse();
             }

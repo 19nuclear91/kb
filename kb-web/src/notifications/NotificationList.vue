@@ -84,7 +84,7 @@ async function more() {
       <span>{{ notificationLabels[item.type] }}</span>
       <span class="muted">{{ new Date(item.createdAt).toLocaleString('zh-CN') }}
         <template v-if="item.target.kind === 'KNOWLEDGE_GAP'"> · 问题 {{ item.target.gapId }}</template>
-        <template v-else> · 文档 {{ item.target.documentId }} · 版本 {{ item.target.versionId }}</template>
+        <template v-else-if="item.target.kind === 'DOCUMENT_VERSION_REVIEW' || item.target.kind === 'DOCUMENT_VERSION_COMMENT'"> · 文档 {{ item.target.documentId }} · 版本 {{ item.target.versionId }}</template>
       </span>
       <ElButton @click="opened = item">打开目标</ElButton>
       <ElButton v-if="!item.readAt" :loading="receipts[item.notificationId] === 'sending'" :disabled="receipts[item.notificationId] === 'sending'" @click="read(item.notificationId)">{{ receipts[item.notificationId] === 'uncertain' || receipts[item.notificationId] === 'failed' ? '重试标记已读' : '标记已读' }}</ElButton>

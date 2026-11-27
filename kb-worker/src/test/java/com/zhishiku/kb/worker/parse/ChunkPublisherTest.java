@@ -98,6 +98,7 @@ class ChunkPublisherTest {
         when(publication.lockDocumentForVersion(2)).thenReturn(42L);
         when(publication.lockState(2)).thenReturn(ParseEmbeddingFixture.publication());
         when(publication.indexed(any())).thenReturn(1);
+        when(publication.nextKnowledgeOrder()).thenReturn(new com.zhishiku.kb.common.review.PublicationOrder(1, java.time.Instant.EPOCH));
         when(jdbc.batchUpdate(contains("INSERT INTO kb_doc_chunk"),
                 ArgumentMatchers.<List<ParsePipeline.IndexedChunk>>any(), anyInt(), any())).thenReturn(new int[][]{{1}});
         var snapshots = mock(VersionSnapshotWriter.class);

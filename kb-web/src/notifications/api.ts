@@ -2,12 +2,15 @@ import { ApiError, positiveId } from '../api';
 import type { Session } from '../session';
 
 export type NotificationType = 'REVIEW_SUBMITTED' | 'REVIEW_APPROVED' | 'REVIEW_REJECTED' | 'COMMENT_REPLIED'
-  | 'GAP_CREATED' | 'GAP_RETURNED' | 'GAP_ASSIGNED' | 'GAP_SOLUTION_SUBMITTED' | 'GAP_SOLUTION_REJECTED' | 'GAP_RESOLVED' | 'GAP_WITHDRAWN' | 'GAP_CLOSED';
+  | 'GAP_CREATED' | 'GAP_RETURNED' | 'GAP_ASSIGNED' | 'GAP_SOLUTION_SUBMITTED' | 'GAP_SOLUTION_REJECTED' | 'GAP_RESOLVED' | 'GAP_WITHDRAWN' | 'GAP_CLOSED'
+  | 'SUBSCRIBED_VERSION_PUBLISHED' | 'KNOWLEDGE_WEEKLY_DIGEST';
 export type NotificationTarget =
   | { readonly kind: 'DOCUMENT_VERSION_REVIEW'; readonly documentId: string; readonly versionId: string; readonly reviewId: string; readonly commentId: null }
   | { readonly kind: 'DOCUMENT_VERSION_COMMENT'; readonly documentId: string; readonly versionId: string; readonly reviewId: null; readonly commentId: string }
-  | { readonly kind: 'KNOWLEDGE_GAP'; readonly gapId: string };
-export const NOTIFICATION_CONTRACT = 'KNOWLEDGE_GAPS_V1';
+  | { readonly kind: 'KNOWLEDGE_GAP'; readonly gapId: string }
+  | { readonly kind: 'KNOWLEDGE_UPDATE'; readonly updateId: string }
+  | { readonly kind: 'KNOWLEDGE_DIGEST'; readonly digestId: string };
+export const NOTIFICATION_CONTRACT = 'KNOWLEDGE_SUBSCRIPTIONS_V1';
 export const notificationHeaders = Object.freeze({ 'X-Kb-Notification-Contract': NOTIFICATION_CONTRACT });
 export interface NotificationItem {
   notificationId: string; type: NotificationType; createdAt: string; readAt: string | null; target: NotificationTarget;
@@ -23,6 +26,7 @@ export const notificationLabels: Record<NotificationType, string> = {
   GAP_CREATED: '有知识问题等待受理', GAP_RETURNED: '有知识问题退回受理', GAP_ASSIGNED: '有知识问题分派给你',
   GAP_SOLUTION_SUBMITTED: '你的知识问题有方案待确认', GAP_SOLUTION_REJECTED: '知识问题方案仍未解决',
   GAP_RESOLVED: '知识问题已由提问者确认解决', GAP_WITHDRAWN: '知识问题已被提问者撤回', GAP_CLOSED: '知识问题已关闭',
+  SUBSCRIBED_VERSION_PUBLISHED: '你订阅的资料有新发布', KNOWLEDGE_WEEKLY_DIGEST: '你的知识更新周报已生成',
 };
 const types = new Set<string>(Object.keys(notificationLabels));
 const base = '/api/notifications';
@@ -47,6 +51,12 @@ function exactId(value: unknown): string {
 
 /** 只接受白名单结构化目标；外链、令牌、returnUrl 或额外字段一律视为无效响应。 */
 export function notificationTarget(value: unknown): NotificationTarget {
+  if (exactKeys(value, ['kind', 'updateId']) && value.kind === 'KNOWLEDGE_UPDATE') {
+    try { return Object.freeze({ kind: value.kind, updateId: notificationId(value.updateId) }); } catch { throw new ApiError(503); }
+  }
+  if (exactKeys(value, ['kind', 'digestId']) && value.kind === 'KNOWLEDGE_DIGEST') {
+    try { return Object.freeze({ kind: value.kind, digestId: notificationId(value.digestId) }); } catch { throw new ApiError(503); }
+  }
   if (exactKeys(value, ['kind', 'gapId']) && value.kind === 'KNOWLEDGE_GAP') {
     try { return Object.freeze({ kind: value.kind, gapId: exactId(value.gapId) }); } catch { throw new ApiError(503); }
   }
@@ -68,7 +78,8 @@ function item(value: unknown): NotificationItem {
   let id: string;
   try { id = notificationId(value.notificationId); } catch { throw new ApiError(503); }
   const target = notificationTarget(value.target), type = value.type as NotificationType;
-  const kind = type.startsWith('GAP_') ? 'KNOWLEDGE_GAP' : type === 'COMMENT_REPLIED' ? 'DOCUMENT_VERSION_COMMENT' : 'DOCUMENT_VERSION_REVIEW';
+  const kind = type === 'SUBSCRIBED_VERSION_PUBLISHED' ? 'KNOWLEDGE_UPDATE' : type === 'KNOWLEDGE_WEEKLY_DIGEST' ? 'KNOWLEDGE_DIGEST'
+    : type.startsWith('GAP_') ? 'KNOWLEDGE_GAP' : type === 'COMMENT_REPLIED' ? 'DOCUMENT_VERSION_COMMENT' : 'DOCUMENT_VERSION_REVIEW';
   if (target.kind !== kind) throw new ApiError(503);
   return { notificationId: id, type, createdAt: value.createdAt as string, readAt: value.readAt as string | null, target };
 }

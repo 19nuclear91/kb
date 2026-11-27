@@ -7,7 +7,8 @@ import java.util.List;
 /** 通知读取能力声明；缺省保持旧契约，声明不会授予资源或本人归属资格。 */
 public enum NotificationContract {
     LEGACY,
-    KNOWLEDGE_GAPS_V1;
+    KNOWLEDGE_GAPS_V1,
+    KNOWLEDGE_SUBSCRIPTIONS_V1;
 
     public static final String HEADER = "X-Kb-Notification-Contract";
 
@@ -15,9 +16,10 @@ public enum NotificationContract {
         if (values == null || values.isEmpty()) {
             return LEGACY;
         }
-        if (values.size() != 1 || !KNOWLEDGE_GAPS_V1.name().equals(values.getFirst())) {
+        if (values.size() != 1 || (!KNOWLEDGE_GAPS_V1.name().equals(values.getFirst())
+                && !KNOWLEDGE_SUBSCRIPTIONS_V1.name().equals(values.getFirst()))) {
             throw ApiException.badRequest("通知能力声明无效");
         }
-        return KNOWLEDGE_GAPS_V1;
+        return valueOf(values.getFirst());
     }
 }

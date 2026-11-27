@@ -34,5 +34,5 @@ it.each([true, false])('问题通知打开相同 ID，重新鉴权/核对当前�
   expect(h.transport.mock.calls.some(([, options]) => options?.method === 'PUT' || options?.method === 'POST')).toBe(false);
   const reads = h.transport.mock.calls.filter(([path]) => String(path).startsWith('/api/notifications'));
   expect(reads.length).toBeGreaterThanOrEqual(2);
-  for (const [, options] of reads) expect(new Headers(options?.headers).get('X-Kb-Notification-Contract')).toBe('KNOWLEDGE_GAPS_V1');
+  for (const [, options] of reads) expect(new Headers(options?.headers).get('X-Kb-Notification-Contract')).toBe('KNOWLEDGE_SUBSCRIPTIONS_V1');
 });

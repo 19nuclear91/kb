@@ -6,13 +6,16 @@ import com.zhishiku.kb.app.document.service.AutoPublicationService;
 import com.zhishiku.kb.app.document.service.AutoPublicationTransaction;
 import com.zhishiku.kb.app.document.service.PublicationReadinessService;
 import com.zhishiku.kb.app.embedding.service.EmbeddingControlService;
+import com.zhishiku.kb.app.service.subscription.KnowledgePublicationService;
 import com.zhishiku.kb.common.conversation.SourceKey;
 import com.zhishiku.kb.common.embedding.EmbeddingControl;
 import com.zhishiku.kb.common.review.PublicationEvidence;
 import com.zhishiku.kb.common.review.PublicationPolicy;
+import com.zhishiku.kb.common.review.PublicationOrder;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -46,8 +49,10 @@ class AutoPublicationServiceTest {
         f.version.setIndexedEpoch(2L);
         f.version.setIndexedChunkCount(1);
         f.version.setSpaceArchived(true);
+        var knowledge = mock(KnowledgePublicationService.class);
+        when(knowledge.next()).thenReturn(new PublicationOrder(10, Instant.parse("2026-11-27T08:00:00Z")));
         var transaction = new AutoPublicationTransaction(embedding, f.mapper, publication,
-                new PublicationReadinessService(publication), f.events);
+                new PublicationReadinessService(publication), f.events, knowledge);
         var source = new SourceKey(10, 20);
         assertThat(transaction.publish(source)).isFalse();
         f.version.setSpaceArchived(false);
@@ -64,6 +69,7 @@ class AutoPublicationServiceTest {
         f.version.setPublicationEvidence(PublicationEvidence.PUBLISHED);
         assertThat(transaction.publish(source)).isFalse();
         verify(f.eventMapper, times(1)).append(any());
+        verify(knowledge, times(1)).capture(any(), any());
     }
 
     @Test

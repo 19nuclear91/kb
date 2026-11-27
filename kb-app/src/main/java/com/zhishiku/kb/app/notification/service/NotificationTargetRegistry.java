@@ -21,7 +21,9 @@ public class NotificationTargetRegistry {
         Map<NotificationType, NotificationTargetResolver> map = new EnumMap<>(NotificationType.class);
         for (var resolver : installed) {
             for (var type : resolver.types()) {
-                if (map.put(type, resolver) != null) throw new IllegalStateException("Duplicate notification resolver");
+                if (map.put(type, resolver) != null) {
+                    throw new IllegalStateException("Duplicate notification resolver");
+                }
             }
         }
         resolvers = Collections.unmodifiableMap(map);
@@ -37,8 +39,15 @@ public class NotificationTargetRegistry {
     }
 
     public Optional<NotificationTarget> resolve(NotificationRow row) {
-        var resolver = resolvers.get(NotificationType.valueOf(row.type()));
-        if (resolver == null) throw new IllegalStateException("Notification type is not readable");
+        var type = NotificationType.valueOf(row.type());
+        if (type.knowledgeSubscription() != (row.knowledge() != null)
+                || type.knowledgeGap() != (row.gap() != null)) {
+            return Optional.empty();
+        }
+        var resolver = resolvers.get(type);
+        if (resolver == null) {
+            throw new IllegalStateException("Notification type is not readable");
+        }
         return resolver.resolve(row);
     }
 }

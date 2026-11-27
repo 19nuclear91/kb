@@ -21,7 +21,7 @@ it('大整数 ID 经真实 Session 解码保持精确，请求不缓存且不带
     versionId: '9223372036854775807', reviewId: review, commentId: null });
   expect(result.items[0]).not.toHaveProperty('prompt');
   expect(transport).toHaveBeenCalledWith('/api/notifications?limit=20', expect.objectContaining({ cache: 'no-store', credentials: 'omit' }));
-  expect(new Headers(transport.mock.calls[0][1]?.headers).get('X-Kb-Notification-Contract')).toBe('KNOWLEDGE_GAPS_V1');
+  expect(new Headers(transport.mock.calls[0][1]?.headers).get('X-Kb-Notification-Contract')).toBe('KNOWLEDGE_SUBSCRIPTIONS_V1');
 });
 
 it('问题目标精确两字段，八类类型严格匹配，列表与计数统一能力头', async () => {

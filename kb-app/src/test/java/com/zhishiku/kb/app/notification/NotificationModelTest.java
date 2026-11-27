@@ -93,7 +93,8 @@ class NotificationModelTest {
             assertThat(NotificationType.fromSource(kind)).isEmpty();
         }
         assertThat(InMemoryNotificationStore.NOTIFICATION_TYPES)
-                .containsExactlyInAnyOrderElementsOf(Arrays.stream(NotificationType.values()).filter(type -> !type.knowledgeGap()).map(Enum::name).toList());
+                .containsExactlyInAnyOrderElementsOf(Arrays.stream(NotificationType.values())
+                        .filter(type -> !type.knowledgeGap() && !type.knowledgeSubscription()).map(Enum::name).toList());
     }
 
     @Test
