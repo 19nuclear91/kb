@@ -20,6 +20,10 @@ export const navigation = [
 ] as const;
 
 export function safeReturnPath(value: unknown): string {
+  if (typeof value === 'string') {
+    const health = /^\/admin\/spaces\/([1-9]\d{0,18})\/health-radar$/.exec(value);
+    if (health && BigInt(health[1]) <= 9223372036854775807n) return value;
+  }
   if (knowledgeRoute(value)) return value as string;
   if (cardRouteKind(value)) return value as string;
   if (value === '/admin/search-terms') return value;

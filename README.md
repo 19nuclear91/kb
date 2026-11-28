@@ -20,6 +20,7 @@
 | 版本差异与说明 | 指定两个版本的结构及表格差异、关键数值变化、人工变更说明与修改历史 | F-03 已实现、同步主规格并归档，未部署；对比依赖新版 Worker 的结构快照。见[版本对比与变更说明](docs/version-diff-and-change-notes.md) |
 | 知识订阅与周报 | 本人文档/空间/标签订阅，统一逐次或每周频率，发布去重、个人更新、固定版本说明及周报 | F-10已实现，47/47任务完成，2026-11-27同步8份主规格并[归档](openspec/changes/archive/2026-11-27-knowledge-subscriptions-and-digests/archive-record.md)；V45未执行，未部署。见[使用说明](docs/knowledge-subscriptions.md)、[API](docs/knowledge-subscriptions-api.md)、[运维](docs/knowledge-subscriptions-operations.md)、[发布](docs/knowledge-subscriptions-rollout.md)及[验证记录](openspec/changes/archive/2026-11-27-knowledge-subscriptions-and-digests/verification.md) |
 | 知识适用期与复审 | 固定版本日期声明与更正历史、文档责任人和周期、本人及空间清单、导航数量、责任人确认 | F-02 首期已实现，九份主规格已同步、[变更已归档](openspec/changes/archive/2026-11-15-knowledge-validity-and-review/)，未部署；适用期届满与复审逾期分别表达，不改变发布、召回或 AI 协议。见[接口与运维](docs/knowledge-validity-review.md)、[最新离线核验与未验证边界](openspec/changes/archive/2026-11-15-knowledge-validity-and-review/verify-report-2.md) |
+| 知识健康雷达 | 空间管理员按单空间查看六类维护信号、精确汇总及去重分页清单，连接原管理与固定版本预览 | F-13 首期已实现，28/28 任务完成，2026-11-28 同步五份主规格并[归档](openspec/changes/archive/2026-11-28-knowledge-health-radar/archive-record.md)，最终核验无 CRITICAL/WARNING；未部署，V46 未执行。独立 `knowledge:health:read` 与空间管理资格合取，适用期只统计当前可读发布版本。见[使用说明](docs/knowledge-health-radar.md)、[API](docs/knowledge-health-radar-api.md)、[运维](docs/knowledge-health-radar-operations.md)和[核验报告](openspec/changes/archive/2026-11-28-knowledge-health-radar/verify-report.md) |
 | 知识问题闭环 | 主动分享需求、本人/被分派问题、统一受理、人工分派、说明/固定资料方案、本人确认及站内提醒 | 只分享用户确认的描述，不复制回答/会话；四项资格独立，撤回不删除，关闭不等于解决。首期实现及离线验证完成，主规格已同步、[变更已归档](openspec/changes/archive/2026-11-14-knowledge-gap-feedback-loop/)，未部署，不代表真实环境验收通过。见[问题 API](docs/knowledge-gap-api.md)、[受理运维](docs/knowledge-gap-operations.md)、[协调发布](docs/knowledge-gap-rollout.md) |
 | 文件阅读 | PDF、UTF-8 TXT/Markdown 预览，以及独立授权的原件下载 | 下载拒绝不等于阅读拒绝，重核保持原版本且不自动打开文件；docx/xlsx/pptx 原生只读预览通过可选 ONLYOFFICE 服务提供，默认关闭；doc/xls/ppt 不进入该预览流程。见[Office 预览](docs/office-preview.md) |
 | 混合检索 | BM25、向量召回、SQL 内 RRF 融合、rerank、top-k，支持空间/分类/标签/类型/时间组合筛选 | 权限、密级与发布状态在召回时过滤；支持超时、并发与响应大小限制及降级。见[搜索筛选](docs/search-filtering-api.md)、[检索韧性](docs/search-resilience.md) |
@@ -102,11 +103,11 @@ mvn -pl kb-app spring-boot:run '-Dspring-boot.run.profiles=dev'
 
 第一条命令安装模块间依赖并打包，跳过测试；成功后再运行第二条。等待 `kb-app` 完成 Flyway 迁移和 Embedding profile 登记，再启动 Worker。
 
-正式迁移位于 [db/migration](kb-app/src/main/resources/db/migration)，当前最高版本为 **V45**，包含 V18.1；V29–V35 引入人工启用状态、认证代次、生命周期登记/事件/权限、轮次代次及输出停止证据，V36 新增批量导入任务、文件项和上传尝试账本，V37/V38 新增知识问题及独立问题通知来源、共享收件箱扩展，V39 新增版本适用期、修改历史、文档复审和命令回执，V40 新增结构快照、版本块、变更说明及历史／回执，V41 新增 AI 资料建议与结算事实，V42 新增术语词典五表与两项精确权限，V43 增加授权诊断权限，V44 新增答案卡九表、固定来源、独立索引和两项精确权限，V45新增知识订阅、发布顺序与上下文、个人更新、周报和第三通知来源（本轮未执行迁移）。V3/V6 位于 [db/dev](kb-app/src/main/resources/db/dev)，仅 `dev` profile 加载。不要在已有生产库上切换到 `dev` 来补种子，也不要用 Flyway repair 跳过迁移问题；升级须遵守[生命周期协调发布](docs/lifecycle-rollout.md)、[导入升级与回退](docs/document-import-operations.md#对账升级与回退)、[问题协调发布](docs/knowledge-gap-rollout.md)、[适用期与复审上线说明](docs/knowledge-validity-review.md#上线与回退)及各专项兼容方案。新增权限入库前先排空不认识目录的旧 app，回退保留数据、回执及识别新权限的业务版本，见[词典运维](docs/search-terminology-operations.md)、[答案卡运维](docs/answer-cards-operations.md)和[订阅协调发布](docs/knowledge-subscriptions-rollout.md)。
+正式迁移位于 [db/migration](kb-app/src/main/resources/db/migration)，当前最高版本为 **V46**，包含 V18.1；V29–V35 引入人工启用状态、认证代次、生命周期登记/事件/权限、轮次代次及输出停止证据，V36 新增批量导入任务、文件项和上传尝试账本，V37/V38 新增知识问题及独立问题通知来源、共享收件箱扩展，V39 新增版本适用期、修改历史、文档复审和命令回执，V40 新增结构快照、版本块、变更说明及历史／回执，V41 新增 AI 资料建议与结算事实，V42 新增术语词典五表与两项精确权限，V43 增加授权诊断权限，V44 新增答案卡九表、固定来源、独立索引和两项精确权限，V45 新增知识订阅、发布顺序与上下文、个人更新、周报和第三通知来源，V46 新增健康雷达读取权限（本轮未执行迁移）。V3/V6 位于 [db/dev](kb-app/src/main/resources/db/dev)，仅 `dev` profile 加载。不要在已有生产库上切换到 `dev` 来补种子，也不要用 Flyway repair 跳过迁移问题；升级须遵守[生命周期协调发布](docs/lifecycle-rollout.md)、[导入升级与回退](docs/document-import-operations.md#对账升级与回退)、[问题协调发布](docs/knowledge-gap-rollout.md)、[适用期与复审上线说明](docs/knowledge-validity-review.md#上线与回退)及各专项兼容方案。新增权限入库前先排空不认识目录的旧 app，回退保留数据、回执及识别新权限的业务版本，见[词典运维](docs/search-terminology-operations.md)、[答案卡运维](docs/answer-cards-operations.md)、[订阅协调发布](docs/knowledge-subscriptions-rollout.md)和[健康雷达运维](docs/knowledge-health-radar-operations.md)。
 
 ### 3. 分别启动其他服务
 
-知识订阅扩展将最新迁移推进至 **V45**，增加生效顺序、发布上下文、个人订阅/更新及周报和第三通知来源。V45尚未执行；升级必须排空旧app/Worker写入者并遵守[知识订阅协调发布](docs/knowledge-subscriptions-rollout.md)，旧发布写入者会因缺少上下文被拒绝。
+知识订阅的 **V45** 增加生效顺序、发布上下文、个人订阅/更新及周报和第三通知来源；其后的 **V46** 增加健康雷达读取权限。两项迁移尚未执行；升级必须排空旧 app/Worker 写入者并遵守[知识订阅协调发布](docs/knowledge-subscriptions-rollout.md)，旧发布写入者会因缺少上下文被拒绝。雷达权限按[健康雷达运维](docs/knowledge-health-radar-operations.md)协调发布。
 
 在仓库根目录分别打开终端，按需运行以下命令，每条命令占用一个终端：
 
@@ -346,6 +347,7 @@ app / Worker / AI / gateway 管理端口
 | 用户、部门、角色 | `/admin/users`、`/admin/departments`、`/admin/roles` |
 | 员工生命周期、事件处置与应急保障 | `/admin/identity/lifecycle`（账号详情另有独立权限面板） |
 | 空间、文档管理、全局标签 | `/admin/spaces`、`/admin/documents`、`/admin/document-tags` |
+| 单空间知识健康雷达 | `/admin/spaces/:spaceId/health-radar`，从空间详情进入 |
 | 向量重建、解析死信 | `/admin/embedding`、`/admin/parse/dead-letters` |
 | 管理与登录审计 | `/admin/audits` |
 | 企业术语与错词词典 | `/admin/search-terms`（读取及维护分别要求 `search:term:read`／`search:term:write`） |

@@ -15,7 +15,8 @@ public class AiQueryCacheFilter implements WebFilter, Ordered {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String path = exchange.getRequest().getPath().value();
-        if (path.startsWith("/api/admin/ai/") || path.startsWith("/api/admin/reports/")) {
+        if (path.startsWith("/api/admin/ai/") || path.startsWith("/api/admin/reports/")
+                || path.matches("/api/admin/spaces/[^/]+/health-radar/?")) {
             exchange.getResponse().beforeCommit(() -> {
                 exchange.getResponse().getHeaders().setCacheControl("no-store");
                 return Mono.empty();

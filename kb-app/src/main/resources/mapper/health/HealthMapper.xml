@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhishiku.kb.app.mapper.health.HealthMapper">
+    <!-- 仅授权可读且满足既有发布规则的当前版本参与日期诊断；管理资格不代替阅读资格。 -->
+    <sql id="visibleCurrent">
+        d.security_level &lt;= #{clearance}
+        AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentMapper.documentAccessPredicate"/>
+        AND <include refid="com.zhishiku.kb.app.authorization.AuthorizationRules.publishedEvidence"/>
+    </sql>
+    <!-- 每个文档一行；统计与清单共用，授权使用 EXISTS 避免多条授权放大数量。 -->
+    <sql id="relation">
+        WITH facts AS (
+            SELECT d.id AS document_id, f.responsible_user_id, responsible.display_name, f.due_date,
+                <include refid="com.zhishiku.kb.app.document.stewardship.mapper.StewardshipMapper.responsibleEligible"/> AS eligible,
+                v.id AS version_id, a.effective_from,
+                CASE WHEN v.id IS NOT NULL THEN COALESCE(a.until_kind, 'UNDECLARED') END AS until_kind,
+                a.effective_until
+            FROM kb_document d
+            LEFT JOIN kb_document_stewardship f ON f.doc_id = d.id
+            LEFT JOIN sys_user responsible ON responsible.id = f.responsible_user_id
+            LEFT JOIN kb_document_version v ON v.id = d.current_version_id AND v.doc_id = d.id
+                AND (<include refid="visibleCurrent"/>)
+            LEFT JOIN kb_document_version_applicability a ON a.version_id = v.id AND a.doc_id = d.id
+            WHERE d.space_id = #{spaceId} AND d.status NOT IN ('deleted', 'archived')
+        ), states AS (
+            SELECT facts.*,
+                CASE WHEN responsible_user_id IS NULL THEN 'UNASSIGNED'
+                    WHEN NOT eligible THEN 'NEEDS_REASSIGN'
+                    WHEN due_date &lt; #{today} THEN 'OVERDUE'
+                    WHEN due_date &lt;= CAST(#{today} AS DATE) + 30 THEN 'DUE_SOON'
+                    ELSE 'OK' END AS stewardship_state,
+                CASE WHEN version_id IS NULL THEN NULL
+                    WHEN effective_from IS NULL AND until_kind = 'UNDECLARED' THEN 'UNDECLARED'
+                    WHEN effective_from &gt; #{today} THEN 'NOT_YET_EFFECTIVE'
+                    WHEN effective_until &lt; #{today} THEN 'EXPIRED'
+                    WHEN effective_until &lt;= CAST(#{today} AS DATE) + 30 THEN 'EXPIRING_SOON'
+                    ELSE 'EFFECTIVE' END AS applicability_state
+            FROM facts
+        ), affected AS (
+            SELECT * FROM states WHERE stewardship_state &lt;&gt; 'OK'
+                OR applicability_state IN ('EXPIRED', 'EXPIRING_SOON')
+        )
+    </sql>
+    <resultMap id="totals" type="com.zhishiku.kb.app.domain.dto.health.HealthTotals">
+        <constructor>
+            <arg column="unassigned" javaType="string"/>
+            <arg column="reassign" javaType="string"/>
+            <arg column="overdue" javaType="string"/>
+            <arg column="due_soon" javaType="string"/>
+            <arg column="expired" javaType="string"/>
+            <arg column="expiring" javaType="string"/>
+            <arg column="affected" javaType="string"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="row" type="com.zhishiku.kb.app.domain.dto.health.HealthRow">
+        <constructor>
+            <idArg column="document_id" javaType="_long"/>
+            <arg column="responsible_user_id" javaType="java.lang.Long"/>
+            <arg column="display_name" javaType="string"/>
+            <arg column="due_date" javaType="java.time.LocalDate"/>
+            <arg column="eligible" javaType="_boolean"/>
+            <arg column="stewardship_state" javaType="string"/>
+            <arg column="version_id" javaType="java.lang.Long"/>
+            <arg column="effective_from" javaType="java.time.LocalDate"/>
+            <arg column="until_kind" javaType="com.zhishiku.kb.app.document.applicability.model.UntilKind"/>
+            <arg column="effective_until" javaType="java.time.LocalDate"/>
+            <arg column="applicability_state" javaType="string"/>
+        </constructor>
+    </resultMap>
+    <select id="totals" resultMap="totals" timeout="3" useCache="false" flushCache="true">
+        <bind name="aclPermission" value="'view'"/>
+        <include refid="relation"/>
+        SELECT count(*) FILTER (WHERE stewardship_state = 'UNASSIGNED')::text AS unassigned,
+            count(*) FILTER (WHERE stewardship_state = 'NEEDS_REASSIGN')::text AS reassign,
+            count(*) FILTER (WHERE stewardship_state = 'OVERDUE')::text AS overdue,
+            count(*) FILTER (WHERE stewardship_state = 'DUE_SOON')::text AS due_soon,
+            count(*) FILTER (WHERE applicability_state = 'EXPIRED')::text AS expired,
+            count(*) FILTER (WHERE applicability_state = 'EXPIRING_SOON')::text AS expiring,
+            count(*)::text AS affected FROM affected
+    </select>
+    <select id="page" resultMap="row" timeout="3" useCache="false" flushCache="true">
+        <bind name="aclPermission" value="'view'"/>
+        <include refid="relation"/>
+        SELECT * FROM affected WHERE
+        <choose>
+            <when test="signal == 'ALL'">TRUE</when>
+            <when test="signal == 'STEWARD_UNASSIGNED'">stewardship_state = 'UNASSIGNED'</when>
+            <when test="signal == 'STEWARD_NEEDS_REASSIGN'">stewardship_state = 'NEEDS_REASSIGN'</when>
+            <when test="signal == 'REVIEW_OVERDUE'">stewardship_state = 'OVERDUE'</when>
+            <when test="signal == 'REVIEW_DUE_SOON'">stewardship_state = 'DUE_SOON'</when>
+            <when test="signal == 'APPLICABILITY_EXPIRED'">applicability_state = 'EXPIRED'</when>
+            <when test="signal == 'APPLICABILITY_EXPIRING_SOON'">applicability_state = 'EXPIRING_SOON'</when>
+            <otherwise>FALSE</otherwise>
+        </choose>
+        <if test="afterId != null">AND document_id &gt; #{afterId}</if>
+        ORDER BY document_id LIMIT #{limit}
+    </select>
+</mapper>

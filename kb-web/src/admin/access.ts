@@ -20,6 +20,7 @@ export const perm = {
   auditRead: 'audit:read',
   aiUsageRead: 'ai:usage:read', aiAuditRead: 'ai:audit:read',
   operationsReportsRead: 'operations:reports:read',
+  healthRead: 'knowledge:health:read',
   tagRead: 'document:tag:read', tagWrite: 'document:tag:write',
   termRead: 'search:term:read', termWrite: 'search:term:write',
   answerCardWrite: 'answer:card:write', answerCardReview: 'answer:card:review',

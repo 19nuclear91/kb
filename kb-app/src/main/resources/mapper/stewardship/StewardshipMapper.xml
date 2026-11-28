@@ -10,11 +10,11 @@
     <sql id="stewardEligible">
         u.enabled = TRUE AND dept.enabled = TRUE AND u.must_change_password = FALSE AND u.clearance_level &gt;= d.security_level
         AND <include refid="com.zhishiku.kb.app.document.mapper.DocumentReviewEligibilityMapper.viewGrant"/>
-        AND <include refid="editGrant"/>
+        AND <include refid="com.zhishiku.kb.app.document.stewardship.mapper.StewardshipMapper.editGrant"/>
     </sql>
     <sql id="responsibleEligible">
         EXISTS (SELECT 1 FROM sys_user u JOIN sys_dept dept ON dept.id = u.dept_id
-            WHERE u.id = f.responsible_user_id AND <include refid="stewardEligible"/>)
+            WHERE u.id = f.responsible_user_id AND <include refid="com.zhishiku.kb.app.document.stewardship.mapper.StewardshipMapper.stewardEligible"/>)
     </sql>
     <resultMap id="documentRow" type="com.zhishiku.kb.app.document.stewardship.model.StewardshipDocument">
         <constructor>

@@ -84,6 +84,16 @@ it('直接打开对比页仅按需加载对应模块', async () => {
   expectOnly('VersionComparePage'); await finish('VersionComparePage'); expect(await screen.findByRole('heading', { name: 'VersionComparePage:1' })).toBeTruthy();
 });
 
+it('健康雷达仅按独立资格加载，下载期间撤权不能挂载', async () => {
+  const denied = harness('/admin/spaces/2/health-radar', { permissions: ['space:manage-all'] });
+  await screen.findByText('当前账号没有此管理页面的读取资格。');
+  expect(loaders.KnowledgeHealthPage).not.toHaveBeenCalled(); denied.view.unmount();
+  const allowed = harness('/admin/spaces/2/health-radar', { permissions: ['knowledge:health:read'] });
+  await waitFor(() => expect(loaders.KnowledgeHealthPage).toHaveBeenCalledOnce());
+  allowed.permissions([]); await allowed.session.refresh(); await flushPromises();
+  await finish('KnowledgeHealthPage'); expect(mounted).not.toHaveBeenCalled();
+});
+
 it('卡片普通详情独立加载，维护资格不足不下载私有页面，加载失败仍可退出', async () => {
   const denied = harness('/answer-cards/1/workspace', { permissions: [] });
   await screen.findByText('当前账号没有此管理页面的读取资格。');

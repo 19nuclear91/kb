@@ -5,7 +5,7 @@ import { RouterLink } from 'vue-router';
 import PageHeader from '../ui/PageHeader.vue';
 import KbAlert from '../ui/KbAlert.vue';
 import { useSession } from '../SessionProvider';
-import { useAdminAccess } from './access';
+import { useAdminAccess, perm } from './access';
 import AclPanel from './AclPanel.vue';
 import { useAdminResource } from './hooks';
 import { spacePaths, spaceWrites, type AdminSpace } from './spaceApi';
@@ -43,6 +43,10 @@ provideAclFormRecovery(() => ({ identity: `${auth.state.epoch}:spaces:${props.id
     <ElSpace><ElButton @click="dialog = 'edit'">修改空间</ElButton><ElButton @click="dialog = 'archive'">{{ query.data.archived ? '取消归档' : '归档空间' }}</ElButton><ElButton type="danger" plain @click="dialog = 'delete'">删除空间</ElButton></ElSpace></section>
     <PublicationPolicyPanel :space-id="id" @changed="changed" /><CategoryManager :space-id="id" :archived="query.data.archived" /><AclPanel :key="id" kind="spaces" :resource-id="id" :archived="query.data.archived" @changed="changed" @recheck="refresh" /><ManagedDocuments :id="id" />
     <SpaceStewardship :key="id" :id="id" :archived="query.data.archived" @recheck="changed" />
+    <section v-if="access.status === 'ready' && access.has(perm.healthRead)" class="panel" aria-label="知识健康雷达入口">
+      <p v-if="query.data.archived">空间已归档，健康诊断暂停。</p>
+      <RouterLink v-else :to="`/admin/spaces/${id}/health-radar`">知识健康雷达</RouterLink>
+    </section>
     <ResourceWriteDialog v-if="dialog === 'edit'" title="修改空间" :scope="`space:${id}:metadata`" :on-refresh="refresh" :on-done="done" :build="data => spaceWrites.update(id, fieldValue(data, 'name'), fieldValue(data, 'description'), query.data!.version)" @close="dialog = null">
       <p>当前版本：{{ String(query.data.version) }}。版本变化后需要重新确认。</p><TextField :key="`name:${query.data.version}`" name="name" label="空间名称" :value="query.data.name" :max="200" /><TextField :key="`desc:${query.data.version}`" name="description" label="空间描述" :value="query.data.description ?? ''" :max="2000" :required="false" multiline />
     </ResourceWriteDialog>

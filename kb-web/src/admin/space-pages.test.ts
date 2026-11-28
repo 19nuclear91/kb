@@ -120,6 +120,19 @@ describe('入口、路由与精确目标', () => {
   });
 });
 describe('空间生命周期', () => {
+  it('健康雷达入口合取独立资格和活动空间且不预取统计', async () => {
+    const view = show(h(SpaceDetailPage), access({ has: code => code === perm.healthRead }));
+    const link = await screen.findByRole('link', { name: '知识健康雷达' });
+    expect(link.getAttribute('href')).toBe('/admin/spaces/7/health-radar');
+    expect(f.send.mock.calls.some(([path]) => path.includes('health-radar'))).toBe(false);
+    await view.update(h(SpaceDetailPage), access());
+    expect(screen.queryByRole('link', { name: '知识健康雷达' })).toBeNull();
+    expect(screen.getByRole('region', { name: '空间复审概况' })).toBeTruthy(); view.unmount();
+    answers.set('/api/admin/spaces/7', { ...space, archived: true });
+    show(h(SpaceDetailPage), access({ has: code => code === perm.healthRead }));
+    expect(await screen.findByText('空间已归档，健康诊断暂停。')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: '知识健康雷达' })).toBeNull();
+  });
   it('目录显示归档与安全文本，读取失败不使用旧数据，create-only 可以新建', () => {
     const view = show(h(SpacesPage), access({ spaces: [{ ...space, archived: true, name: '<script>甲</script>' }] }), '/admin/spaces');
     expect(screen.getByRole('link', { name: '<script>甲</script>' })).toBeTruthy(); expect(screen.getByText('已归档')).toBeTruthy(); expect(view.container.querySelector('script')).toBeNull(); view.unmount();

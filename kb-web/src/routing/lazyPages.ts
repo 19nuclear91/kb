@@ -25,6 +25,7 @@ export const DepartmentsPage = lazyPage(() => import('../admin/DepartmentsPage.v
 export const RolesPage = lazyPage(() => import('../admin/RolesPage.vue'));
 export const SpacesPage = lazyPage(() => import('../admin/SpacesPage.vue'));
 export const SpaceDetailPage = lazyPage(() => import('../admin/SpaceDetailPage.vue'));
+export const KnowledgeHealthPage = lazyPage(() => import('../admin/KnowledgeHealthPage.vue'));
 export const DocumentsIndexPage = lazyPage(() => import('../admin/DocumentsIndexPage.vue'));
 export const DocumentPanelPage = lazyPage(() => import('../admin/DocumentPanelPage.vue'));
 export const EmbeddingPage = lazyPage(() => import('../admin/EmbeddingPage.vue'));

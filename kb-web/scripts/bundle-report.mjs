@@ -21,6 +21,7 @@ export const routes = {
   users: ['src/admin/UsersPage.vue'], departments: ['src/admin/DepartmentsPage.vue'],
   roles: ['src/admin/RolesPage.vue'], spaces: ['src/admin/SpacesPage.vue'],
   spaceDetail: ['src/admin/SpaceDetailPage.vue'], adminDocuments: ['src/admin/DocumentsIndexPage.vue'],
+  knowledgeHealth: ['src/admin/KnowledgeHealthPage.vue'],
   documentPanel: ['src/admin/DocumentPanelPage.vue'], embedding: ['src/admin/EmbeddingPage.vue'],
   deadLetters: ['src/admin/ParseDeadLettersPage.vue'], audits: ['src/admin/AuditsPage.vue'],
   aiUsage: ['src/admin/AiUsagePage.vue'], aiAudits: ['src/admin/AiAuditsPage.vue'],

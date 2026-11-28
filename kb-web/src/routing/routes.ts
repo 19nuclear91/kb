@@ -50,6 +50,7 @@ export const routes: RouteRecordRaw[] = [
       page('/admin/roles', 'RolesPage', { code: perm.roleRead, title: '角色管理' }),
       page('/admin/spaces', 'SpacesPage', { spaces: true, title: '知识空间' }),
       page('/admin/spaces/:spaceId', 'SpaceDetailPage', { title: '空间管理' }),
+      page('/admin/spaces/:spaceId/health-radar', 'KnowledgeHealthPage', { code: perm.healthRead, title: '知识健康雷达' }),
       page('/admin/documents', 'DocumentsIndexPage', { allow: canOpenDocuments, title: '文档管理面板' }),
       page('/admin/documents/:documentId', 'DocumentPanelPage', { title: '文档管理' }),
       page('/admin/embedding', 'EmbeddingPage', { code: perm.embeddingRead, title: '向量重建' }),
